@@ -1,0 +1,136 @@
+@baseUrl = http://localhost:8080
+
+
+###############################################
+# 1 - HEALTH
+###############################################
+
+GET {{baseUrl}}/actuator/health
+
+
+###############################################
+# 2 - LOGIN CIUDADANO
+###############################################
+
+# @name citizenLogin
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+  "username": "citizen@example.test",
+  "password": "CitizenDev!2026"
+}
+
+
+###############################################
+# 3 - ME CIUDADANO
+###############################################
+
+GET {{baseUrl}}/api/auth/me
+Authorization: Bearer {{citizenLogin.response.body.$.token}}
+
+
+###############################################
+# 4 - LOGIN AGENT
+###############################################
+
+# @name agentLogin
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+  "username": "agent@example.test",
+  "password": "AgentDev!2026"
+}
+
+
+###############################################
+# 5 - ME AGENT
+###############################################
+
+GET {{baseUrl}}/api/auth/me
+Authorization: Bearer {{agentLogin.response.body.$.token}}
+
+
+###############################################
+# 6 - LOGIN AREA RESPONSIBLE
+###############################################
+
+# @name areaResponsibleLogin
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+  "username": "area.responsible@example.test",
+  "password": "AreaDev!2026"
+}
+
+
+###############################################
+# 7 - ME AREA RESPONSIBLE
+###############################################
+
+GET {{baseUrl}}/api/auth/me
+Authorization: Bearer {{areaResponsibleLogin.response.body.$.token}}
+
+
+###############################################
+# 8 - PASSWORD INCORRECTA
+###############################################
+
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+  "username": "agent@example.test",
+  "password": "password-incorrecta"
+}
+
+
+###############################################
+# 9 - USUARIO INEXISTENTE
+###############################################
+
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+  "username": "no-existe@example.test",
+  "password": "password-incorrecta"
+}
+
+
+###############################################
+# 10 - REQUEST INVÁLIDO
+###############################################
+
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+  "username": "",
+  "password": ""
+}
+
+
+###############################################
+# 11 - ME SIN TOKEN
+###############################################
+
+GET {{baseUrl}}/api/auth/me
+
+
+###############################################
+# 12 - ME CON TOKEN FALSO
+###############################################
+
+GET {{baseUrl}}/api/auth/me
+Authorization: Bearer token-totalmente-invalido
+
+
+###############################################
+# 13 - ENDPOINT PÚBLICO + TOKEN FALSO
+###############################################
+
+GET {{baseUrl}}/actuator/health
+Authorization: Bearer token-totalmente-invalido
