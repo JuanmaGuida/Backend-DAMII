@@ -57,8 +57,10 @@ class FormServiceTest {
         when(templateRepository.findFirstByRequestType_IdAndActiveTrueOrderByVersionDesc(17L))
                 .thenReturn(Optional.of(template));
         FormField first = field("damageType", true, 1);
-        first.setConfig(new HashMap<>(Map.of("placeholder", "Seleccione", "risk", "HIGH")));
-        FormField second = field("reference", false, 2);
+        first.setConfig(new HashMap<>(Map.of(
+                "placeholder", "Seleccione",
+                "riskScore", 3,
+                "options", List.of(Map.of("value", "YES", "label", "Sí", "riskScore", 2)))));        FormField second = field("reference", false, 2);
         when(fieldRepository.findAllByFormTemplate_IdOrderByDisplayOrderAsc(5L))
                 .thenReturn(List.of(first, second));
 
@@ -71,8 +73,11 @@ class FormServiceTest {
                 response.getFields().stream().map(field -> field.getCode()).toList());
         assertTrue(response.getFields().getFirst().getRequired());
         assertFalse(response.getFields().get(1).getRequired());
-        assertFalse(response.getFields().getFirst().getConfig().containsKey("risk"));
-        assertTrue(first.getConfig().containsKey("risk"));
+        assertFalse(response.getFields().getFirst().getConfig().containsKey("riskScore"));
+        Map<?, ?> publicOption = (Map<?, ?>) ((List<?>) response.getFields().getFirst()
+                .getConfig().get("options")).getFirst();
+        assertFalse(publicOption.containsKey("riskScore"));
+        assertTrue(first.getConfig().containsKey("riskScore"));
     }
 
     @Test
