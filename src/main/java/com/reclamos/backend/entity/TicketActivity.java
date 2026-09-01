@@ -112,6 +112,14 @@ public class TicketActivity {
     )
     private Map<String, Object> metadata;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "previous_priority", length = 20)
+    private Priority previousPriority;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "new_priority", length = 20)
+    private Priority newPriority;
+
     @Column(name = "occurred_at")
     private Instant occurredAt;
 

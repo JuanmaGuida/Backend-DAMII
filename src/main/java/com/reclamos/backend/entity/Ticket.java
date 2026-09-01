@@ -65,7 +65,7 @@ public class Ticket {
     private String trackingCodeHash;
 
     @Column(name = "citizen_id")
-    private Long citizenId;
+    private UUID citizenId;
 
     @Column(name = "is_anonymous", nullable = false)
     private boolean anonymous;
@@ -103,15 +103,11 @@ public class Ticket {
     private TicketStatus currentStatus;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "initial_priority", nullable = false, length = 20)
-    private PriorityFactor initialPriorityFactor;
-
-    @Enumerated(EnumType.STRING)
     @Column(name = "current_priority", nullable = false, length = 20)
-    private PriorityFactor currentPriorityFactor;
+    private Priority currentPriority;
 
-    @Column(name = "affected_count", nullable = false)
-    private int affectedCount = 0;
+    @Column(name = "estimated_affected_count", nullable = false)
+    private int estimatedAffectedCount = 0;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(
@@ -142,9 +138,6 @@ public class Ticket {
     @Column(name = "preferred_notification_channel", length = 30)
     private String preferredNotificationChannel;
 
-    @Column(name = "ticket_version", nullable = false)
-    private int ticketVersion = 1;
-
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -152,4 +145,13 @@ public class Ticket {
     @UpdateTimestamp
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
+
+    @Column(name = "classification_finalized_at")
+    private Instant classificationFinalizedAt;
+
+    @Column(name = "current_progress")
+    private Short currentProgress;
+
+    @Column(name = "is_public", nullable = false)
+    private boolean isPublic = false;
 }
