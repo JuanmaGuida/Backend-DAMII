@@ -27,6 +27,10 @@ public class FormValidationService {
     private final FormFieldRepository formFieldRepository;
 
     public void validate(RequestType requestType, Map<String, Object> formData) {
+        validateAndGetFields(requestType, formData);
+    }
+
+    public List<FormField> validateAndGetFields(RequestType requestType, Map<String, Object> formData) {
         if (requestType == null || requestType.getId() == null) {
             throw new FormValidationException("El Request Type es obligatorio");
         }
@@ -57,6 +61,7 @@ public class FormValidationService {
                 validateValue(field, value);
             }
         }
+        return List.copyOf(fields);
     }
 
     private boolean isBlankText(FormField field, Object value) {

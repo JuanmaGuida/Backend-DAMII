@@ -40,7 +40,8 @@ import java.util.UUID;
                 @UniqueConstraint(
                         name = "uk_ticket_public_id",
                         columnNames = "public_id"
-                )
+                ),
+                @UniqueConstraint(name = "uk_ticket_tracking_code_hash", columnNames = "tracking_code_hash")
         }
 )
 @Check(
