@@ -1,7 +1,6 @@
 package com.reclamos.backend.entity;
 
-public enum RiskFactor {
-    VERY_LOW,
+public enum Priority {
     LOW,
     MEDIUM,
     HIGH,

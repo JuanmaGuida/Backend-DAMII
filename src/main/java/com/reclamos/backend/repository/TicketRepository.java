@@ -3,5 +3,7 @@ package com.reclamos.backend.repository;
 import com.reclamos.backend.entity.Ticket;
 import org.springframework.data.jpa.repository.JpaRepository;
 
-public interface TicketRepository extends JpaRepository<Ticket, Integer> {
+import java.util.UUID;
+
+public interface TicketRepository extends JpaRepository<Ticket, UUID> {
 }

@@ -62,9 +62,6 @@ public class TicketLocation {
     )
     private Neighborhood neighborhood;
 
-    @Column(name = "postal_code", length = 20)
-    private String postalCode;
-
     @Column(
             precision = 9,
             scale = 6
@@ -76,6 +73,9 @@ public class TicketLocation {
             scale = 6
     )
     private BigDecimal longitude; // Cambiar a PostGIS
+
+    @Column(length = 500)
+    private String reference;
 
     @CreationTimestamp
     @Column(

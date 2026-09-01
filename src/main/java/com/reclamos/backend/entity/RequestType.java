@@ -4,6 +4,8 @@ import jakarta.persistence.*;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
+
 @Entity
 @Table(
         name = "request_types",
@@ -47,12 +49,20 @@ public class RequestType {
     private String responsibleAreaId;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "initial_priority", nullable = false, length = 20)
-    private PriorityFactor initialPriority;
+    @Column(name = "minimum_priority", nullable = false, length = 20)
+    private Priority minimumPriority;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "initial_risk", nullable = false, length = 20)
-    private RiskFactor initialRisk;
+    @Column(name = "base_risk", nullable = false, length = 20)
+    private Risk baseRisk;
+
+    @Column(
+            name = "affected_population_factor",
+            nullable = false,
+            precision = 5,
+            scale = 4
+    )
+    private BigDecimal affectedPopulationFactor;
 
     @Column(name = "allows_anonymous", nullable = false)
     private boolean allowsAnonymous;
