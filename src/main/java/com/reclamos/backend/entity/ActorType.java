@@ -5,6 +5,6 @@ public enum ActorType {
     AGENT,
     AREA_RESPONSIBLE,
     ADMIN,
-    AREA_USER,
+    EXTERNAL_USER,
     SYSTEM
 }
