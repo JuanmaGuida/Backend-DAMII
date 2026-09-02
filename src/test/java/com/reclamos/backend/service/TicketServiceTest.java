@@ -5,6 +5,7 @@ import com.reclamos.backend.dto.TicketResponse;
 import com.reclamos.backend.entity.ActivityType;
 import com.reclamos.backend.entity.Category;
 import com.reclamos.backend.entity.Neighborhood;
+import com.reclamos.backend.entity.OutboxEvent;
 import com.reclamos.backend.entity.Priority;
 import com.reclamos.backend.entity.RequestType;
 import com.reclamos.backend.entity.Subcategory;
@@ -18,6 +19,7 @@ import com.reclamos.backend.exception.TicketStateConflictException;
 import com.reclamos.backend.identity.AuthenticatedIdentity;
 import com.reclamos.backend.identity.ModuleRole;
 import com.reclamos.backend.repository.NeighborhoodRepository;
+import com.reclamos.backend.repository.OutboxEventRepository;
 import com.reclamos.backend.repository.RequestTypeRepository;
 import com.reclamos.backend.repository.TicketActivityRepository;
 import com.reclamos.backend.repository.TicketLocationRepository;
@@ -32,10 +34,12 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -66,6 +70,8 @@ class TicketServiceTest {
     private FormValidationService formValidationService;
     @Mock
     private RiskCalculationService riskCalculationService;
+    @Mock
+    private OutboxEventRepository outboxEventRepository;
 
     private TicketService ticketService;
 
@@ -76,7 +82,10 @@ class TicketServiceTest {
     @BeforeEach
     void setUp() {
         ticketService = new TicketService(requestTypeRepository, ticketRepository, activityRepository,
-                locationRepository, neighborhoodRepository, formValidationService, riskCalculationService);
+                locationRepository, neighborhoodRepository, formValidationService, riskCalculationService,
+                outboxEventRepository);
+        ReflectionTestUtils.setField(ticketService, "producerModuleId", "M2");
+        ReflectionTestUtils.setField(ticketService, "producerService", "help-center-api");
     }
 
     // ---- startReview ----
@@ -230,6 +239,74 @@ class TicketServiceTest {
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 
+    // ---- routeToArea ----
+
+    @Test
+    void routeToAreaMovesInReviewTicketToRoutedAndWritesOutboxEvent() {
+        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.HIGH);
+        ticket.setResponsibleAreaId("M6");
+
+        when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+        when(activityRepository.countByTicket_Id(ticketId)).thenReturn(0L);
+        when(locationRepository.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+
+        TicketResponse response = ticketService.routeToArea(ticketId, actor);
+
+        assertThat(response.getCurrentStatus()).isEqualTo(TicketStatus.ROUTED);
+        assertThat(ticket.getCurrentStatus()).isEqualTo(TicketStatus.ROUTED);
+
+        ArgumentCaptor<TicketActivity> activityCaptor = ArgumentCaptor.forClass(TicketActivity.class);
+        verify(activityRepository).save(activityCaptor.capture());
+        assertThat(activityCaptor.getValue().getActionType()).isEqualTo(ActivityType.ROUTED);
+
+        ArgumentCaptor<OutboxEvent> eventCaptor = ArgumentCaptor.forClass(OutboxEvent.class);
+        verify(outboxEventRepository).save(eventCaptor.capture());
+        OutboxEvent event = eventCaptor.getValue();
+        assertThat(event.getEventType()).isEqualTo("ticketUpdated");
+        assertThat(event.getTicket()).isSameAs(ticket);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> data = (Map<String, Object>) event.getPayload().get("data");
+        assertThat(data.get("updateType")).isEqualTo("ROUTED");
+        assertThat(data.get("responsibleAreaId")).isEqualTo("M6");
+    }
+
+    @Test
+    void routeToAreaSkipsOutboxWhenAreaIsSelfManaged() {
+        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.LOW);
+        ticket.setResponsibleAreaId("M2");
+
+        when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+        when(activityRepository.countByTicket_Id(ticketId)).thenReturn(0L);
+        when(locationRepository.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+
+        ticketService.routeToArea(ticketId, actor);
+
+        verify(outboxEventRepository, never()).save(any());
+    }
+
+    @Test
+    void routeToAreaOnWrongStateThrowsConflict() {
+        Ticket ticket = ticket(TicketStatus.REGISTERED, Priority.LOW);
+        when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+
+        assertThatThrownBy(() -> ticketService.routeToArea(ticketId, actor))
+                .isInstanceOf(TicketStateConflictException.class);
+
+        verify(outboxEventRepository, never()).save(any());
+    }
+
+    @Test
+    void routeToAreaWithoutResponsibleAreaThrowsConflict() {
+        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.LOW);
+        ticket.setResponsibleAreaId(null);
+        when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+
+        assertThatThrownBy(() -> ticketService.routeToArea(ticketId, actor))
+                .isInstanceOf(TicketStateConflictException.class);
+
+        verify(ticketRepository, never()).save(any());
+    }
+
     // ---- listTickets ----
 
     @Test
@@ -292,7 +369,7 @@ class TicketServiceTest {
         ticket.setId(ticketId);
         ticket.setPublicId("OP-0000000001");
         ticket.setRequestType(requestType);
-        ticket.setTicketType(TicketType.INDIVIDUAL);
+        ticket.setTicketType(TicketType.COMPLAINT);
         ticket.setResponsibleAreaId("obras-viales");
         ticket.setSummary("Bache en la vereda");
         ticket.setCurrentStatus(status);
@@ -319,7 +396,7 @@ class TicketServiceTest {
         requestType.setCode(code);
         requestType.setName(code);
         requestType.setSubcategory(subcategory);
-        requestType.setTicketType(TicketType.INDIVIDUAL);
+        requestType.setTicketType(TicketType.COMPLAINT);
         requestType.setResponsibleAreaId(responsibleAreaId);
         requestType.setMinimumPriority(minimumPriority);
         requestType.setAffectedPopulationFactor(affectedPopulationFactor);

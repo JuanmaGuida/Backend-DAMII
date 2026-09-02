@@ -49,6 +49,15 @@ public class SecurityConfiguration {
                         .requestMatchers(HttpMethod.GET, "/api/tickets").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/tickets/*/review").authenticated()
                         .requestMatchers(HttpMethod.PATCH, "/api/tickets/*/classification").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/api/tickets/*/route").authenticated()
+                        // BE - Story 3.4/DDA2-61: el simulador NO exige sesión de agente a
+                        // propósito. Simula una llamada de un sistema externo (una
+                        // integración real llegaría por bus de eventos, no HTTP con bearer
+                        // token de agente), y ya está apagado fuera de
+                        // app.simulator.enabled=true (ver TicketSimulationController). Pedir
+                        // login de agente acá sólo le complicaría la vida a QA sin agregar
+                        // seguridad real, dado que el endpoint ni siquiera existe en
+                        // producción.
                         .anyRequest().permitAll()
                 )
                 .addFilterBefore(bearerTokenAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
