@@ -4,5 +4,7 @@ public enum ActorType {
     CITIZEN,
     AGENT,
     AREA_RESPONSIBLE,
-    ADMIN
+    ADMIN,
+    AREA_USER,
+    SYSTEM
 }
