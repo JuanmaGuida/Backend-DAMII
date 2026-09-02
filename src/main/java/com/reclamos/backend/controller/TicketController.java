@@ -96,4 +96,16 @@ public class TicketController {
     ) {
         return ticketService.correctClassification(ticketId, request.requestTypeId(), actor);
     }
+
+    /**
+     * Story 3.3 - BE: Endpoint de derivación (IN_REVIEW -&gt; ROUTED) +
+     * publicación del evento ticketUpdated al outbox (DDA2-59).
+     */
+    @PostMapping("/{ticketId}/route")
+    public TicketResponse routeToArea(
+            @PathVariable UUID ticketId,
+            @AuthenticationPrincipal AuthenticatedIdentity actor
+    ) {
+        return ticketService.routeToArea(ticketId, actor);
+    }
 }

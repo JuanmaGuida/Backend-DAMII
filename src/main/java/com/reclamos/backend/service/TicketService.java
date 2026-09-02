@@ -12,6 +12,7 @@ import com.reclamos.backend.exception.TicketStateConflictException;
 import com.reclamos.backend.identity.AuthenticatedIdentity;
 import com.reclamos.backend.repository.*;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -28,6 +29,7 @@ import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -39,6 +41,13 @@ import java.util.stream.Collectors;
 public class TicketService {
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
+    /**
+     * "M2" identifica gestión propia de Atención Ciudadana (Eventos v1.6 §2.1):
+     * un ticket derivado a esa "área" no tiene consumidor externo y no debe
+     * generar OutboxEvent.
+     */
+    private static final String SELF_MANAGED_AREA_ID = "M2";
+
     private final RequestTypeRepository requestTypeRepository;
     private final TicketRepository ticketRepository;
     private final TicketActivityRepository activityRepository;
@@ -46,6 +55,13 @@ public class TicketService {
     private final NeighborhoodRepository neighborhoodRepository;
     private final FormValidationService formValidationService;
     private final RiskCalculationService riskCalculationService;
+    private final OutboxEventRepository outboxEventRepository;
+
+    @Value("${app.events.producer.module-id:M2}")
+    private String producerModuleId;
+
+    @Value("${app.events.producer.service:help-center-api}")
+    private String producerService;
 
     @Transactional
     public CreateTicketResponse create(CreateTicketRequest request, AuthenticatedIdentity identity,
@@ -198,6 +214,129 @@ public class TicketService {
                 actor, previousPriority, newPriority, message);
 
         return toResponse(ticket, location);
+    }
+
+    /**
+     * Story 3.3 (BE - Endpoint de derivación IN_REVIEW -&gt; ROUTED + publicación
+     * de ticketUpdated al outbox / DDA2-59).
+     * <p>
+     * INTERPRETACIÓN DE "SELECCIONAR UN ÁREA VÁLIDA" (AC): este endpoint no
+     * recibe un área por parámetro. El área ya quedó fijada en
+     * responsibleAreaId durante la clasificación (Story 3.2 / RequestType), así
+     * que acá "seleccionar" se interpreta como confirmar/validar esa área ya
+     * asignada, no como un input nuevo del agente. Si el equipo necesita que el
+     * agente pueda cambiar el área en el momento de derivar, este método hay
+     * que extenderlo para recibir un areaId explícito.
+     */
+    @Transactional
+    public TicketResponse routeToArea(UUID ticketId, AuthenticatedIdentity actor) {
+        Ticket ticket = loadForUpdate(ticketId);
+
+        if (ticket.getCurrentStatus() != TicketStatus.IN_REVIEW) {
+            throw new TicketStateConflictException(
+                    "El ticket está en estado " + ticket.getCurrentStatus()
+                            + " y no puede derivarse: sólo se puede derivar un ticket IN_REVIEW");
+        }
+        if (ticket.getResponsibleAreaId() == null || ticket.getResponsibleAreaId().isBlank()) {
+            throw new TicketStateConflictException(
+                    "El ticket no tiene un área responsable válida asignada; no puede derivarse");
+        }
+
+        TicketStatus previousStatus = ticket.getCurrentStatus();
+        ticket.setCurrentStatus(TicketStatus.ROUTED);
+        ticket.setStatusChangedAt(Instant.now());
+        ticketRepository.save(ticket);
+
+        recordActivity(ticket, ActivityType.ROUTED, previousStatus, TicketStatus.ROUTED, actor, null, null,
+                "Derivado al área responsable '" + ticket.getResponsibleAreaId() + "'");
+
+        TicketLocation location = locationRepository.findByTicket_Id(ticketId).orElse(null);
+
+        // Política de publicación (Eventos v1.6 §2.1): siempre se publica en
+        // ROUTED, salvo que el área responsable sea la propia M2 (gestión
+        // interna sin consumidor externo).
+        if (!SELF_MANAGED_AREA_ID.equalsIgnoreCase(ticket.getResponsibleAreaId())) {
+            writeOutboxEvent(ticket, location);
+        }
+
+        return toResponse(ticket, location);
+    }
+
+    /**
+     * Construye el envelope + data de ticketUpdated/ROUTED (Eventos v1.6 §4 y
+     * §7.4) y lo inserta como OutboxEvent PENDING en la misma transacción que
+     * el cambio de estado (Entidades v1.3 §19.2). Todavía no existe un
+     * publisher asíncrono real (Sprint 3: "sin consumidor real todavía"), así
+     * que el evento queda en PENDING hasta que se implemente ese publisher.
+     */
+    private void writeOutboxEvent(Ticket ticket, TicketLocation location) {
+        RequestType requestType = ticket.getRequestType();
+        UUID eventId = UUID.randomUUID();
+        Instant now = Instant.now();
+
+        Map<String, Object> routing = new LinkedHashMap<>();
+        routing.put("requestType", requestType.getName());
+        routing.put("ticketType", ticket.getTicketType());
+        routing.put("summary", ticket.getSummary());
+        routing.put("description", ticket.getDescription());
+        routing.put("formData", ticket.getFormData());
+        routing.put("location", toEventLocation(location));
+        routing.put("resolutionDueAt", null); // SLA no implementado todavía (Sprint 4)
+        routing.put("escalation", null); // Escalamiento no implementado todavía (Sprint 4)
+
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("routing", routing);
+
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("ticketId", ticket.getId());
+        data.put("citizenId", ticket.getCitizenId());
+        data.put("isAnonymous", ticket.isAnonymous());
+        data.put("responsibleAreaId", ticket.getResponsibleAreaId());
+        data.put("updateType", TicketUpdatedType.ROUTED.name());
+        data.put("currentStatus", ticket.getCurrentStatus().name());
+        data.put("currentPriority", ticket.getCurrentPriority().name());
+        data.put("progress", ticket.getCurrentProgress());
+        data.put("publicMessage", "El ticket fue derivado al área responsable.");
+        data.put("details", details);
+        data.put("attachments", List.of());
+        data.put("updatedAt", ticket.getUpdatedAt() != null ? ticket.getUpdatedAt().toString() : now.toString());
+
+        Map<String, Object> producer = new LinkedHashMap<>();
+        producer.put("moduleId", producerModuleId);
+        producer.put("service", producerService);
+
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("specVersion", "1.0");
+        payload.put("eventId", eventId.toString());
+        payload.put("eventType", "ticketUpdated");
+        payload.put("occurredAt", now.toString());
+        payload.put("producer", producer);
+        payload.put("subject", "tickets/" + ticket.getId());
+        payload.put("data", data);
+
+        OutboxEvent event = new OutboxEvent();
+        event.setEventId(eventId);
+        event.setEventType("ticketUpdated");
+        event.setUpdateType(TicketUpdatedType.ROUTED);
+        event.setTicket(ticket);
+        event.setPayload(payload);
+        event.setStatus(OutboxStatus.PENDING);
+        event.setRetryCount(0);
+        outboxEventRepository.save(event);
+    }
+
+    private Map<String, Object> toEventLocation(TicketLocation location) {
+        if (location == null) {
+            return null;
+        }
+        Map<String, Object> eventLocation = new LinkedHashMap<>();
+        eventLocation.put("addressLine", location.getAddressLine());
+        eventLocation.put("street", location.getStreet());
+        eventLocation.put("streetNumber", location.getStreetNumber());
+        eventLocation.put("neighborhoodId", location.getNeighborhood() != null
+                ? location.getNeighborhood().getId() : null);
+        eventLocation.put("reference", location.getReference());
+        return eventLocation;
     }
 
     /**

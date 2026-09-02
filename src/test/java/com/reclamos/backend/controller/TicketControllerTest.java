@@ -123,4 +123,31 @@ class TicketControllerTest {
                         .content("{\"requestTypeId\":20}"))
                 .andExpect(status().isConflict());
     }
+
+    /**
+     * Story 3.3 / DDA2-59: derivación a área (IN_REVIEW -&gt; ROUTED).
+     */
+    @Test
+    void routeToAreaDelegatesToServiceAndReturnsOk() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+        TicketResponse response = new TicketResponse();
+        response.setId(ticketId);
+        response.setCurrentStatus(TicketStatus.ROUTED);
+        when(ticketService.routeToArea(eq(ticketId), any())).thenReturn(response);
+
+        mockMvc.perform(post("/api/tickets/{ticketId}/route", ticketId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.currentStatus").value("ROUTED"));
+    }
+
+    @Test
+    void routeToAreaOnWrongStateReturnsConflict() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+        when(ticketService.routeToArea(eq(ticketId), any()))
+                .thenThrow(new TicketStateConflictException("El ticket no está IN_REVIEW"));
+
+        mockMvc.perform(post("/api/tickets/{ticketId}/route", ticketId))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value("El ticket no está IN_REVIEW"));
+    }
 }
