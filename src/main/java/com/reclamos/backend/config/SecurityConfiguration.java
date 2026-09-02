@@ -40,6 +40,15 @@ public class SecurityConfiguration {
                         .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/auth/me").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/tickets").authenticated()
+                        // BE - Story 3.1/3.2: sólo exigen "estar autenticado", no un rol
+                        // puntual — el control de acceso por rol lo agrega otro
+                        // compañero por separado. Sin esto, cualquiera sin login podía
+                        // listar tickets, tomarlos a revisión o corregir su
+                        // clasificación, porque caían en el anyRequest().permitAll() de
+                        // abajo.
+                        .requestMatchers(HttpMethod.GET, "/api/tickets").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/api/tickets/*/review").authenticated()
+                        .requestMatchers(HttpMethod.PATCH, "/api/tickets/*/classification").authenticated()
                         .anyRequest().permitAll()
                 )
                 .addFilterBefore(bearerTokenAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)

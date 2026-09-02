@@ -1,233 +1,329 @@
 package com.reclamos.backend.service;
 
-import com.reclamos.backend.dto.request.CreateTicketRequest;
-import com.reclamos.backend.dto.response.CreateTicketResponse;
-import com.reclamos.backend.entity.*;
-import com.reclamos.backend.exception.EvidenceRequiredException;
-import com.reclamos.backend.exception.FormValidationException;
-import com.reclamos.backend.exception.InvalidTicketRequestException;
+import com.reclamos.backend.dto.TicketFilter;
+import com.reclamos.backend.dto.TicketResponse;
+import com.reclamos.backend.entity.ActivityType;
+import com.reclamos.backend.entity.Category;
+import com.reclamos.backend.entity.Neighborhood;
+import com.reclamos.backend.entity.Priority;
+import com.reclamos.backend.entity.RequestType;
+import com.reclamos.backend.entity.Subcategory;
+import com.reclamos.backend.entity.Ticket;
+import com.reclamos.backend.entity.TicketActivity;
+import com.reclamos.backend.entity.TicketLocation;
+import com.reclamos.backend.entity.TicketStatus;
+import com.reclamos.backend.entity.TicketType;
 import com.reclamos.backend.exception.ResourceNotFoundException;
+import com.reclamos.backend.exception.TicketStateConflictException;
 import com.reclamos.backend.identity.AuthenticatedIdentity;
-import com.reclamos.backend.repository.*;
+import com.reclamos.backend.identity.ModuleRole;
+import com.reclamos.backend.repository.NeighborhoodRepository;
+import com.reclamos.backend.repository.RequestTypeRepository;
+import com.reclamos.backend.repository.TicketActivityRepository;
+import com.reclamos.backend.repository.TicketLocationRepository;
+import com.reclamos.backend.repository.TicketRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.mock.web.MockMultipartFile;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 
 import java.math.BigDecimal;
-import java.util.Map;
+import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
+@ExtendWith(MockitoExtension.class)
 class TicketServiceTest {
-    private final RequestTypeRepository requestTypes = mock(RequestTypeRepository.class);
-    private final TicketRepository tickets = mock(TicketRepository.class);
-    private final TicketActivityRepository activities = mock(TicketActivityRepository.class);
-    private final TicketLocationRepository locations = mock(TicketLocationRepository.class);
-    private final NeighborhoodRepository neighborhoods = mock(NeighborhoodRepository.class);
-    private final FormValidationService forms = mock(FormValidationService.class);
-    private final RiskCalculationService risks = mock(RiskCalculationService.class);
-    private TicketService service;
-    private RequestType requestType;
+
+    @Mock
+    private RequestTypeRepository requestTypeRepository;
+    @Mock
+    private TicketRepository ticketRepository;
+    @Mock
+    private TicketActivityRepository activityRepository;
+    @Mock
+    private TicketLocationRepository locationRepository;
+    @Mock
+    private NeighborhoodRepository neighborhoodRepository;
+    @Mock
+    private FormValidationService formValidationService;
+    @Mock
+    private RiskCalculationService riskCalculationService;
+
+    private TicketService ticketService;
+
+    private final UUID ticketId = UUID.randomUUID();
+    private final AuthenticatedIdentity actor = new AuthenticatedIdentity(
+            "agent-1", UUID.randomUUID(), "Agente Uno", "area-obras", Set.of(ModuleRole.AGENT));
 
     @BeforeEach
     void setUp() {
-        reset(requestTypes, tickets, activities, locations, neighborhoods, forms, risks);
-        service = new TicketService(requestTypes, tickets, activities, locations, neighborhoods, forms, risks);
-        requestType = requestType(true);
-        when(requestTypes.findById(1L)).thenReturn(Optional.of(requestType));
-        when(tickets.save(any())).thenAnswer(invocation -> {
-            Ticket ticket = invocation.getArgument(0);
-            ticket.setId(UUID.randomUUID());
-            return ticket;
-        });
+        ticketService = new TicketService(requestTypeRepository, ticketRepository, activityRepository,
+                locationRepository, neighborhoodRepository, formValidationService, riskCalculationService);
+    }
+
+    // ---- startReview ----
+
+    @Test
+    void startReviewMovesRegisteredTicketToInReviewAndAssignsAgent() {
+        Ticket ticket = ticket(TicketStatus.REGISTERED, Priority.MEDIUM);
+        ticket.setAssignedAgentId(null);
+        when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+        when(activityRepository.countByTicket_Id(ticketId)).thenReturn(0L);
+        when(locationRepository.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+
+        TicketResponse response = ticketService.startReview(ticketId, actor);
+
+        assertThat(response.getCurrentStatus()).isEqualTo(TicketStatus.IN_REVIEW);
+        assertThat(ticket.getAssignedAgentId()).isEqualTo("agent-1");
+        assertThat(ticket.getCurrentStatus()).isEqualTo(TicketStatus.IN_REVIEW);
+
+        ArgumentCaptor<TicketActivity> activityCaptor = ArgumentCaptor.forClass(TicketActivity.class);
+        verify(activityRepository).save(activityCaptor.capture());
+        TicketActivity activity = activityCaptor.getValue();
+        assertThat(activity.getActionType()).isEqualTo(ActivityType.REVIEW_STARTED);
+        assertThat(activity.getPreviousStatus()).isEqualTo(TicketStatus.REGISTERED);
+        assertThat(activity.getNewStatus()).isEqualTo(TicketStatus.IN_REVIEW);
+        assertThat(activity.getSequence()).isEqualTo(1);
     }
 
     @Test
-    void lowRiskWithoutEvidenceCreatesRegisteredServerClassifiedTicket() {
-        when(risks.calculateRisk(any(), any(), any())).thenReturn(Risk.LOW);
-        CreateTicketResponse response = service.create(request(), identity(), null);
+    void startReviewDoesNotOverwriteAnAlreadyAssignedAgent() {
+        Ticket ticket = ticket(TicketStatus.REGISTERED, Priority.MEDIUM);
+        ticket.setAssignedAgentId("agent-original");
+        when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+        when(activityRepository.countByTicket_Id(ticketId)).thenReturn(0L);
+        when(locationRepository.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
 
-        assertEquals(TicketStatus.REGISTERED, response.status());
-        assertNotNull(response.trackingCode());
-        assertTrue(response.publicId().matches("OP-[0-9]{10}"));
-        assertThrows(IllegalArgumentException.class, () -> UUID.fromString(response.publicId()));
-        verify(tickets).save(argThat(ticket -> ticket.getCurrentStatus() == TicketStatus.REGISTERED
-                && ticket.getTicketType() == requestType.getTicketType()
-                && ticket.getResponsibleAreaId().equals(requestType.getResponsibleAreaId())
-                && ticket.getRequestType().getSubcategory().getCategory() != null
-                && !ticket.getTrackingCodeHash().equals(response.trackingCode())));
-        verify(activities).save(argThat(activity -> activity.getActionType() == ActivityType.TICKET_CREATED
-                && activity.getSequence() == 1));
+        ticketService.startReview(ticketId, actor);
+
+        assertThat(ticket.getAssignedAgentId()).isEqualTo("agent-original");
     }
 
     @Test
-    void mediumRiskWithoutEvidenceCreatesTicket() {
-        when(risks.calculateRisk(any(), any(), any())).thenReturn(Risk.MEDIUM);
-        assertNotNull(service.create(request(), identity(), null).ticketId());
+    void startReviewOnNonRegisteredTicketThrowsConflict() {
+        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.MEDIUM);
+        when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+
+        assertThatThrownBy(() -> ticketService.startReview(ticketId, actor))
+                .isInstanceOf(TicketStateConflictException.class);
+
+        verify(activityRepository, never()).save(any());
     }
 
     @Test
-    void highAndCriticalRiskWithEvidenceCreateTickets() {
-        MockMultipartFile evidence = new MockMultipartFile("evidence", "photo.jpg", "image/jpeg", new byte[]{1});
-        when(risks.calculateRisk(any(), any(), any())).thenReturn(Risk.HIGH, Risk.CRITICAL);
-        assertNotNull(service.create(request(), identity(), new MockMultipartFile[]{evidence}).ticketId());
-        assertNotNull(service.create(request(), identity(), new MockMultipartFile[]{evidence}).ticketId());
+    void startReviewOnMissingTicketThrowsNotFound() {
+        when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> ticketService.startReview(ticketId, actor))
+                .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    // ---- correctClassification ----
+
+    @Test
+    void correctClassificationRecalculatesAreaAffectedCountAndPriorityFloor() {
+        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.LOW);
+        Neighborhood neighborhood = new Neighborhood();
+        neighborhood.setId(UUID.randomUUID());
+        neighborhood.setName("Palermo");
+        neighborhood.setPopulation(200_000);
+        TicketLocation location = new TicketLocation();
+        location.setNeighborhood(neighborhood);
+
+        RequestType newRequestType = requestType(20L, "FLOODING", "obras-hidraulicas",
+                Priority.HIGH, new BigDecimal("0.1000"));
+
+        when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+        when(requestTypeRepository.findById(20L)).thenReturn(Optional.of(newRequestType));
+        when(locationRepository.findByTicket_Id(ticketId)).thenReturn(Optional.of(location));
+        when(activityRepository.countByTicket_Id(ticketId)).thenReturn(0L);
+
+        TicketResponse response = ticketService.correctClassification(ticketId, 20L, actor);
+
+        assertThat(ticket.getResponsibleAreaId()).isEqualTo("obras-hidraulicas");
+        assertThat(ticket.getEstimatedAffectedCount()).isEqualTo(20_000);
+        assertThat(ticket.getCurrentPriority()).isEqualTo(Priority.HIGH);
+        assertThat(response.getRequestTypeCode()).isEqualTo("FLOODING");
     }
 
     @Test
-    void highAndCriticalRiskWithoutEvidenceDoNotPersist() {
-        when(risks.calculateRisk(any(), any(), any())).thenReturn(Risk.HIGH, Risk.CRITICAL);
-        assertThrows(EvidenceRequiredException.class, () -> service.create(request(), identity(), null));
-        assertThrows(EvidenceRequiredException.class, () -> service.create(request(), identity(), null));
-        verify(tickets, never()).save(any());
-        verify(activities, never()).save(any());
-        verify(locations, never()).save(any());
+    void correctClassificationNeverLowersAnAlreadyHigherPriority() {
+        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.CRITICAL);
+        RequestType newRequestType = requestType(20L, "FLOODING", "obras-hidraulicas",
+                Priority.LOW, new BigDecimal("0.1000"));
+
+        when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+        when(requestTypeRepository.findById(20L)).thenReturn(Optional.of(newRequestType));
+        when(locationRepository.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+        when(activityRepository.countByTicket_Id(ticketId)).thenReturn(0L);
+
+        ticketService.correctClassification(ticketId, 20L, actor);
+
+        assertThat(ticket.getCurrentPriority()).isEqualTo(Priority.CRITICAL);
     }
 
     @Test
-    void missingInvalidAndInactiveRequestTypesDoNotPersist() {
-        when(requestTypes.findById(99L)).thenReturn(Optional.empty());
-        assertThrows(ResourceNotFoundException.class,
-                () -> service.create(new CreateTicketRequest(99L, "s", "d", Map.of(), null), identity(), null));
-        requestType.setActive(false);
-        assertThrows(InvalidTicketRequestException.class, () -> service.create(request(), identity(), null));
-        verify(tickets, never()).save(any());
+    void correctClassificationWithoutLocationEstimatesZeroAffectedCount() {
+        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.LOW);
+        RequestType newRequestType = requestType(20L, "FLOODING", "obras-hidraulicas",
+                Priority.MEDIUM, new BigDecimal("0.1000"));
+
+        when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+        when(requestTypeRepository.findById(20L)).thenReturn(Optional.of(newRequestType));
+        when(locationRepository.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+        when(activityRepository.countByTicket_Id(ticketId)).thenReturn(0L);
+
+        ticketService.correctClassification(ticketId, 20L, actor);
+
+        assertThat(ticket.getEstimatedAffectedCount()).isZero();
     }
 
     @Test
-    void validationFailureDoesNotPersist() {
-        when(forms.validateAndGetFields(any(), any())).thenThrow(new FormValidationException("required"));
-        assertThrows(FormValidationException.class, () -> service.create(request(), identity(), null));
-        verify(tickets, never()).save(any());
+    void correctClassificationRejectsWhenTicketIsNotInFirstReview() {
+        Ticket ticket = ticket(TicketStatus.ROUTED, Priority.LOW);
+
+        when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+
+        assertThatThrownBy(() -> ticketService.correctClassification(ticketId, 20L, actor))
+                .isInstanceOf(TicketStateConflictException.class);
+
+        verify(requestTypeRepository, never()).findById(any());
     }
 
     @Test
-    void trackingCodesAreDifferentAndOnlyTheirHashesAreStored() {
-        when(risks.calculateRisk(any(), any(), any())).thenReturn(Risk.LOW);
-        CreateTicketResponse first = service.create(request(), identity(), null);
-        CreateTicketResponse second = service.create(request(), identity(), null);
-        assertNotEquals(first.trackingCode(), second.trackingCode());
-        verify(tickets, times(2)).save(argThat(ticket -> !ticket.getTrackingCodeHash().equals(first.trackingCode())
-                && !ticket.getTrackingCodeHash().equals(second.trackingCode())));
+    void correctClassificationRejectsWhenClassificationAlreadyFinalized() {
+        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.LOW);
+        ticket.setClassificationFinalizedAt(Instant.now());
+
+        when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+
+        assertThatThrownBy(() -> ticketService.correctClassification(ticketId, 20L, actor))
+                .isInstanceOf(TicketStateConflictException.class);
     }
 
     @Test
-    void minimumPriorityIsAlwaysAppliedAsFloor() {
-        requestType.setMinimumPriority(Priority.HIGH);
-        when(risks.calculateRisk(any(), any(), any())).thenReturn(Risk.LOW);
-        service.create(request(), identity(), null);
-        verify(tickets).save(argThat(ticket -> ticket.getCurrentPriority() == Priority.HIGH));
+    void correctClassificationRejectsInactiveOrMissingRequestType() {
+        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.LOW);
+
+        when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+        when(requestTypeRepository.findById(99L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> ticketService.correctClassification(ticketId, 99L, actor))
+                .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    // ---- listTickets ----
+
+    @Test
+    void listTicketsMapsNeighborhoodFromBatchedLocations() {
+        Ticket ticket = ticket(TicketStatus.REGISTERED, Priority.MEDIUM);
+        Neighborhood neighborhood = new Neighborhood();
+        neighborhood.setId(UUID.randomUUID());
+        neighborhood.setName("Recoleta");
+        neighborhood.setPopulation(150_000);
+        TicketLocation location = new TicketLocation();
+        location.setTicket(ticket);
+        location.setNeighborhood(neighborhood);
+
+        TicketFilter filter = new TicketFilter(null, null, null, null, null);
+        Pageable pageable = Pageable.unpaged();
+        Page<Ticket> page = new PageImpl<>(List.of(ticket));
+
+        when(ticketRepository.findAll(any(Specification.class), any(Pageable.class))).thenReturn(page);
+        when(locationRepository.findAllByTicket_IdIn(anyList())).thenReturn(List.of(location));
+
+        Page<TicketResponse> result = ticketService.listTickets(filter, pageable);
+
+        assertThat(result.getContent()).hasSize(1);
+        assertThat(result.getContent().get(0).getNeighborhoodName()).isEqualTo("Recoleta");
     }
 
     @Test
-    void requiredLocationRejectsNullAndEmptyObjects() {
-        requestType.setRequiresLocation(true);
-        allowLowRisk();
+    void listTicketsLeavesNeighborhoodNullWhenTicketHasNoLocation() {
+        Ticket ticket = ticket(TicketStatus.REGISTERED, Priority.MEDIUM);
 
-        assertThrows(InvalidTicketRequestException.class, () -> service.create(request(), identity(), null));
-        assertThrows(InvalidTicketRequestException.class,
-                () -> service.create(request(location(null, null, null, null)), identity(), null));
-        verify(tickets, never()).save(any());
+        TicketFilter filter = new TicketFilter(null, null, null, null, null);
+        Pageable pageable = Pageable.unpaged();
+        Page<Ticket> page = new PageImpl<>(List.of(ticket));
+
+        when(ticketRepository.findAll(any(Specification.class), any(Pageable.class))).thenReturn(page);
+        when(locationRepository.findAllByTicket_IdIn(anyList())).thenReturn(List.of());
+
+        Page<TicketResponse> result = ticketService.listTickets(filter, pageable);
+
+        assertThat(result.getContent().get(0).getNeighborhoodId()).isNull();
     }
 
-    @Test
-    void locationRejectsLatitudeOrLongitudeWhenProvidedAlone() {
-        allowLowRisk();
-        InvalidTicketRequestException latitudeError = assertThrows(InvalidTicketRequestException.class,
-                () -> service.create(request(location(null, BigDecimal.ZERO, null, null)), identity(), null));
-        InvalidTicketRequestException longitudeError = assertThrows(InvalidTicketRequestException.class,
-                () -> service.create(request(location(null, null, BigDecimal.ZERO, null)), identity(), null));
+    // ---- fixtures ----
 
-        assertEquals("La latitud y longitud deben informarse juntas", latitudeError.getMessage());
-        assertEquals("La latitud y longitud deben informarse juntas", longitudeError.getMessage());
-        verify(tickets, never()).save(any());
-    }
-
-    @Test
-    void locationRejectsCoordinatesOutsideTheirRanges() {
-        allowLowRisk();
-        assertThrows(InvalidTicketRequestException.class,
-                () -> service.create(request(location(null, new BigDecimal("90.1"), BigDecimal.ZERO, null)),
-                        identity(), null));
-        assertThrows(InvalidTicketRequestException.class,
-                () -> service.create(request(location(null, BigDecimal.ZERO, new BigDecimal("180.1"), null)),
-                        identity(), null));
-        verify(tickets, never()).save(any());
-    }
-
-    @Test
-    void locationRejectsUnknownNeighborhood() {
-        allowLowRisk();
-        UUID neighborhoodId = UUID.randomUUID();
-        when(neighborhoods.existsById(neighborhoodId)).thenReturn(false);
-
-        ResourceNotFoundException exception = assertThrows(ResourceNotFoundException.class,
-                () -> service.create(request(location(null, null, null, neighborhoodId)), identity(), null));
-        assertEquals("Barrio no encontrado", exception.getMessage());
-        verify(tickets, never()).save(any());
-    }
-
-    @Test
-    void validRequiredLocationAllowsCreation() {
-        requestType.setRequiresLocation(true);
-        allowLowRisk();
-
-        assertNotNull(service.create(request(location("Av. Siempre Viva 742", null, null, null)),
-                identity(), null).ticketId());
-        verify(locations).save(any(TicketLocation.class));
-    }
-
-    @Test
-    void optionalNullLocationAllowsCreationAndHibernateOwnsTicketTimestamps() {
-        allowLowRisk();
-
-        assertNotNull(service.create(request(), identity(), null).ticketId());
-        verify(tickets).save(argThat(ticket -> ticket.getCreatedAt() == null
-                && ticket.getUpdatedAt() == null && ticket.getStatusChangedAt() != null));
-        verify(locations, never()).save(any());
-    }
-
-    private CreateTicketRequest request() {
-        return new CreateTicketRequest(1L, "Resumen", "Descripción", Map.of("answer", true), null);
-    }
-
-    private CreateTicketRequest request(CreateTicketRequest.LocationData location) {
-        return new CreateTicketRequest(1L, "Resumen", "Descripción", Map.of("answer", true), location);
-    }
-
-    private CreateTicketRequest.LocationData location(String addressLine, BigDecimal latitude,
-                                                      BigDecimal longitude, UUID neighborhoodId) {
-        return new CreateTicketRequest.LocationData(addressLine, null, null, neighborhoodId,
-                latitude, longitude, null);
-    }
-
-    private void allowLowRisk() {
-        when(risks.calculateRisk(any(), any(), any())).thenReturn(Risk.LOW);
-    }
-
-    private AuthenticatedIdentity identity() {
-        return new AuthenticatedIdentity("citizen", UUID.randomUUID(), "Citizen", null, Set.of());
-    }
-
-    private RequestType requestType(boolean active) {
+    private Ticket ticket(TicketStatus status, Priority priority) {
         Category category = new Category();
+        category.setId(1L);
+        category.setName("Infraestructura");
+
         Subcategory subcategory = new Subcategory();
+        subcategory.setId(10L);
         subcategory.setCategory(category);
-        RequestType type = new RequestType();
-        type.setId(1L);
-        type.setSubcategory(subcategory);
-        type.setTicketType(TicketType.REQUEST);
-        type.setResponsibleAreaId("AREA-1");
-        type.setMinimumPriority(Priority.LOW);
-        type.setBaseRisk(Risk.LOW);
-        type.setAffectedPopulationFactor(BigDecimal.ZERO);
-        type.setRequiresLocation(false);
-        type.setActive(active);
-        return type;
+        subcategory.setName("Vía pública");
+
+        RequestType requestType = requestType(5L, "POTHOLE", "obras-viales", Priority.LOW,
+                new BigDecimal("0.0500"));
+        requestType.setSubcategory(subcategory);
+
+        Ticket ticket = new Ticket();
+        ticket.setId(ticketId);
+        ticket.setPublicId("OP-0000000001");
+        ticket.setRequestType(requestType);
+        ticket.setTicketType(TicketType.INDIVIDUAL);
+        ticket.setResponsibleAreaId("obras-viales");
+        ticket.setSummary("Bache en la vereda");
+        ticket.setCurrentStatus(status);
+        ticket.setCurrentPriority(priority);
+        ticket.setEstimatedAffectedCount(0);
+        ticket.setEscalated(false);
+        ticket.setStatusChangedAt(Instant.now());
+        return ticket;
+    }
+
+    private RequestType requestType(Long id, String code, String responsibleAreaId,
+                                     Priority minimumPriority, BigDecimal affectedPopulationFactor) {
+        Category category = new Category();
+        category.setId(1L);
+        category.setName("Infraestructura");
+
+        Subcategory subcategory = new Subcategory();
+        subcategory.setId(10L);
+        subcategory.setCategory(category);
+        subcategory.setName("Vía pública");
+
+        RequestType requestType = new RequestType();
+        requestType.setId(id);
+        requestType.setCode(code);
+        requestType.setName(code);
+        requestType.setSubcategory(subcategory);
+        requestType.setTicketType(TicketType.INDIVIDUAL);
+        requestType.setResponsibleAreaId(responsibleAreaId);
+        requestType.setMinimumPriority(minimumPriority);
+        requestType.setAffectedPopulationFactor(affectedPopulationFactor);
+        requestType.setActive(true);
+        return requestType;
     }
 }

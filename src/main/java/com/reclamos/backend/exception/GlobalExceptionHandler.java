@@ -38,6 +38,11 @@ public class GlobalExceptionHandler {
         return ResponseEntity.unprocessableEntity().body(body);
     }
 
+    @ExceptionHandler(TicketStateConflictException.class)
+    public ResponseEntity<ApiErrorResponse> handleTicketStateConflict(TicketStateConflictException exception) {
+        return response(HttpStatus.CONFLICT, exception.getMessage());
+    }
+
     private ResponseEntity<ApiErrorResponse> response(HttpStatus status, String message) {
         ApiErrorResponse body = new ApiErrorResponse(Instant.now(), status.value(),
                 status.getReasonPhrase(), message);
