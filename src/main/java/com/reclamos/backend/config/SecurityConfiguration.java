@@ -40,6 +40,8 @@ public class SecurityConfiguration {
                         .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/auth/me").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/tickets").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/api/tickets/*/information-request").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/api/tickets/*/information-response").authenticated()
                         .anyRequest().permitAll()
                 )
                 .addFilterBefore(bearerTokenAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)

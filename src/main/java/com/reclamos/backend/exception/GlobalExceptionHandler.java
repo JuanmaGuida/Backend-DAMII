@@ -38,6 +38,21 @@ public class GlobalExceptionHandler {
         return ResponseEntity.unprocessableEntity().body(body);
     }
 
+    @ExceptionHandler(InformationRequestConflictException.class)
+    public ResponseEntity<ApiErrorResponse> handleConflict(InformationRequestConflictException exception) {
+        return response(HttpStatus.CONFLICT, exception.getMessage());
+    }
+
+    @ExceptionHandler(InformationRequestExpiredException.class)
+    public ResponseEntity<ApiErrorResponse> handleExpired(InformationRequestExpiredException exception) {
+        return response(HttpStatus.GONE, exception.getMessage());
+    }
+
+    @ExceptionHandler(UnauthorizedTicketOperationException.class)
+    public ResponseEntity<ApiErrorResponse> handleForbidden(UnauthorizedTicketOperationException exception) {
+        return response(HttpStatus.FORBIDDEN, exception.getMessage());
+    }
+
     private ResponseEntity<ApiErrorResponse> response(HttpStatus status, String message) {
         ApiErrorResponse body = new ApiErrorResponse(Instant.now(), status.value(),
                 status.getReasonPhrase(), message);
