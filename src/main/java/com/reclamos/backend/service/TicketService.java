@@ -1,18 +1,26 @@
 package com.reclamos.backend.service;
 
+import com.reclamos.backend.dto.TicketFilter;
+import com.reclamos.backend.dto.TicketResponse;
 import com.reclamos.backend.dto.request.CreateTicketRequest;
 import com.reclamos.backend.dto.response.CreateTicketResponse;
 import com.reclamos.backend.entity.*;
 import com.reclamos.backend.exception.EvidenceRequiredException;
 import com.reclamos.backend.exception.InvalidTicketRequestException;
 import com.reclamos.backend.exception.ResourceNotFoundException;
+import com.reclamos.backend.exception.TicketStateConflictException;
 import com.reclamos.backend.identity.AuthenticatedIdentity;
 import com.reclamos.backend.repository.*;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -20,6 +28,11 @@ import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -103,6 +116,186 @@ public class TicketService {
         activityRepository.save(activity);
         return new CreateTicketResponse(ticket.getId(), ticket.getPublicId(), trackingCode,
                 TicketStatus.REGISTERED);
+    }
+
+    /**
+     * Story 3.2 (BE - Endpoint de transición de estados del ticket): la única
+     * transición que corresponde a esta story es la toma de ticket por un agente,
+     * REGISTERED -&gt; IN_REVIEW. Las demás transiciones (ROUTED, RESOLVED, etc.) son
+     * stories aparte más adelante en el plan y no se tocan acá.
+     */
+    @Transactional
+    public TicketResponse startReview(UUID ticketId, AuthenticatedIdentity actor) {
+        Ticket ticket = loadForUpdate(ticketId);
+
+        if (ticket.getCurrentStatus() != TicketStatus.REGISTERED) {
+            throw new TicketStateConflictException(
+                    "El ticket está en estado " + ticket.getCurrentStatus()
+                            + " y no puede tomarse a revisión: sólo se puede tomar un ticket REGISTERED");
+        }
+
+        TicketStatus previousStatus = ticket.getCurrentStatus();
+        ticket.setCurrentStatus(TicketStatus.IN_REVIEW);
+        ticket.setStatusChangedAt(Instant.now());
+        if (actor != null && ticket.getAssignedAgentId() == null) {
+            ticket.setAssignedAgentId(actor.subjectId());
+        }
+        ticketRepository.save(ticket);
+
+        recordActivity(ticket, ActivityType.REVIEW_STARTED, previousStatus, TicketStatus.IN_REVIEW,
+                actor, null, null, null);
+
+        return toResponse(ticket, locationRepository.findByTicket_Id(ticketId).orElse(null));
+    }
+
+    /**
+     * Story 3.2 (BE - Endpoint de corrección de clasificación). Sólo se permite
+     * mientras el ticket está en su primera IN_REVIEW y todavía no se finalizó la
+     * clasificación (Entidades v1.3 §4.1 / Guía funcional §6).
+     * <p>
+     * OJO: esto recalcula responsibleAreaId, estimatedAffectedCount y aplica el piso
+     * de minimumPriority sobre currentPriority, tal como pide Decisiones #2. NO
+     * recalcula el SLA inicial (Decisiones #2 también lo pide) porque el módulo de
+     * SLA todavía no existe en este backend (Epic 6, Sprint 4). Tampoco vuelve a
+     * correr el motor de riesgo completo (RiskCalculationService necesita formData
+     * y form fields del alta original, que esta operación no recibe) — sólo aplica
+     * el piso de minimumPriority sin bajar la prioridad vigente, que es la única
+     * parte de la fórmula de prioridad que se puede recalcular sin volver a pedir
+     * las respuestas del formulario.
+     */
+    @Transactional
+    public TicketResponse correctClassification(UUID ticketId, Long newRequestTypeId, AuthenticatedIdentity actor) {
+        Ticket ticket = loadForUpdate(ticketId);
+
+        if (ticket.getCurrentStatus() != TicketStatus.IN_REVIEW || ticket.getClassificationFinalizedAt() != null) {
+            throw new TicketStateConflictException(
+                    "La clasificación sólo puede corregirse durante la primera revisión del ticket, "
+                            + "antes de derivarlo, iniciar gestión o vincularlo como duplicado");
+        }
+
+        RequestType newRequestType = requestTypeRepository.findById(newRequestTypeId)
+                .filter(RequestType::isActive)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "El Request Type solicitado no existe o está inactivo"));
+
+        RequestType previousRequestType = ticket.getRequestType();
+        Priority previousPriority = ticket.getCurrentPriority();
+
+        TicketLocation location = locationRepository.findByTicket_Id(ticketId).orElse(null);
+        int estimatedAffectedCount = estimateAffectedCount(newRequestType, location);
+        Priority newPriority = applyMinimumPriorityFloor(previousPriority, newRequestType.getMinimumPriority());
+
+        ticket.setRequestType(newRequestType);
+        ticket.setTicketType(newRequestType.getTicketType());
+        ticket.setResponsibleAreaId(newRequestType.getResponsibleAreaId());
+        ticket.setEstimatedAffectedCount(estimatedAffectedCount);
+        ticket.setCurrentPriority(newPriority);
+        ticketRepository.save(ticket);
+
+        String message = "RequestType corregido de '" + previousRequestType.getCode()
+                + "' a '" + newRequestType.getCode() + "' durante la revisión inicial";
+        recordActivity(ticket, ActivityType.REQUEST_TYPE_CHANGED, ticket.getCurrentStatus(), ticket.getCurrentStatus(),
+                actor, previousPriority, newPriority, message);
+
+        return toResponse(ticket, location);
+    }
+
+    /**
+     * Story 3.1 (BE - Endpoint de listado con filtros por categoría, prioridad,
+     * barrio/rol y estado). "Rol" del work item se interpretó como
+     * responsibleAreaId — ver el javadoc de TicketFilter.
+     */
+    @Transactional(readOnly = true)
+    public Page<TicketResponse> listTickets(TicketFilter filter, Pageable pageable) {
+        Specification<Ticket> specification = TicketSpecifications.build(filter);
+        Page<Ticket> page = ticketRepository.findAll(specification, pageable);
+
+        List<UUID> ticketIds = page.getContent().stream().map(Ticket::getId).toList();
+        Map<UUID, TicketLocation> locationsByTicket = locationRepository
+                .findAllByTicket_IdIn(ticketIds).stream()
+                .collect(Collectors.toMap(location -> location.getTicket().getId(), Function.identity()));
+
+        return page.map(ticket -> toResponse(ticket, locationsByTicket.get(ticket.getId())));
+    }
+
+    private Ticket loadForUpdate(UUID ticketId) {
+        return ticketRepository.findByIdForUpdate(ticketId)
+                .orElseThrow(() -> new ResourceNotFoundException("El ticket solicitado no existe"));
+    }
+
+    private int estimateAffectedCount(RequestType requestType, TicketLocation location) {
+        if (location == null || location.getNeighborhood() == null
+                || requestType.getAffectedPopulationFactor() == null) {
+            return 0;
+        }
+        BigDecimal population = BigDecimal.valueOf(location.getNeighborhood().getPopulation());
+        return population.multiply(requestType.getAffectedPopulationFactor())
+                .setScale(0, RoundingMode.HALF_UP)
+                .intValue();
+    }
+
+    private Priority applyMinimumPriorityFloor(Priority current, Priority floor) {
+        if (current == null) {
+            return floor;
+        }
+        return current.ordinal() >= floor.ordinal() ? current : floor;
+    }
+
+    private void recordActivity(Ticket ticket, ActivityType actionType, TicketStatus previousStatus,
+                                 TicketStatus newStatus, AuthenticatedIdentity actor,
+                                 Priority previousPriority, Priority newPriority, String message) {
+        long nextSequence = activityRepository.countByTicket_Id(ticket.getId()) + 1;
+
+        TicketActivity activity = new TicketActivity();
+        activity.setTicket(ticket);
+        activity.setSequence((int) nextSequence);
+        activity.setActionType(actionType);
+        activity.setPreviousStatus(previousStatus);
+        activity.setNewStatus(newStatus);
+        // ActorType hoy sólo tiene CITIZEN/AGENT/AREA_RESPONSIBLE/ADMIN (aviso aparte:
+        // esto no matchea el contrato de Eventos v1.6 §5.2, que espera SYSTEM en vez de
+        // ADMIN para un actor no identificado). Se usa ADMIN acá como el más parecido a
+        // "actor no identificado", pero hay que revisarlo cuando se corrija el enum o el
+        // contrato de eventos.
+        activity.setActorType(actor != null ? ActorType.AGENT : ActorType.ADMIN);
+        activity.setActorId(actor != null ? actor.subjectId() : null);
+        activity.setPreviousPriority(previousPriority);
+        activity.setNewPriority(newPriority);
+        activity.setMessage(message);
+        activity.setOccurredAt(Instant.now());
+        activityRepository.save(activity);
+    }
+
+    private TicketResponse toResponse(Ticket ticket, TicketLocation location) {
+        RequestType requestType = ticket.getRequestType();
+        Subcategory subcategory = requestType.getSubcategory();
+        Category category = subcategory.getCategory();
+
+        TicketResponse response = new TicketResponse();
+        response.setId(ticket.getId());
+        response.setPublicId(ticket.getPublicId());
+        response.setRequestTypeCode(requestType.getCode());
+        response.setRequestTypeName(requestType.getName());
+        response.setCategoryName(category.getName());
+        response.setSubcategoryName(subcategory.getName());
+        response.setTicketType(ticket.getTicketType());
+        response.setSummary(ticket.getSummary());
+        response.setCurrentStatus(ticket.getCurrentStatus());
+        response.setCurrentPriority(ticket.getCurrentPriority());
+        response.setResponsibleAreaId(ticket.getResponsibleAreaId());
+        response.setAssignedAgentId(ticket.getAssignedAgentId());
+        response.setAnonymous(ticket.isAnonymous());
+        response.setEstimatedAffectedCount(ticket.getEstimatedAffectedCount());
+        response.setEscalated(ticket.isEscalated());
+        if (location != null && location.getNeighborhood() != null) {
+            response.setNeighborhoodId(location.getNeighborhood().getId());
+            response.setNeighborhoodName(location.getNeighborhood().getName());
+        }
+        response.setClassificationFinalizedAt(ticket.getClassificationFinalizedAt());
+        response.setStatusChangedAt(ticket.getStatusChangedAt());
+        response.setCreatedAt(ticket.getCreatedAt());
+        response.setUpdatedAt(ticket.getUpdatedAt());
+        return response;
     }
 
     private void validateLocation(RequestType type, CreateTicketRequest.LocationData location) {
