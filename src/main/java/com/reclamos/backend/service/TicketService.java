@@ -33,6 +33,7 @@ public class TicketService {
     private final NeighborhoodRepository neighborhoodRepository;
     private final FormValidationService formValidationService;
     private final RiskCalculationService riskCalculationService;
+    private final TrackingCodeService trackingCodeService;
 
     @Transactional
     public CreateTicketResponse create(CreateTicketRequest request, AuthenticatedIdentity identity,
@@ -58,8 +59,8 @@ public class TicketService {
         String trackingCode;
         String trackingHash;
         do {
-            trackingCode = generateTrackingCode();
-            trackingHash = hash(trackingCode);
+            trackingCode = trackingCodeService.generate();
+            trackingHash = trackingCodeService.hash(trackingCode);
         } while (ticketRepository.existsByTrackingCodeHash(trackingHash));
 
         String publicId;
@@ -150,26 +151,11 @@ public class TicketService {
         return minimum.ordinal() >= fromRisk.ordinal() ? minimum : fromRisk;
     }
 
-    private String generateTrackingCode() {
-        byte[] random = new byte[24];
-        SECURE_RANDOM.nextBytes(random);
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(random);
-    }
-
     private String generatePublicId() {
         StringBuilder value = new StringBuilder("OP-");
         for (int index = 0; index < 10; index++) {
             value.append(SECURE_RANDOM.nextInt(10));
         }
         return value.toString();
-    }
-
-    private String hash(String code) {
-        try {
-            return Base64.getEncoder().encodeToString(MessageDigest.getInstance("SHA-256")
-                    .digest(code.getBytes(StandardCharsets.UTF_8)));
-        } catch (NoSuchAlgorithmException impossible) {
-            throw new IllegalStateException("SHA-256 no está disponible", impossible);
-        }
     }
 }

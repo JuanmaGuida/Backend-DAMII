@@ -31,13 +31,15 @@ class TicketServiceTest {
     private final NeighborhoodRepository neighborhoods = mock(NeighborhoodRepository.class);
     private final FormValidationService forms = mock(FormValidationService.class);
     private final RiskCalculationService risks = mock(RiskCalculationService.class);
+    private final TrackingCodeService trackingCodes = new TrackingCodeService();
     private TicketService service;
     private RequestType requestType;
 
     @BeforeEach
     void setUp() {
         reset(requestTypes, tickets, activities, locations, neighborhoods, forms, risks);
-        service = new TicketService(requestTypes, tickets, activities, locations, neighborhoods, forms, risks);
+        service = new TicketService(requestTypes, tickets, activities, locations, neighborhoods, forms, risks,
+                trackingCodes);
         requestType = requestType(true);
         when(requestTypes.findById(1L)).thenReturn(Optional.of(requestType));
         when(tickets.save(any())).thenAnswer(invocation -> {
@@ -115,6 +117,24 @@ class TicketServiceTest {
         verify(tickets, times(2)).save(argThat(ticket -> !ticket.getTrackingCodeHash().equals(first.trackingCode())
                 && !ticket.getTrackingCodeHash().equals(second.trackingCode())));
     }
+
+    @Test
+    void createdTrackingCodeImmediatelyFindsTheSameTicket() {
+        allowLowRisk();
+        CreateTicketResponse created = service.create(request(), identity(), null);
+        var savedTicket = org.mockito.ArgumentCaptor.forClass(Ticket.class);
+        verify(tickets).save(savedTicket.capture());
+        Ticket ticket = savedTicket.getValue();
+        ticket.setCreatedAt(java.time.Instant.parse("2026-09-02T18:00:00Z"));
+        when(tickets.findByTrackingCodeHash(trackingCodes.hash(created.trackingCode())))
+                .thenReturn(Optional.of(ticket));
+
+        var tracked = new TrackingService(tickets, trackingCodes).findByTrackingCode(created.trackingCode());
+
+        assertEquals(created.publicId(), tracked.getPublicId());
+        assertEquals(created.status(), tracked.getCurrentStatus());
+    }
+
 
     @Test
     void minimumPriorityIsAlwaysAppliedAsFloor() {

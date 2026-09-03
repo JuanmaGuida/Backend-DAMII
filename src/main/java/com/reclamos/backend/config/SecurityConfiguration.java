@@ -42,6 +42,7 @@ public class SecurityConfiguration {
                         .requestMatchers(HttpMethod.POST, "/api/tickets").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/tickets/*/information-request").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/tickets/*/information-response").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/api/tracking/access").permitAll()
                         .anyRequest().permitAll()
                 )
                 .addFilterBefore(bearerTokenAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
