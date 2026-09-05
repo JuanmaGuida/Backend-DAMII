@@ -8,6 +8,7 @@ import com.reclamos.backend.exception.FormValidationException;
 import com.reclamos.backend.exception.InvalidTicketRequestException;
 import com.reclamos.backend.exception.ResourceNotFoundException;
 import com.reclamos.backend.identity.AuthenticatedIdentity;
+import com.reclamos.backend.identity.ModuleRole;
 import com.reclamos.backend.repository.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -16,7 +17,6 @@ import org.springframework.mock.web.MockMultipartFile;
 import java.math.BigDecimal;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -231,7 +231,7 @@ class TicketServiceTest {
     }
 
     private AuthenticatedIdentity identity() {
-        return new AuthenticatedIdentity("citizen", UUID.randomUUID(), "Citizen", null, Set.of());
+        return new AuthenticatedIdentity("citizen", UUID.randomUUID(), "Citizen", null, ModuleRole.CITIZEN);
     }
 
     private RequestType requestType(boolean active) {
