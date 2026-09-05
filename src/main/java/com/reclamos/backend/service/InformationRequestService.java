@@ -15,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.EnumSet;
+import java.util.Objects;
 import java.util.UUID;
 
 @Service
@@ -34,8 +35,11 @@ public class InformationRequestService {
     @Transactional
     public InformationRequestResponse requestInformation(UUID ticketId, CreateInformationRequest request,
                                                          AuthenticatedIdentity identity) {
-        requireAgent(identity); // Valida quien solicita información tenga permisos de agente
+        requireInformationRequester(identity);
         Ticket ticket = lockedTicket(ticketId); // Se bloquea el ticket para evitar modificaciones concurrentes
+        if (Objects.equals(identity.citizenId(), ticket.getCitizenId())) {
+            throw new UnauthorizedTicketOperationException();
+        }
         if (!REQUESTABLE_STATUSES.contains(ticket.getCurrentStatus())) { // No se permite solicitar información desde estados incompatibles
             throw new InformationRequestConflictException(
                     "El estado actual del ticket no permite solicitar información");
@@ -49,7 +53,8 @@ public class InformationRequestService {
         InformationRequest informationRequest = new InformationRequest(); // Se crea la solicitud y se registra quién la realizó, el mensaje y el plazo
         informationRequest.setTicket(ticket);
         informationRequest.setRequestedByModuleId(MODULE_ID);
-        informationRequest.setRequestedByActorType(ActorType.AGENT);
+        ActorType requesterType = identity.role() == ModuleRole.ADMIN ? ActorType.ADMIN : ActorType.AGENT;
+        informationRequest.setRequestedByActorType(requesterType);
         informationRequest.setRequestedByActorId(identity.subjectId());
         informationRequest.setMessageForCitizen(request.getMessageForCitizen());
         informationRequest.setInternalMessage(request.getInternalMessage());
@@ -63,7 +68,7 @@ public class InformationRequestService {
         ticket.setStatusChangedAt(requestedAt);
         ticketRepository.save(ticket);
         saveActivity(ticket, ActivityType.INFORMATION_REQUIRED, resumeStatus,
-                TicketStatus.PENDING_INFORMATION, ActorType.AGENT, identity.subjectId(),
+                TicketStatus.PENDING_INFORMATION, requesterType, identity.subjectId(),
                 null, request.getMessageForCitizen(), requestedAt); // Se registra el cambio en el historial funcional del ticket
         return response(informationRequest);
     }
@@ -172,8 +177,9 @@ public class InformationRequestService {
                 .orElseThrow(() -> new ResourceNotFoundException("Ticket no encontrado"));
     }
 
-    private void requireAgent(AuthenticatedIdentity identity) {
-        if (identity == null || !identity.roles().contains(ModuleRole.AGENT)) {
+    private void requireInformationRequester(AuthenticatedIdentity identity) {
+        if (identity == null
+                || (identity.role() != ModuleRole.AGENT && identity.role() != ModuleRole.ADMIN)) {
             throw new UnauthorizedTicketOperationException();
         }
     }

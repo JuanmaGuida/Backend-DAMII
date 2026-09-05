@@ -96,10 +96,23 @@ class CatalogControllerTest {
 
         mockMvc.perform(get("/api/catalog/categories/99/subcategories"))
                 .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("NOT_FOUND"))
+                .andExpect(jsonPath("$.length()").value(2))
                 .andExpect(jsonPath("$.message").value("La categoría solicitada no existe o está inactiva"));
         mockMvc.perform(get("/api/catalog/subcategories/98/request-types"))
                 .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("NOT_FOUND"))
+                .andExpect(jsonPath("$.length()").value(2))
                 .andExpect(jsonPath("$.message").value("La subcategoría solicitada no existe o está inactiva"));
+    }
+
+    @Test
+    void invalidPathVariableUsesCanonicalBadRequest() throws Exception {
+        mockMvc.perform(get("/api/catalog/categories/not-a-number/subcategories"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.message").value("El parámetro 'categoryId' tiene un valor inválido"))
+                .andExpect(jsonPath("$.length()").value(2));
     }
 
     @Test

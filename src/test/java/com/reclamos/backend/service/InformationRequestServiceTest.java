@@ -51,8 +51,20 @@ class InformationRequestServiceTest {
         assertEquals(TicketStatus.IN_PROGRESS, result.getResumeStatus());
         assertEquals(TicketStatus.PENDING_INFORMATION, ticket.getCurrentStatus());
         verify(requests).save(argThat(value -> value.getStatus() == InformationRequestStatus.PENDING
-                && value.getResumeStatus() == TicketStatus.IN_PROGRESS));
-        verify(activities).save(argThat(value -> value.getActionType() == ActivityType.INFORMATION_REQUIRED));
+                && value.getResumeStatus() == TicketStatus.IN_PROGRESS
+                && value.getRequestedByActorType() == ActorType.AGENT));
+        verify(activities).save(argThat(value -> value.getActionType() == ActivityType.INFORMATION_REQUIRED
+                && value.getActorType() == ActorType.AGENT));
+    }
+
+    @Test
+    void adminCreatesPendingRequestOnSomeoneElsesTicketAsAdminActor() {
+        var result = service.requestInformation(ticket.getId(),
+                new CreateInformationRequest("Adjunte el dato", null), admin());
+
+        assertEquals(InformationRequestStatus.PENDING, result.getStatus());
+        verify(requests).save(argThat(value -> value.getRequestedByActorType() == ActorType.ADMIN));
+        verify(activities).save(argThat(value -> value.getActorType() == ActorType.ADMIN));
     }
 
     @Test
@@ -67,9 +79,23 @@ class InformationRequestServiceTest {
     }
 
     @Test
-    void rejectsUnauthorizedRequester() {
+    void rejectsCitizenAndAreaResponsibleRequesters() {
         assertThrows(UnauthorizedTicketOperationException.class, () -> service.requestInformation(ticket.getId(),
                 new CreateInformationRequest("Dato", null), citizen()));
+        assertThrows(UnauthorizedTicketOperationException.class, () -> service.requestInformation(ticket.getId(),
+                new CreateInformationRequest("Dato", null), areaResponsible()));
+    }
+
+    @Test
+    void rejectsAgentAndAdminWhenTheyOwnTheTicket() {
+        AuthenticatedIdentity ownerAgent = identity(ModuleRole.AGENT, ticket.getCitizenId());
+        AuthenticatedIdentity ownerAdmin = identity(ModuleRole.ADMIN, ticket.getCitizenId());
+
+        assertThrows(UnauthorizedTicketOperationException.class, () -> service.requestInformation(ticket.getId(),
+                new CreateInformationRequest("Dato", null), ownerAgent));
+        assertThrows(UnauthorizedTicketOperationException.class, () -> service.requestInformation(ticket.getId(),
+                new CreateInformationRequest("Dato", null), ownerAdmin));
+        verify(requests, never()).save(any());
     }
 
     @Test
@@ -154,10 +180,23 @@ class InformationRequestServiceTest {
     }
 
     private AuthenticatedIdentity agent() {
-        return new AuthenticatedIdentity("agent", UUID.randomUUID(), "Agent", null, Set.of(ModuleRole.AGENT));
+        return identity(ModuleRole.AGENT, UUID.randomUUID());
+    }
+
+    private AuthenticatedIdentity admin() {
+        return identity(ModuleRole.ADMIN, UUID.randomUUID());
+    }
+
+    private AuthenticatedIdentity areaResponsible() {
+        return new AuthenticatedIdentity("area-responsible", UUID.randomUUID(), "Area Responsible", "M6",
+                ModuleRole.AREA_RESPONSIBLE);
     }
 
     private AuthenticatedIdentity citizen() {
-        return new AuthenticatedIdentity("citizen", ticket.getCitizenId(), "Citizen", null, Set.of());
+        return identity(ModuleRole.CITIZEN, ticket.getCitizenId());
+    }
+
+    private AuthenticatedIdentity identity(ModuleRole role, UUID citizenId) {
+        return new AuthenticatedIdentity(role.name().toLowerCase(), citizenId, role.name(), null, role);
     }
 }

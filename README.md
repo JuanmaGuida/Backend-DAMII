@@ -319,6 +319,8 @@ El profile `dev` incluye identidades simuladas para desarrollar sin depender de 
 ```text
 Username: citizen@example.test
 Password: <REDACTED>
+Role: CITIZEN
+Area ID: null
 ```
 
 ## Agente
@@ -326,6 +328,8 @@ Password: <REDACTED>
 ```text
 Username: agent@example.test
 Password: <REDACTED>
+Role: AGENT
+Area ID: null
 ```
 
 ## Responsable de área
@@ -333,20 +337,8 @@ Password: <REDACTED>
 ```text
 Username: area.responsible@example.test
 Password: <REDACTED>
-```
-
-## Supervisor
-
-```text
-Username: supervisor@example.test
-Password: <REDACTED>
-```
-
-## Auditor
-
-```text
-Username: auditor@example.test
-Password: <REDACTED>
+Role: AREA_RESPONSIBLE
+Area ID: M6
 ```
 
 ## Administrador de M2
@@ -354,6 +346,8 @@ Password: <REDACTED>
 ```text
 Username: module.admin@example.test
 Password: <REDACTED>
+Role: ADMIN
+Area ID: null
 ```
 
 Los tokens generados por las identidades mock se mantienen únicamente en memoria y se eliminan al reiniciar el backend.

@@ -54,9 +54,8 @@ public class BearerTokenAuthenticationFilter extends OncePerRequestFilter {
     }
 
     private void authenticate(AuthenticatedIdentity identity) {
-        List<SimpleGrantedAuthority> authorities = identity.roles().stream()
-                .map(role -> new SimpleGrantedAuthority("ROLE_" + role.name()))
-                .toList();
+        List<SimpleGrantedAuthority> authorities = List.of(
+                new SimpleGrantedAuthority("ROLE_" + identity.role().name()));
         UsernamePasswordAuthenticationToken authentication =
                 new UsernamePasswordAuthenticationToken(identity, null, authorities);
         SecurityContext context = SecurityContextHolder.createEmptyContext();

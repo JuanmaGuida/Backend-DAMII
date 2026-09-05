@@ -15,7 +15,6 @@ import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.Arrays;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -32,7 +31,7 @@ class MockIdentityProviderTest {
     private static final Instant START = Instant.parse("2026-08-30T12:00:00Z");
 
     @Test
-    void authenticatesCitizenWithoutInternalRoles() {
+    void authenticatesCitizenWithCitizenRole() {
         MockIdentityProvider provider = provider(new MutableClock(START));
 
         AuthenticatedSession session = authenticate(
@@ -45,26 +44,21 @@ class MockIdentityProviderTest {
         assertEquals(UUID.fromString("10000000-0000-0000-0000-000000000001"), session.identity().citizenId());
         assertInstanceOf(UUID.class, session.identity().citizenId());
         assertNull(session.identity().areaId());
-        assertTrue(session.identity().roles().isEmpty());
+        assertEquals(ModuleRole.CITIZEN, session.identity().role());
     }
 
     @Test
-    void authenticatesEveryInternalRoleWithExpectedIdentity() {
+    void authenticatesEveryCurrentRoleWithExpectedIdentity() {
         MockIdentityProvider provider = provider(new MutableClock(START));
 
         assertIdentity(provider, MockIdentityProvider.AGENT_USERNAME, MockIdentityProvider.AGENT_PASSWORD,
-                "m1-dev-agent", "10000000-0000-0000-0000-000000000002", "M2", ModuleRole.AGENT);
+                "m1-dev-agent", "10000000-0000-0000-0000-000000000002", null, ModuleRole.AGENT);
         assertIdentity(provider, MockIdentityProvider.AREA_RESPONSIBLE_USERNAME,
                 MockIdentityProvider.AREA_RESPONSIBLE_PASSWORD, "m1-dev-area-responsible",
                 "10000000-0000-0000-0000-000000000003", "M6", ModuleRole.AREA_RESPONSIBLE);
-        assertIdentity(provider, MockIdentityProvider.SUPERVISOR_USERNAME, MockIdentityProvider.SUPERVISOR_PASSWORD,
-                "m1-dev-supervisor", "10000000-0000-0000-0000-000000000004", "M2",
-                ModuleRole.SUPERVISOR);
-        assertIdentity(provider, MockIdentityProvider.AUDITOR_USERNAME, MockIdentityProvider.AUDITOR_PASSWORD,
-                "m1-dev-auditor", "10000000-0000-0000-0000-000000000005", "M2", ModuleRole.AUDITOR);
-        assertIdentity(provider, MockIdentityProvider.MODULE_ADMIN_USERNAME,
-                MockIdentityProvider.MODULE_ADMIN_PASSWORD, "m1-dev-module-admin",
-                "10000000-0000-0000-0000-000000000006", "M2", ModuleRole.MODULE_ADMIN);
+        assertIdentity(provider, MockIdentityProvider.ADMIN_USERNAME,
+                MockIdentityProvider.ADMIN_PASSWORD, "m1-dev-module-admin",
+                "10000000-0000-0000-0000-000000000006", null, ModuleRole.ADMIN);
     }
 
     @Test
@@ -180,7 +174,7 @@ class MockIdentityProviderTest {
         assertEquals(subjectId, identity.subjectId());
         assertEquals(UUID.fromString(citizenId), identity.citizenId());
         assertEquals(areaId, identity.areaId());
-        assertEquals(Set.of(role), identity.roles());
+        assertEquals(role, identity.role());
     }
 
     private static AuthenticatedSession authenticate(

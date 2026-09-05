@@ -1,5 +1,6 @@
 package com.reclamos.backend.config;
 
+import com.reclamos.backend.dto.error.ApiErrorResponse;
 import com.reclamos.backend.security.BearerTokenAuthenticationFilter;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
@@ -10,18 +11,23 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import tools.jackson.databind.ObjectMapper;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 
 @Configuration
 public class SecurityConfiguration {
-    private static final String UNAUTHORIZED_RESPONSE =
-            "{\"code\":\"INVALID_TOKEN\",\"message\":\"La sesión no es válida\"}";
+    private static final ApiErrorResponse UNAUTHORIZED_RESPONSE =
+            new ApiErrorResponse("INVALID_TOKEN", "La sesión no es válida");
+    private static final ApiErrorResponse FORBIDDEN_RESPONSE =
+            new ApiErrorResponse("FORBIDDEN", "No tiene permisos para realizar esta operación");
 
     @Bean
     SecurityFilterChain securityFilterChain(
             HttpSecurity http,
-            BearerTokenAuthenticationFilter bearerTokenAuthenticationFilter
+            BearerTokenAuthenticationFilter bearerTokenAuthenticationFilter,
+            ObjectMapper objectMapper
     ) throws Exception {
         return http
                 .csrf(csrf -> csrf.disable())
@@ -29,12 +35,11 @@ public class SecurityConfiguration {
                 .httpBasic(basic -> basic.disable())
                 .logout(logout -> logout.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .exceptionHandling(exceptions -> exceptions.authenticationEntryPoint((request, response, exception) -> {
-                    response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-                    response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-                    response.setCharacterEncoding(StandardCharsets.UTF_8.name());
-                    response.getWriter().write(UNAUTHORIZED_RESPONSE);
-                }))
+                .exceptionHandling(exceptions -> exceptions
+                        .authenticationEntryPoint((request, response, exception) -> writeError(
+                                response, objectMapper, HttpServletResponse.SC_UNAUTHORIZED, UNAUTHORIZED_RESPONSE))
+                        .accessDeniedHandler((request, response, exception) -> writeError(
+                                response, objectMapper, HttpServletResponse.SC_FORBIDDEN, FORBIDDEN_RESPONSE)))
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
                         .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
@@ -47,5 +52,13 @@ public class SecurityConfiguration {
                 )
                 .addFilterBefore(bearerTokenAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .build();
+    }
+
+    private static void writeError(HttpServletResponse response, ObjectMapper objectMapper, int status,
+                                   ApiErrorResponse body) throws IOException {
+        response.setStatus(status);
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+        objectMapper.writeValue(response.getWriter(), body);
     }
 }

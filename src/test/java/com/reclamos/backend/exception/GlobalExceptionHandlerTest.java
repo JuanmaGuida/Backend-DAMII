@@ -1,6 +1,6 @@
 package com.reclamos.backend.exception;
 
-import com.reclamos.backend.dto.response.ApiErrorResponse;
+import com.reclamos.backend.dto.error.ApiErrorResponse;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.ResponseEntity;
 
@@ -13,8 +13,8 @@ class GlobalExceptionHandlerTest {
                 .handleEvidenceRequired(new EvidenceRequiredException());
 
         assertEquals(422, response.getStatusCode().value());
-        assertEquals("EVIDENCE_REQUIRED", response.getBody().getCode());
+        assertEquals("EVIDENCE_REQUIRED", response.getBody().code());
         assertEquals("El nivel de riesgo detectado requiere adjuntar al menos una evidencia.",
-                response.getBody().getMessage());
+                response.getBody().message());
     }
 }
