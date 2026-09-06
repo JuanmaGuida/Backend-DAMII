@@ -84,6 +84,7 @@ class TicketServiceTest {
         assertThrows(IllegalArgumentException.class, () -> UUID.fromString(response.publicId()));
         verify(tickets).save(argThat(ticket -> ticket.getCurrentStatus() == TicketStatus.REGISTERED
                 && ticket.getTicketType() == requestType.getTicketType()
+                && ticket.getResponsibleAreaId().equals("M6")
                 && ticket.getResponsibleAreaId().equals(requestType.getResponsibleAreaId())
                 && ticket.getFormTemplateId().equals(3L)
                 && ticket.getRequestType().getSubcategory().getCategory() != null
@@ -328,7 +329,7 @@ class TicketServiceTest {
         type.setId(1L);
         type.setSubcategory(subcategory);
         type.setTicketType(TicketType.REQUEST);
-        type.setResponsibleAreaId("AREA-1");
+        type.setResponsibleAreaId("M6");
         type.setMinimumPriority(Priority.LOW);
         type.setBaseRisk(Risk.LOW);
         type.setAffectedPopulationFactor(BigDecimal.ZERO);

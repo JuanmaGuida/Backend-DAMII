@@ -92,15 +92,15 @@ class CatalogServiceTest {
         Subcategory subcategory = subcategory(20L, category, "Calles", true);
         when(subcategoryRepository.findById(20L)).thenReturn(Optional.of(subcategory));
         when(requestTypeRepository.findBySubcategory_IdAndActiveTrueOrderByNameAsc(20L))
-                .thenReturn(List.of(requestType(8L, subcategory, "BACHE", "Informar bache"),
-                        requestType(9L, subcategory, "PAVIMENTO", "Reparar pavimento")));
+                .thenReturn(List.of(requestType(8L, subcategory, "BACHE", "Informar bache", "M3"),
+                        requestType(9L, subcategory, "LUMINARIA", "Informar luminaria", "M6")));
 
         List<RequestTypeResponse> result = service.getRequestTypes(20L);
 
-        assertEquals(List.of("Informar bache", "Reparar pavimento"),
+        assertEquals(List.of("Informar bache", "Informar luminaria"),
                 result.stream().map(RequestTypeResponse::getName).toList());
         assertEquals(TicketType.COMPLAINT, result.getFirst().getTicketType());
-        assertEquals("Obras Públicas", result.getFirst().getResponsibleAreaId());
+        assertEquals(List.of("M3", "M6"), result.stream().map(RequestTypeResponse::getResponsibleAreaId).toList());
         assertInstanceOf(RequestTypeResponse.class, result.getFirst());
         verify(requestTypeRepository).findBySubcategory_IdAndActiveTrueOrderByNameAsc(20L);
     }
@@ -140,7 +140,8 @@ class CatalogServiceTest {
         return subcategory;
     }
 
-    private RequestType requestType(Long id, Subcategory subcategory, String code, String name) {
+    private RequestType requestType(Long id, Subcategory subcategory, String code, String name,
+                                    String responsibleAreaId) {
         RequestType requestType = new RequestType();
         requestType.setId(id);
         requestType.setSubcategory(subcategory);
@@ -148,7 +149,7 @@ class CatalogServiceTest {
         requestType.setName(name);
         requestType.setDescription(name + " descripción");
         requestType.setTicketType(TicketType.COMPLAINT);
-        requestType.setResponsibleAreaId("Obras Públicas");
+        requestType.setResponsibleAreaId(responsibleAreaId);
         requestType.setAllowsAnonymous(true);
         requestType.setRequiresLocation(true);
         requestType.setActive(true);
