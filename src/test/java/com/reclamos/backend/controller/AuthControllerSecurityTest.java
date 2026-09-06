@@ -25,6 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.mockito.Mockito.when;
+import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -71,7 +72,7 @@ class AuthControllerSecurityTest {
                 .andExpect(jsonPath("$.identity.subjectId").value("m1-dev-agent"))
                 .andExpect(jsonPath("$.identity.citizenId")
                         .value("10000000-0000-0000-0000-000000000002"))
-                .andExpect(jsonPath("$.identity.areaId").doesNotExist())
+                .andExpect(jsonPath("$.identity.areaId").value(nullValue()))
                 .andExpect(jsonPath("$.identity.role").value("AGENT"))
                 .andExpect(jsonPath("$.identity.roles").doesNotExist())
                 .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("password"))))
@@ -158,7 +159,7 @@ class AuthControllerSecurityTest {
                 .andExpect(jsonPath("$.subjectId").value("m1-dev-agent"))
                 .andExpect(jsonPath("$.citizenId").value("10000000-0000-0000-0000-000000000002"))
                 .andExpect(jsonPath("$.displayName").value("Agente de prueba"))
-                .andExpect(jsonPath("$.areaId").doesNotExist())
+                .andExpect(jsonPath("$.areaId").value(nullValue()))
                 .andExpect(jsonPath("$.role").value("AGENT"))
                 .andExpect(jsonPath("$.roles").doesNotExist())
                 .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("ROLE_AGENT"))));

@@ -155,6 +155,26 @@ class SecurityHardeningIntegrationTest {
     }
 
     @Test
+    void swaggerUiCanonicalSpecAndGeneratedViewArePublic() throws Exception {
+        mockMvc.perform(get("/swagger-ui.html"))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(header().string("Location", "/swagger-ui/index.html"));
+        mockMvc.perform(get("/swagger-ui/index.html"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_HTML));
+        mockMvc.perform(get("/openapi.yaml"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.startsWith("openapi: 3.")));
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.paths['/actuator/health']").doesNotExist());
+        mockMvc.perform(get("/v3/api-docs/swagger-config"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.url").value("/openapi.yaml"));
+    }
+
+    @Test
     void everyProtectedEndpointReturnsCanonicalUnauthorizedWithoutValidToken() throws Exception {
         List<RequestBuilder> requests = List.of(
                 get("/api/auth/me"),

@@ -196,6 +196,27 @@ Resultado esperado:
 
 ---
 
+# OpenAPI y Swagger UI
+
+El contrato REST canónico y versionado se encuentra en:
+
+```text
+src/main/resources/static/openapi.yaml
+```
+
+Con el backend en ejecución, Swagger UI está disponible en:
+
+```text
+http://localhost:8080/swagger-ui.html
+```
+
+La UI carga el contrato local `/openapi.yaml`. Para probar operaciones protegidas, obtener un token en
+`POST /api/auth/login`, seleccionar **Authorize** e ingresar el token Bearer. Ese login corresponde al proveedor
+de identidad mock del entorno `dev`; no representa el mecanismo productivo definitivo. El contrato documenta
+únicamente los endpoints implementados actualmente por el Backend M2.
+
+---
+
 # Flyway
 
 La estructura y evolución de la base de datos se administran mediante **Flyway**.
