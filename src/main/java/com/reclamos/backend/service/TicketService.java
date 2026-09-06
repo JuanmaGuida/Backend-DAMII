@@ -20,6 +20,7 @@ import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.HashMap;
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -34,6 +35,7 @@ public class TicketService {
     private final FormValidationService formValidationService;
     private final RiskCalculationService riskCalculationService;
     private final TrackingCodeService trackingCodeService;
+    private final AttachmentService attachmentService;
 
     @Transactional
     public CreateTicketResponse create(CreateTicketRequest request, AuthenticatedIdentity identity,
@@ -49,10 +51,8 @@ public class TicketService {
         ResolvedForm resolvedForm = formValidationService.resolveAndValidate(requestType, request.formData());
         RiskAssessment assessment = riskCalculationService.calculateRisk(requestType, resolvedForm);
         Risk risk = assessment.calculatedRisk();
-        // TODO Attachment: evidence is only checked for presence in this US. Persist it when storage exists.
-        boolean validEvidence = evidence != null && java.util.Arrays.stream(evidence)
-                .anyMatch(file -> file != null && !file.isEmpty() && file.getSize() > 0);
-        if ((risk == Risk.HIGH || risk == Risk.CRITICAL) && !validEvidence) {
+        List<AttachmentService.ValidatedAttachment> validatedAttachments = attachmentService.validate(evidence);
+        if ((risk == Risk.HIGH || risk == Risk.CRITICAL) && validatedAttachments.isEmpty()) {
             throw new EvidenceRequiredException();
         }
         validateLocation(requestType, request.location());
@@ -90,6 +90,11 @@ public class TicketService {
         ticket.setPublic(false);
         ticket.setStatusChangedAt(now);
         ticket = ticketRepository.save(ticket);
+        ticketRepository.flush();
+
+        if (!validatedAttachments.isEmpty()) {
+            attachmentService.storeForTicket(ticket, identity, validatedAttachments, now);
+        }
 
         if (request.location() != null) {
             locationRepository.save(toLocation(ticket, request.location()));
@@ -104,6 +109,7 @@ public class TicketService {
         activity.setActorId(identity.subjectId());
         activity.setOccurredAt(now);
         activityRepository.save(activity);
+        ticketRepository.flush();
         return new CreateTicketResponse(ticket.getId(), ticket.getPublicId(), trackingCode,
                 TicketStatus.REGISTERED);
     }

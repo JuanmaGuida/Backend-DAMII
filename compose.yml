@@ -26,8 +26,16 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-reclamos}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-reclamos}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-reclamos_local}
+      ATTACHMENT_STORAGE_ROOT: ${ATTACHMENT_STORAGE_ROOT:-/var/lib/m2/attachments}
+      ATTACHMENT_MAX_FILES: ${ATTACHMENT_MAX_FILES:-5}
+      ATTACHMENT_MAX_FILE_SIZE: ${ATTACHMENT_MAX_FILE_SIZE:-10MB}
+      ATTACHMENT_MAX_TOTAL_SIZE: ${ATTACHMENT_MAX_TOTAL_SIZE:-50MB}
+      ATTACHMENT_MAX_REQUEST_SIZE: ${ATTACHMENT_MAX_REQUEST_SIZE:-55MB}
+      ATTACHMENT_ALLOWED_CONTENT_TYPES: ${ATTACHMENT_ALLOWED_CONTENT_TYPES:-image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf}
     ports:
       - "${APP_PORT:-8080}:8080"
+    volumes:
+      - attachment_data:/var/lib/m2/attachments
     depends_on:
       postgres:
         condition: service_healthy
@@ -35,3 +43,4 @@ services:
 
 volumes:
   postgres_data:
+  attachment_data:

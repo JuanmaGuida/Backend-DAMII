@@ -3,6 +3,7 @@ package com.reclamos.backend.service;
 import com.reclamos.backend.dto.request.CreateTicketRequest;
 import com.reclamos.backend.dto.response.CreateTicketResponse;
 import com.reclamos.backend.entity.*;
+import com.reclamos.backend.exception.AttachmentStorageUnavailableException;
 import com.reclamos.backend.exception.EvidenceRequiredException;
 import com.reclamos.backend.exception.FormValidationException;
 import com.reclamos.backend.exception.InvalidTicketRequestException;
@@ -33,15 +34,16 @@ class TicketServiceTest {
     private final NeighborhoodRepository neighborhoods = mock(NeighborhoodRepository.class);
     private final FormValidationService forms = mock(FormValidationService.class);
     private final RiskCalculationService risks = mock(RiskCalculationService.class);
+    private final AttachmentService attachments = mock(AttachmentService.class);
     private final TrackingCodeService trackingCodes = new TrackingCodeService();
     private TicketService service;
     private RequestType requestType;
 
     @BeforeEach
     void setUp() {
-        reset(requestTypes, tickets, activities, locations, neighborhoods, forms, risks);
+        reset(requestTypes, tickets, activities, locations, neighborhoods, forms, risks, attachments);
         service = new TicketService(requestTypes, tickets, activities, locations, neighborhoods, forms, risks,
-                trackingCodes);
+                trackingCodes, attachments);
         requestType = requestType(true);
         when(requestTypes.findById(1L)).thenReturn(Optional.of(requestType));
         FormTemplate template = new FormTemplate();
@@ -56,6 +58,18 @@ class TicketServiceTest {
             ticket.setId(UUID.randomUUID());
             return ticket;
         });
+        when(attachments.validate(nullable(org.springframework.web.multipart.MultipartFile[].class)))
+                .thenAnswer(invocation -> {
+                    org.springframework.web.multipart.MultipartFile[] files = invocation.getArgument(0);
+                    if (files == null || files.length == 0) {
+                        return List.of();
+                    }
+                    return java.util.Arrays.stream(files)
+                            .map(file -> new AttachmentService.ValidatedAttachment(file, file.getOriginalFilename(),
+                                    file.getContentType(), file.getSize()))
+                            .toList();
+                });
+        when(attachments.storeForTicket(any(), any(), anyList(), any())).thenReturn(List.of());
     }
 
     @Test
@@ -92,6 +106,7 @@ class TicketServiceTest {
                 .thenReturn(new RiskAssessment(62, Risk.HIGH), new RiskAssessment(100, Risk.CRITICAL));
         assertNotNull(service.create(request(), identity(), new MockMultipartFile[]{evidence}).ticketId());
         assertNotNull(service.create(request(), identity(), new MockMultipartFile[]{evidence}).ticketId());
+        verify(attachments, times(2)).storeForTicket(any(), any(), argThat(items -> items.size() == 1), any());
     }
 
     @Test
@@ -226,6 +241,33 @@ class TicketServiceTest {
         verify(tickets).save(argThat(ticket -> ticket.getCreatedAt() == null
                 && ticket.getUpdatedAt() == null && ticket.getStatusChangedAt() != null));
         verify(locations, never()).save(any());
+        verify(attachments, never()).storeForTicket(any(), any(), anyList(), any());
+    }
+
+    @Test
+    void voluntaryEvidenceIsStoredForLowRisk() {
+        allowLowRisk();
+        MockMultipartFile evidence = new MockMultipartFile("evidence", "photo.webp", "image/webp",
+                new byte[]{1});
+
+        service.create(request(), identity(), new MockMultipartFile[]{evidence});
+
+        verify(attachments).storeForTicket(any(Ticket.class), any(AuthenticatedIdentity.class),
+                argThat(items -> items.size() == 1 && items.getFirst().file() == evidence), any());
+    }
+
+    @Test
+    void storageFailurePreventsActivityAndSuccessfulResponse() {
+        allowLowRisk();
+        MockMultipartFile evidence = new MockMultipartFile("evidence", "photo.jpg", "image/jpeg",
+                new byte[]{1});
+        doThrow(new AttachmentStorageUnavailableException()).when(attachments)
+                .storeForTicket(any(), any(), anyList(), any());
+
+        assertThrows(AttachmentStorageUnavailableException.class,
+                () -> service.create(request(), identity(), new MockMultipartFile[]{evidence}));
+
+        verify(activities, never()).save(any());
     }
 
     @Test
