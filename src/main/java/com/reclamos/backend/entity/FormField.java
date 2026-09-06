@@ -50,9 +50,6 @@ public class FormField {
     @Column(nullable = false, length = 20)
     private FormFieldType type;
 
-    @Column(nullable = false)
-    private Boolean required = false;
-
     @Column(name = "display_order", nullable = false)
     private Integer displayOrder;
 

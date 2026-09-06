@@ -19,6 +19,8 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.when;
 
@@ -38,6 +40,7 @@ class FormValidationServiceTest {
         service = new FormValidationService(templateRepository, fieldRepository);
         requestType = new RequestType();
         requestType.setId(17L);
+        requestType.setActive(true);
         template = new FormTemplate();
         template.setId(3L);
         when(templateRepository.findFirstByRequestType_IdAndActiveTrueOrderByVersionDesc(17L))
@@ -45,34 +48,29 @@ class FormValidationServiceTest {
     }
 
     @Test
-    void acceptsValidFormAndMissingOptionalField() {
+    void acceptsValidPartialFormAndAllFieldsMayBeOmitted() {
         configureFields(
-                field("description", "Descripción", FormFieldType.TEXT, true, Map.of()),
-                field("additional", "Referencia adicional", FormFieldType.TEXT, false, Map.of()),
-                field("danger", "Peligro", FormFieldType.BOOLEAN, true, Map.of()),
-                field("amount", "Cantidad", FormFieldType.NUMBER, true, Map.of())
+                field("description", "Descripción", FormFieldType.TEXT, Map.of()),
+                field("additional", "Referencia adicional", FormFieldType.TEXT, Map.of()),
+                field("danger", "Peligro", FormFieldType.BOOLEAN, Map.of()),
+                field("amount", "Cantidad", FormFieldType.NUMBER, Map.of())
         );
 
         assertDoesNotThrow(() -> service.validate(requestType,
                 Map.of("description", "Frente a la plaza", "danger", true, "amount", 2.5)));
-    }
-
-    @Test
-    void rejectsMissingRequiredField() {
-        configureFields(field("description", "Descripción", FormFieldType.TEXT, true, Map.of()));
-        assertThrows(FormValidationException.class, () -> service.validate(requestType, Map.of()));
+        assertDoesNotThrow(() -> service.validate(requestType, Map.of()));
     }
 
     @Test
     void rejectsNumberForText() {
-        configureFields(field("reference", "Referencia", FormFieldType.TEXT, false, Map.of()));
+        configureFields(field("reference", "Referencia", FormFieldType.TEXT, Map.of()));
         assertThrows(FormValidationException.class,
                 () -> service.validate(requestType, Map.of("reference", 123)));
     }
 
     @Test
     void rejectsStringForBoolean() {
-        configureFields(field("danger", "Peligro", FormFieldType.BOOLEAN, false, Map.of()));
+        configureFields(field("danger", "Peligro", FormFieldType.BOOLEAN, Map.of()));
         assertThrows(FormValidationException.class,
                 () -> service.validate(requestType, Map.of("danger", "true")));
     }
@@ -92,22 +90,67 @@ class FormValidationServiceTest {
 
     @Test
     void rejectsUnknownField() {
-        configureFields(field("reference", "Referencia", FormFieldType.TEXT, false, Map.of()));
+        configureFields(field("reference", "Referencia", FormFieldType.TEXT, Map.of()));
         assertThrows(FormValidationException.class,
                 () -> service.validate(requestType, Map.of("invented", "value")));
     }
 
     @Test
     void acceptsIsoDate() {
-        configureFields(field("date", "Fecha", FormFieldType.DATE, true, Map.of()));
+        configureFields(field("date", "Fecha", FormFieldType.DATE, Map.of()));
         assertDoesNotThrow(() -> service.validate(requestType, Map.of("date", "2026-08-30")));
     }
 
     @Test
     void rejectsInvalidDate() {
-        configureFields(field("date", "Fecha", FormFieldType.DATE, true, Map.of()));
+        configureFields(field("date", "Fecha", FormFieldType.DATE, Map.of()));
         assertThrows(FormValidationException.class,
                 () -> service.validate(requestType, Map.of("date", "30/08/2026")));
+    }
+
+    @Test
+    void preservesFalseZeroAndNullInValidatedData() {
+        configureFields(
+                field("danger", "Peligro", FormFieldType.BOOLEAN, Map.of()),
+                field("amount", "Cantidad", FormFieldType.NUMBER, Map.of()),
+                field("comment", "Comentario", FormFieldType.TEXT, Map.of())
+        );
+        Map<String, Object> data = new HashMap<>();
+        data.put("danger", false);
+        data.put("amount", 0);
+        data.put("comment", null);
+
+        ResolvedForm resolved = service.resolveAndValidate(requestType, data);
+
+        assertEquals(false, resolved.formData().get("danger"));
+        assertEquals(0, resolved.formData().get("amount"));
+        assertNull(resolved.formData().get("comment"));
+    }
+
+    @Test
+    void preservesEmptyTextButRejectsEmptySelectValue() {
+        configureFields(
+                field("comment", "Comentario", FormFieldType.TEXT, Map.of()),
+                selectField()
+        );
+
+        ResolvedForm resolved = service.resolveAndValidate(requestType, Map.of("comment", ""));
+
+        assertEquals("", resolved.formData().get("comment"));
+        assertThrows(FormValidationException.class,
+                () -> service.resolveAndValidate(requestType, Map.of("damageType", "")));
+    }
+
+    @Test
+    void requestTypeWithoutTemplateAcceptsOnlyEmptyData() {
+        when(templateRepository.findFirstByRequestType_IdAndActiveTrueOrderByVersionDesc(17L))
+                .thenReturn(Optional.empty());
+
+        ResolvedForm resolved = service.resolveAndValidate(requestType, Map.of());
+
+        assertNull(resolved.template());
+        assertThrows(FormValidationException.class,
+                () -> service.resolveAndValidate(requestType, Map.of("invented", "value")));
     }
 
     private FormField selectField() {
@@ -116,16 +159,15 @@ class FormValidationServiceTest {
                 Map.of("value", "BROKEN_TILES", "label", "Baldosas rotas"),
                 Map.of("value", "SINKING", "label", "Hundimiento")
         ));
-        return field("damageType", "Tipo de daño", FormFieldType.SELECT, true, config);
+        return field("damageType", "Tipo de daño", FormFieldType.SELECT, config);
     }
 
     private FormField field(String code, String label, FormFieldType type,
-                            boolean required, Map<String, Object> config) {
+                            Map<String, Object> config) {
         FormField field = new FormField();
         field.setCode(code);
         field.setLabel(label);
         field.setType(type);
-        field.setRequired(required);
         field.setConfig(new HashMap<>(config));
         return field;
     }

@@ -48,24 +48,12 @@ public class FormService {
     }
 
     private FormFieldResponse toResponse(FormField field) {
-        Map<String, Object> publicConfig = field.getConfig() == null
-                ? new HashMap<>() : new HashMap<>(field.getConfig());
-        publicConfig.remove("riskScore");
-        if (publicConfig.get("options") instanceof List<?> options) {
-            publicConfig.put("options", options.stream().map(option -> {
-                if (!(option instanceof Map<?, ?> values)) return option;
-                Map<Object, Object> sanitized = new HashMap<>(values);
-                sanitized.remove("riskScore");
-                return sanitized;
-            }).toList());
-        }
         FormFieldResponse response = new FormFieldResponse();
         response.setCode(field.getCode());
         response.setLabel(field.getLabel());
         response.setType(field.getType());
-        response.setRequired(field.getRequired());
         response.setDisplayOrder(field.getDisplayOrder());
-        response.setConfig(publicConfig);
+        response.setConfig(field.getConfig() == null ? Map.of() : new HashMap<>(field.getConfig()));
         return response;
     }
 }
