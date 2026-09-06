@@ -54,8 +54,9 @@ public class InformationRequestService {
         informationRequest.setTicket(ticket);
         informationRequest.setRequestedByModuleId(MODULE_ID);
         ActorType requesterType = identity.role() == ModuleRole.ADMIN ? ActorType.ADMIN : ActorType.AGENT;
+        String actorId = identity.citizenId().toString();
         informationRequest.setRequestedByActorType(requesterType);
-        informationRequest.setRequestedByActorId(identity.subjectId());
+        informationRequest.setRequestedByActorId(actorId);
         informationRequest.setMessageForCitizen(request.getMessageForCitizen());
         informationRequest.setInternalMessage(request.getInternalMessage());
         informationRequest.setResumeStatus(resumeStatus);
@@ -68,7 +69,7 @@ public class InformationRequestService {
         ticket.setStatusChangedAt(requestedAt);
         ticketRepository.save(ticket);
         saveActivity(ticket, ActivityType.INFORMATION_REQUIRED, resumeStatus,
-                TicketStatus.PENDING_INFORMATION, requesterType, identity.subjectId(),
+                TicketStatus.PENDING_INFORMATION, requesterType, actorId,
                 null, request.getMessageForCitizen(), requestedAt); // Se registra el cambio en el historial funcional del ticket
         return response(informationRequest);
     }
@@ -82,7 +83,7 @@ public class InformationRequestService {
                 || !ticket.getCitizenId().equals(identity.citizenId())) {
             throw new UnauthorizedTicketOperationException();
         }
-        return answerPending(ticket, request.getResponseMessage(), identity.subjectId());
+        return answerPending(ticket, request.getResponseMessage(), identity.citizenId().toString());
     }
 
     @Transactional
@@ -144,13 +145,13 @@ public class InformationRequestService {
         cancellation.setReasonCode(CancellationReasonCode.INFO_TIMEOUT);
         cancellation.setPublicMessage("El ticket fue cancelado por falta de respuesta dentro del plazo");
         cancellation.setInternalMessage("Vencimiento automático de solicitud de información");
-        cancellation.setCancelledByType(ActorType.ADMIN);
-        cancellation.setCancelledById("system");
+        cancellation.setCancelledByType(ActorType.SYSTEM);
+        cancellation.setCancelledById(null);
         cancellation.setCancelledByModuleId(MODULE_ID);
         cancellation.setCancelledAt(now);
         cancellationRepository.save(cancellation);
         saveActivity(ticket, ActivityType.CANCELLED, TicketStatus.PENDING_INFORMATION, TicketStatus.CANCELLED,
-                ActorType.ADMIN, "system", CancellationReasonCode.INFO_TIMEOUT.name(),
+                ActorType.SYSTEM, null, CancellationReasonCode.INFO_TIMEOUT.name(),
                 cancellation.getPublicMessage(), now);
     }
 

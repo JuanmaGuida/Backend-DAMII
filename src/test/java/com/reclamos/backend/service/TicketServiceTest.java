@@ -76,7 +76,8 @@ class TicketServiceTest {
     void lowRiskWithoutEvidenceCreatesRegisteredServerClassifiedTicket() {
         when(risks.calculateRisk(any(), any(ResolvedForm.class)))
                 .thenReturn(new RiskAssessment(0, Risk.LOW));
-        CreateTicketResponse response = service.create(request(), identity(), null);
+        AuthenticatedIdentity citizen = identity();
+        CreateTicketResponse response = service.create(request(), citizen, null);
 
         assertEquals(TicketStatus.REGISTERED, response.status());
         assertNotNull(response.trackingCode());
@@ -90,7 +91,11 @@ class TicketServiceTest {
                 && ticket.getRequestType().getSubcategory().getCategory() != null
                 && !ticket.getTrackingCodeHash().equals(response.trackingCode())));
         verify(activities).save(argThat(activity -> activity.getActionType() == ActivityType.TICKET_CREATED
-                && activity.getSequence() == 1));
+                && activity.getSequence() == 1
+                && activity.getActorType() == ActorType.CITIZEN
+                && citizen.citizenId().toString().equals(activity.getActorId())
+                && !citizen.subjectId().equals(activity.getActorId())
+                && activity.getSourceModuleId() == null));
     }
 
     @Test

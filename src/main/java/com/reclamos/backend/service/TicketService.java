@@ -106,7 +106,7 @@ public class TicketService {
         activity.setPreviousStatus(null);
         activity.setNewStatus(TicketStatus.REGISTERED);
         activity.setActorType(ActorType.CITIZEN);
-        activity.setActorId(identity.subjectId());
+        activity.setActorId(identity.citizenId().toString());
         activity.setOccurredAt(now);
         activityRepository.save(activity);
         ticketRepository.flush();
