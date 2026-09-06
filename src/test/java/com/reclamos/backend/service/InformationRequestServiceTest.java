@@ -42,8 +42,9 @@ class InformationRequestServiceTest {
 
     @Test
     void agentCreatesPendingRequestAndActivityAndChangesTicketStatus() {
+        AuthenticatedIdentity actor = agent();
         var result = service.requestInformation(ticket.getId(),
-                new CreateInformationRequest("Adjunte el dato", "nota"), agent());
+                new CreateInformationRequest("Adjunte el dato", "nota"), actor);
 
         assertEquals(InformationRequestStatus.PENDING, result.getStatus());
         assertEquals(NOW, result.getRequestedAt());
@@ -51,8 +52,31 @@ class InformationRequestServiceTest {
         assertEquals(TicketStatus.IN_PROGRESS, result.getResumeStatus());
         assertEquals(TicketStatus.PENDING_INFORMATION, ticket.getCurrentStatus());
         verify(requests).save(argThat(value -> value.getStatus() == InformationRequestStatus.PENDING
-                && value.getResumeStatus() == TicketStatus.IN_PROGRESS));
-        verify(activities).save(argThat(value -> value.getActionType() == ActivityType.INFORMATION_REQUIRED));
+                && value.getResumeStatus() == TicketStatus.IN_PROGRESS
+                && value.getRequestedByActorType() == ActorType.AGENT
+                && actor.citizenId().toString().equals(value.getRequestedByActorId())
+                && !actor.subjectId().equals(value.getRequestedByActorId())
+                && "M2".equals(value.getRequestedByModuleId())));
+        verify(activities).save(argThat(value -> value.getActionType() == ActivityType.INFORMATION_REQUIRED
+                && value.getActorType() == ActorType.AGENT
+                && actor.citizenId().toString().equals(value.getActorId())
+                && "M2".equals(value.getSourceModuleId())));
+    }
+
+    @Test
+    void adminCreatesPendingRequestOnSomeoneElsesTicketAsAdminActor() {
+        AuthenticatedIdentity actor = admin();
+        var result = service.requestInformation(ticket.getId(),
+                new CreateInformationRequest("Adjunte el dato", null), actor);
+
+        assertEquals(InformationRequestStatus.PENDING, result.getStatus());
+        verify(requests).save(argThat(value -> value.getRequestedByActorType() == ActorType.ADMIN
+                && actor.citizenId().toString().equals(value.getRequestedByActorId())
+                && !actor.subjectId().equals(value.getRequestedByActorId())
+                && "M2".equals(value.getRequestedByModuleId())));
+        verify(activities).save(argThat(value -> value.getActorType() == ActorType.ADMIN
+                && actor.citizenId().toString().equals(value.getActorId())
+                && "M2".equals(value.getSourceModuleId())));
     }
 
     @Test
@@ -67,9 +91,23 @@ class InformationRequestServiceTest {
     }
 
     @Test
-    void rejectsUnauthorizedRequester() {
+    void rejectsCitizenAndAreaResponsibleRequesters() {
         assertThrows(UnauthorizedTicketOperationException.class, () -> service.requestInformation(ticket.getId(),
                 new CreateInformationRequest("Dato", null), citizen()));
+        assertThrows(UnauthorizedTicketOperationException.class, () -> service.requestInformation(ticket.getId(),
+                new CreateInformationRequest("Dato", null), areaResponsible()));
+    }
+
+    @Test
+    void rejectsAgentAndAdminWhenTheyOwnTheTicket() {
+        AuthenticatedIdentity ownerAgent = identity(ModuleRole.AGENT, ticket.getCitizenId());
+        AuthenticatedIdentity ownerAdmin = identity(ModuleRole.ADMIN, ticket.getCitizenId());
+
+        assertThrows(UnauthorizedTicketOperationException.class, () -> service.requestInformation(ticket.getId(),
+                new CreateInformationRequest("Dato", null), ownerAgent));
+        assertThrows(UnauthorizedTicketOperationException.class, () -> service.requestInformation(ticket.getId(),
+                new CreateInformationRequest("Dato", null), ownerAdmin));
+        verify(requests, never()).save(any());
     }
 
     @Test
@@ -79,13 +117,20 @@ class InformationRequestServiceTest {
         when(requests.findByTicketIdAndStatus(ticket.getId(), InformationRequestStatus.PENDING))
                 .thenReturn(Optional.of(pending));
 
-        var result = service.answerInformation(ticket.getId(), new AnswerInformationRequest("Respuesta"), citizen());
+        AuthenticatedIdentity actor = citizen();
+        var result = service.answerInformation(ticket.getId(), new AnswerInformationRequest("Respuesta"), actor);
 
         assertEquals(InformationRequestStatus.ANSWERED, result.getStatus());
         assertEquals("Respuesta", result.getResponseMessage());
         assertEquals(NOW, result.getAnsweredAt());
         assertEquals(TicketStatus.IN_PROGRESS, ticket.getCurrentStatus());
-        verify(activities).save(argThat(value -> value.getActionType() == ActivityType.INFORMATION_PROVIDED));
+        verify(requests).save(argThat(value -> value.getAnsweredByType() == ActorType.CITIZEN
+                && actor.citizenId().toString().equals(value.getAnsweredById())
+                && !actor.subjectId().equals(value.getAnsweredById())));
+        verify(activities).save(argThat(value -> value.getActionType() == ActivityType.INFORMATION_PROVIDED
+                && value.getActorType() == ActorType.CITIZEN
+                && actor.citizenId().toString().equals(value.getActorId())
+                && "M2".equals(value.getSourceModuleId())));
     }
 
     @Test
@@ -114,9 +159,15 @@ class InformationRequestServiceTest {
 
         assertEquals(InformationRequestStatus.EXPIRED, expired.getStatus());
         assertEquals(TicketStatus.CANCELLED, ticket.getCurrentStatus());
-        verify(cancellations, times(1)).save(argThat(value -> value.getReasonCode() == CancellationReasonCode.INFO_TIMEOUT));
+        verify(cancellations, times(1)).save(argThat(value -> value.getReasonCode() == CancellationReasonCode.INFO_TIMEOUT
+                && value.getCancelledByType() == ActorType.SYSTEM
+                && value.getCancelledById() == null
+                && "M2".equals(value.getCancelledByModuleId())));
         verify(activities, times(1)).save(argThat(value -> value.getActionType() == ActivityType.CANCELLED
-                && "INFO_TIMEOUT".equals(value.getReasonCode())));
+                && "INFO_TIMEOUT".equals(value.getReasonCode())
+                && value.getActorType() == ActorType.SYSTEM
+                && value.getActorId() == null
+                && "M2".equals(value.getSourceModuleId())));
         assertEquals(InformationRequestStatus.ANSWERED, answered.getStatus());
     }
 
@@ -154,10 +205,23 @@ class InformationRequestServiceTest {
     }
 
     private AuthenticatedIdentity agent() {
-        return new AuthenticatedIdentity("agent", UUID.randomUUID(), "Agent", null, Set.of(ModuleRole.AGENT));
+        return identity(ModuleRole.AGENT, UUID.randomUUID());
+    }
+
+    private AuthenticatedIdentity admin() {
+        return identity(ModuleRole.ADMIN, UUID.randomUUID());
+    }
+
+    private AuthenticatedIdentity areaResponsible() {
+        return new AuthenticatedIdentity("area-responsible", UUID.randomUUID(), "Area Responsible", "M6",
+                ModuleRole.AREA_RESPONSIBLE);
     }
 
     private AuthenticatedIdentity citizen() {
-        return new AuthenticatedIdentity("citizen", ticket.getCitizenId(), "Citizen", null, Set.of());
+        return identity(ModuleRole.CITIZEN, ticket.getCitizenId());
+    }
+
+    private AuthenticatedIdentity identity(ModuleRole role, UUID citizenId) {
+        return new AuthenticatedIdentity(role.name().toLowerCase(), citizenId, role.name(), null, role);
     }
 }

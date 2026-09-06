@@ -3,7 +3,6 @@ package com.reclamos.backend.dto.auth;
 import com.reclamos.backend.identity.AuthenticatedIdentity;
 import com.reclamos.backend.identity.ModuleRole;
 
-import java.util.Set;
 import java.util.UUID;
 
 public record IdentityResponse(
@@ -11,7 +10,7 @@ public record IdentityResponse(
         UUID citizenId,
         String displayName,
         String areaId,
-        Set<ModuleRole> roles
+        ModuleRole role
 ) {
     public static IdentityResponse from(AuthenticatedIdentity identity) {
         return new IdentityResponse(
@@ -19,7 +18,7 @@ public record IdentityResponse(
                 identity.citizenId(),
                 identity.displayName(),
                 identity.areaId(),
-                identity.roles()
+                identity.role()
         );
     }
 }

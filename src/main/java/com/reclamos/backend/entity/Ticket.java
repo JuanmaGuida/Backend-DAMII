@@ -79,6 +79,9 @@ public class Ticket {
     )
     private RequestType requestType;
 
+    @Column(name = "form_template_id")
+    private Long formTemplateId;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "ticket_type", nullable = false, length = 30)
     private TicketType ticketType;

@@ -1,6 +1,7 @@
 package com.reclamos.backend.service;
 
 import com.reclamos.backend.dto.response.FormDefinitionResponse;
+import com.reclamos.backend.dto.response.FormFieldResponse;
 import com.reclamos.backend.entity.FormField;
 import com.reclamos.backend.entity.FormFieldType;
 import com.reclamos.backend.entity.FormTemplate;
@@ -16,12 +17,13 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.HashMap;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
@@ -52,15 +54,15 @@ class FormServiceTest {
     }
 
     @Test
-    void returnsDefinitionInRepositoryOrderWithRequiredFlagAndSanitizedConfig() {
+    void returnsDefinitionInRepositoryOrderWithoutInternalRiskOrRequiredFields() {
         when(requestTypeRepository.findById(17L)).thenReturn(Optional.of(requestType));
         when(templateRepository.findFirstByRequestType_IdAndActiveTrueOrderByVersionDesc(17L))
                 .thenReturn(Optional.of(template));
-        FormField first = field("damageType", true, 1);
+        FormField first = field("damageType", 1);
         first.setConfig(new HashMap<>(Map.of(
                 "placeholder", "Seleccione",
-                "riskScore", 3,
-                "options", List.of(Map.of("value", "YES", "label", "Sí", "riskScore", 2)))));        FormField second = field("reference", false, 2);
+                "options", List.of(Map.of("value", "YES", "label", "Sí")))));
+        FormField second = field("reference", 2);
         when(fieldRepository.findAllByFormTemplate_IdOrderByDisplayOrderAsc(5L))
                 .thenReturn(List.of(first, second));
 
@@ -71,13 +73,8 @@ class FormServiceTest {
         assertEquals(2, response.getVersion());
         assertEquals(List.of("damageType", "reference"),
                 response.getFields().stream().map(field -> field.getCode()).toList());
-        assertTrue(response.getFields().getFirst().getRequired());
-        assertFalse(response.getFields().get(1).getRequired());
-        assertFalse(response.getFields().getFirst().getConfig().containsKey("riskScore"));
-        Map<?, ?> publicOption = (Map<?, ?>) ((List<?>) response.getFields().getFirst()
-                .getConfig().get("options")).getFirst();
-        assertFalse(publicOption.containsKey("riskScore"));
-        assertTrue(first.getConfig().containsKey("riskScore"));
+        assertEquals("Seleccione", response.getFields().getFirst().getConfig().get("placeholder"));
+        assertTrue(response.getFields().getFirst().getConfig().containsKey("options"));
     }
 
     @Test
@@ -101,12 +98,20 @@ class FormServiceTest {
         assertThrows(ResourceNotFoundException.class, () -> service.getFormForRequestType(17L));
     }
 
-    private FormField field(String code, boolean required, int order) {
+    @Test
+    void publicFieldContractDoesNotExposeRequired() {
+        Set<String> fields = Arrays.stream(FormFieldResponse.class.getDeclaredFields())
+                .map(java.lang.reflect.Field::getName)
+                .collect(java.util.stream.Collectors.toSet());
+
+        assertTrue(!fields.contains("required"));
+    }
+
+    private FormField field(String code, int order) {
         FormField field = new FormField();
         field.setCode(code);
         field.setLabel(code);
         field.setType(FormFieldType.TEXT);
-        field.setRequired(required);
         field.setDisplayOrder(order);
         return field;
     }

@@ -12,7 +12,6 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -34,13 +33,13 @@ class BearerTokenAuthenticationFilterTest {
     }
 
     @Test
-    void validBearerCreatesNeutralPrincipalWithoutTokenCredentials() throws Exception {
+    void validBearerCreatesOneAuthorityForTheIdentityRole() throws Exception {
         AuthenticatedIdentity identity = new AuthenticatedIdentity(
-                "m1-dev-supervisor",
-                UUID.fromString("10000000-0000-0000-0000-000000000004"),
-                "Supervisor de prueba",
-                "M2",
-                Set.of(ModuleRole.SUPERVISOR, ModuleRole.AUDITOR)
+                "m1-dev-agent",
+                UUID.fromString("10000000-0000-0000-0000-000000000002"),
+                "Agente de prueba",
+                null,
+                ModuleRole.AGENT
         );
         when(identityProvider.resolve("valid-token")).thenReturn(Optional.of(identity));
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/auth/me");
@@ -52,9 +51,8 @@ class BearerTokenAuthenticationFilterTest {
         assertTrue(authentication.isAuthenticated());
         assertSame(identity, authentication.getPrincipal());
         assertNull(authentication.getCredentials());
-        assertEquals(Set.of("ROLE_SUPERVISOR", "ROLE_AUDITOR"), authentication.getAuthorities().stream()
-                .map(authority -> authority.getAuthority())
-                .collect(java.util.stream.Collectors.toSet()));
+        assertEquals("ROLE_AGENT", authentication.getAuthorities().iterator().next().getAuthority());
+        assertEquals(1, authentication.getAuthorities().size());
     }
 
     @Test

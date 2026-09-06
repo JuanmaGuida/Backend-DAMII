@@ -19,13 +19,13 @@ import org.springframework.test.web.servlet.MvcResult;
 
 import java.time.Instant;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.mockito.Mockito.when;
+import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -42,8 +42,8 @@ class AuthControllerSecurityTest {
             "m1-dev-agent",
             UUID.fromString("10000000-0000-0000-0000-000000000002"),
             "Agente de prueba",
-            "M2",
-            Set.of(ModuleRole.AGENT)
+            null,
+            ModuleRole.AGENT
     );
 
     @Autowired
@@ -72,8 +72,9 @@ class AuthControllerSecurityTest {
                 .andExpect(jsonPath("$.identity.subjectId").value("m1-dev-agent"))
                 .andExpect(jsonPath("$.identity.citizenId")
                         .value("10000000-0000-0000-0000-000000000002"))
-                .andExpect(jsonPath("$.identity.areaId").value("M2"))
-                .andExpect(jsonPath("$.identity.roles[0]").value("AGENT"))
+                .andExpect(jsonPath("$.identity.areaId").value(nullValue()))
+                .andExpect(jsonPath("$.identity.role").value("AGENT"))
+                .andExpect(jsonPath("$.identity.roles").doesNotExist())
                 .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("password"))))
                 .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("AgentDev!2026"))));
     }
@@ -101,7 +102,9 @@ class AuthControllerSecurityTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"username\":\"\",\"password\":null}"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.message").value("Username y password son obligatorios"))
+                .andExpect(jsonPath("$.length()").value(2));
     }
 
     @Test
@@ -121,6 +124,8 @@ class AuthControllerSecurityTest {
         mockMvc.perform(get("/api/auth/me"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("INVALID_TOKEN"))
+                .andExpect(jsonPath("$.message").value("La sesión no es válida"))
+                .andExpect(jsonPath("$.length()").value(2))
                 .andExpect(header().doesNotExist("Location"));
     }
 
@@ -129,8 +134,18 @@ class AuthControllerSecurityTest {
         when(identityProvider.resolve("invalid")).thenReturn(Optional.empty());
         when(identityProvider.resolve("expired")).thenReturn(Optional.empty());
 
-        MvcResult invalid = meWithToken("invalid").andExpect(status().isUnauthorized()).andReturn();
-        MvcResult expired = meWithToken("expired").andExpect(status().isUnauthorized()).andReturn();
+        MvcResult invalid = meWithToken("invalid")
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("INVALID_TOKEN"))
+                .andExpect(jsonPath("$.message").value("La sesión no es válida"))
+                .andExpect(jsonPath("$.length()").value(2))
+                .andReturn();
+        MvcResult expired = meWithToken("expired")
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("INVALID_TOKEN"))
+                .andExpect(jsonPath("$.message").value("La sesión no es válida"))
+                .andExpect(jsonPath("$.length()").value(2))
+                .andReturn();
 
         assertEquals(invalid.getResponse().getContentAsString(), expired.getResponse().getContentAsString());
     }
@@ -144,8 +159,9 @@ class AuthControllerSecurityTest {
                 .andExpect(jsonPath("$.subjectId").value("m1-dev-agent"))
                 .andExpect(jsonPath("$.citizenId").value("10000000-0000-0000-0000-000000000002"))
                 .andExpect(jsonPath("$.displayName").value("Agente de prueba"))
-                .andExpect(jsonPath("$.areaId").value("M2"))
-                .andExpect(jsonPath("$.roles[0]").value("AGENT"))
+                .andExpect(jsonPath("$.areaId").value(nullValue()))
+                .andExpect(jsonPath("$.role").value("AGENT"))
+                .andExpect(jsonPath("$.roles").doesNotExist())
                 .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("ROLE_AGENT"))));
     }
 
@@ -168,10 +184,10 @@ class AuthControllerSecurityTest {
     }
 
     @Test
-    void invalidBearerDoesNotBlockUnrelatedPublicEndpoints() throws Exception {
+    void invalidBearerDoesNotBlockDeclaredPublicCatalogEndpoint() throws Exception {
         when(identityProvider.resolve("invalid")).thenReturn(Optional.empty());
 
-        int status = mockMvc.perform(get("/api/categories")
+        int status = mockMvc.perform(get("/api/catalog/categories")
                         .header("Authorization", "Bearer invalid"))
                 .andReturn()
                 .getResponse()
@@ -188,6 +204,7 @@ class AuthControllerSecurityTest {
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"))
                 .andExpect(jsonPath("$.message").value("Usuario o contraseña inválidos"))
+                .andExpect(jsonPath("$.length()").value(2))
                 .andReturn();
     }
 

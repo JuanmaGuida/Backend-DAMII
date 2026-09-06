@@ -18,7 +18,6 @@ import java.time.Instant;
 import java.util.Base64;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -31,12 +30,8 @@ public class MockIdentityProvider implements IdentityProvider {
     static final String AGENT_PASSWORD = "AgentDev!2026";
     static final String AREA_RESPONSIBLE_USERNAME = "area.responsible@example.test";
     static final String AREA_RESPONSIBLE_PASSWORD = "AreaDev!2026";
-    static final String SUPERVISOR_USERNAME = "supervisor@example.test";
-    static final String SUPERVISOR_PASSWORD = "SupervisorDev!2026";
-    static final String AUDITOR_USERNAME = "auditor@example.test";
-    static final String AUDITOR_PASSWORD = "AuditorDev!2026";
-    static final String MODULE_ADMIN_USERNAME = "module.admin@example.test";
-    static final String MODULE_ADMIN_PASSWORD = "AdminDev!2026";
+    static final String ADMIN_USERNAME = "module.admin@example.test";
+    static final String ADMIN_PASSWORD = "AdminDev!2026";
 
     private static final int TOKEN_BYTES = 32;
 
@@ -47,15 +42,15 @@ public class MockIdentityProvider implements IdentityProvider {
                     "10000000-0000-0000-0000-000000000001",
                     "Ciudadano de prueba",
                     null,
-                    Set.of()
+                    ModuleRole.CITIZEN
             ),
             AGENT_USERNAME, user(
                     AGENT_PASSWORD,
                     "m1-dev-agent",
                     "10000000-0000-0000-0000-000000000002",
                     "Agente de prueba",
-                    "M2",
-                    Set.of(ModuleRole.AGENT)
+                    null,
+                    ModuleRole.AGENT
             ),
             AREA_RESPONSIBLE_USERNAME, user(
                     AREA_RESPONSIBLE_PASSWORD,
@@ -63,31 +58,15 @@ public class MockIdentityProvider implements IdentityProvider {
                     "10000000-0000-0000-0000-000000000003",
                     "Responsable de área de prueba",
                     "M6",
-                    Set.of(ModuleRole.AREA_RESPONSIBLE)
+                    ModuleRole.AREA_RESPONSIBLE
             ),
-            SUPERVISOR_USERNAME, user(
-                    SUPERVISOR_PASSWORD,
-                    "m1-dev-supervisor",
-                    "10000000-0000-0000-0000-000000000004",
-                    "Supervisor de prueba",
-                    "M2",
-                    Set.of(ModuleRole.SUPERVISOR)
-            ),
-            AUDITOR_USERNAME, user(
-                    AUDITOR_PASSWORD,
-                    "m1-dev-auditor",
-                    "10000000-0000-0000-0000-000000000005",
-                    "Auditor de prueba",
-                    "M2",
-                    Set.of(ModuleRole.AUDITOR)
-            ),
-            MODULE_ADMIN_USERNAME, user(
-                    MODULE_ADMIN_PASSWORD,
+            ADMIN_USERNAME, user(
+                    ADMIN_PASSWORD,
                     "m1-dev-module-admin",
                     "10000000-0000-0000-0000-000000000006",
                     "Administrador de módulo de prueba",
-                    "M2",
-                    Set.of(ModuleRole.MODULE_ADMIN)
+                    null,
+                    ModuleRole.ADMIN
             )
     );
 
@@ -174,11 +153,11 @@ public class MockIdentityProvider implements IdentityProvider {
             String citizenId,
             String displayName,
             String areaId,
-            Set<ModuleRole> roles
+            ModuleRole role
     ) {
         return new MockUser(
                 password,
-                new AuthenticatedIdentity(subjectId, UUID.fromString(citizenId), displayName, areaId, roles)
+                new AuthenticatedIdentity(subjectId, UUID.fromString(citizenId), displayName, areaId, role)
         );
     }
 

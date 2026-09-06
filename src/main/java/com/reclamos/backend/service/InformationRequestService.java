@@ -15,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.EnumSet;
+import java.util.Objects;
 import java.util.UUID;
 
 @Service
@@ -34,8 +35,11 @@ public class InformationRequestService {
     @Transactional
     public InformationRequestResponse requestInformation(UUID ticketId, CreateInformationRequest request,
                                                          AuthenticatedIdentity identity) {
-        requireAgent(identity); // Valida quien solicita información tenga permisos de agente
+        requireInformationRequester(identity);
         Ticket ticket = lockedTicket(ticketId); // Se bloquea el ticket para evitar modificaciones concurrentes
+        if (Objects.equals(identity.citizenId(), ticket.getCitizenId())) {
+            throw new UnauthorizedTicketOperationException();
+        }
         if (!REQUESTABLE_STATUSES.contains(ticket.getCurrentStatus())) { // No se permite solicitar información desde estados incompatibles
             throw new InformationRequestConflictException(
                     "El estado actual del ticket no permite solicitar información");
@@ -49,8 +53,10 @@ public class InformationRequestService {
         InformationRequest informationRequest = new InformationRequest(); // Se crea la solicitud y se registra quién la realizó, el mensaje y el plazo
         informationRequest.setTicket(ticket);
         informationRequest.setRequestedByModuleId(MODULE_ID);
-        informationRequest.setRequestedByActorType(ActorType.AGENT);
-        informationRequest.setRequestedByActorId(identity.subjectId());
+        ActorType requesterType = identity.role() == ModuleRole.ADMIN ? ActorType.ADMIN : ActorType.AGENT;
+        String actorId = identity.citizenId().toString();
+        informationRequest.setRequestedByActorType(requesterType);
+        informationRequest.setRequestedByActorId(actorId);
         informationRequest.setMessageForCitizen(request.getMessageForCitizen());
         informationRequest.setInternalMessage(request.getInternalMessage());
         informationRequest.setResumeStatus(resumeStatus);
@@ -63,7 +69,7 @@ public class InformationRequestService {
         ticket.setStatusChangedAt(requestedAt);
         ticketRepository.save(ticket);
         saveActivity(ticket, ActivityType.INFORMATION_REQUIRED, resumeStatus,
-                TicketStatus.PENDING_INFORMATION, ActorType.AGENT, identity.subjectId(),
+                TicketStatus.PENDING_INFORMATION, requesterType, actorId,
                 null, request.getMessageForCitizen(), requestedAt); // Se registra el cambio en el historial funcional del ticket
         return response(informationRequest);
     }
@@ -77,7 +83,7 @@ public class InformationRequestService {
                 || !ticket.getCitizenId().equals(identity.citizenId())) {
             throw new UnauthorizedTicketOperationException();
         }
-        return answerPending(ticket, request.getResponseMessage(), identity.subjectId());
+        return answerPending(ticket, request.getResponseMessage(), identity.citizenId().toString());
     }
 
     @Transactional
@@ -139,13 +145,13 @@ public class InformationRequestService {
         cancellation.setReasonCode(CancellationReasonCode.INFO_TIMEOUT);
         cancellation.setPublicMessage("El ticket fue cancelado por falta de respuesta dentro del plazo");
         cancellation.setInternalMessage("Vencimiento automático de solicitud de información");
-        cancellation.setCancelledByType(ActorType.ADMIN);
-        cancellation.setCancelledById("system");
+        cancellation.setCancelledByType(ActorType.SYSTEM);
+        cancellation.setCancelledById(null);
         cancellation.setCancelledByModuleId(MODULE_ID);
         cancellation.setCancelledAt(now);
         cancellationRepository.save(cancellation);
         saveActivity(ticket, ActivityType.CANCELLED, TicketStatus.PENDING_INFORMATION, TicketStatus.CANCELLED,
-                ActorType.ADMIN, "system", CancellationReasonCode.INFO_TIMEOUT.name(),
+                ActorType.SYSTEM, null, CancellationReasonCode.INFO_TIMEOUT.name(),
                 cancellation.getPublicMessage(), now);
     }
 
@@ -172,8 +178,9 @@ public class InformationRequestService {
                 .orElseThrow(() -> new ResourceNotFoundException("Ticket no encontrado"));
     }
 
-    private void requireAgent(AuthenticatedIdentity identity) {
-        if (identity == null || !identity.roles().contains(ModuleRole.AGENT)) {
+    private void requireInformationRequester(AuthenticatedIdentity identity) {
+        if (identity == null
+                || (identity.role() != ModuleRole.AGENT && identity.role() != ModuleRole.ADMIN)) {
             throw new UnauthorizedTicketOperationException();
         }
     }
