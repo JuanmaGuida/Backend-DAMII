@@ -76,14 +76,21 @@ class CatalogControllerTest {
         requestType.setCode("INFORMAR_UN_BACHE");
         requestType.setName("Informar un bache");
         requestType.setTicketType(TicketType.COMPLAINT);
-        requestType.setResponsibleAreaId("Obras Públicas");
-        when(catalogService.getRequestTypes(2L)).thenReturn(List.of(requestType));
+        requestType.setResponsibleAreaId("M3");
+        RequestTypeResponse lighting = new RequestTypeResponse();
+        lighting.setId(4L);
+        lighting.setCode("INFORMAR_UNA_LUMINARIA_APAGADA");
+        lighting.setName("Informar una luminaria apagada");
+        lighting.setTicketType(TicketType.COMPLAINT);
+        lighting.setResponsibleAreaId("M6");
+        when(catalogService.getRequestTypes(2L)).thenReturn(List.of(requestType, lighting));
 
         mockMvc.perform(get("/api/catalog/subcategories/2/request-types"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].code").value("INFORMAR_UN_BACHE"))
                 .andExpect(jsonPath("$[0].ticketType").value("COMPLAINT"))
-                .andExpect(jsonPath("$[0].responsibleAreaId").value("Obras Públicas"))
+                .andExpect(jsonPath("$[0].responsibleAreaId").value("M3"))
+                .andExpect(jsonPath("$[1].responsibleAreaId").value("M6"))
                 .andExpect(jsonPath("$[0].minimumPriority").doesNotExist());
     }
 
