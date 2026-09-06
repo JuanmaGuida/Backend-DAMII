@@ -2,6 +2,7 @@ package com.reclamos.backend.config;
 
 import com.reclamos.backend.dto.error.ApiErrorResponse;
 import com.reclamos.backend.security.BearerTokenAuthenticationFilter;
+import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -41,14 +42,26 @@ public class SecurityConfiguration {
                         .accessDeniedHandler((request, response, exception) -> writeError(
                                 response, objectMapper, HttpServletResponse.SC_FORBIDDEN, FORBIDDEN_RESPONSE)))
                 .authorizeHttpRequests(authorize -> authorize
+                        .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
                         .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
+                        .requestMatchers("/actuator/**").denyAll()
+                        .requestMatchers(HttpMethod.GET,
+                                "/api/catalog/categories",
+                                "/api/catalog/categories/{categoryId}/subcategories",
+                                "/api/catalog/subcategories/{subcategoryId}/request-types",
+                                "/api/catalog/request-types/{requestTypeId}/form").permitAll()
+                        .requestMatchers(HttpMethod.HEAD,
+                                "/api/catalog/categories",
+                                "/api/catalog/categories/{categoryId}/subcategories",
+                                "/api/catalog/subcategories/{subcategoryId}/request-types",
+                                "/api/catalog/request-types/{requestTypeId}/form").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/auth/me").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/tickets").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/tickets/*/information-request").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/tickets/*/information-response").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/tracking/access").permitAll()
-                        .anyRequest().permitAll()
+                        .anyRequest().authenticated()
                 )
                 .addFilterBefore(bearerTokenAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .build();

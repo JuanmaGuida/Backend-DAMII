@@ -183,10 +183,10 @@ class AuthControllerSecurityTest {
     }
 
     @Test
-    void invalidBearerDoesNotBlockUnrelatedPublicEndpoints() throws Exception {
+    void invalidBearerDoesNotBlockDeclaredPublicCatalogEndpoint() throws Exception {
         when(identityProvider.resolve("invalid")).thenReturn(Optional.empty());
 
-        int status = mockMvc.perform(get("/api/categories")
+        int status = mockMvc.perform(get("/api/catalog/categories")
                         .header("Authorization", "Bearer invalid"))
                 .andReturn()
                 .getResponse()
