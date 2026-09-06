@@ -196,6 +196,27 @@ Resultado esperado:
 
 ---
 
+# OpenAPI y Swagger UI
+
+El contrato REST canónico y versionado se encuentra en:
+
+```text
+src/main/resources/static/openapi.yaml
+```
+
+Con el backend en ejecución, Swagger UI está disponible en:
+
+```text
+http://localhost:8080/swagger-ui.html
+```
+
+La UI carga el contrato local `/openapi.yaml`. Para probar operaciones protegidas, obtener un token en
+`POST /api/auth/login`, seleccionar **Authorize** e ingresar el token Bearer. Ese login corresponde al proveedor
+de identidad mock del entorno `dev`; no representa el mecanismo productivo definitivo. El contrato documenta
+únicamente los endpoints implementados actualmente por el Backend M2.
+
+---
+
 # Flyway
 
 La estructura y evolución de la base de datos se administran mediante **Flyway**.
@@ -319,6 +340,8 @@ El profile `dev` incluye identidades simuladas para desarrollar sin depender de 
 ```text
 Username: citizen@example.test
 Password: <REDACTED>
+Role: CITIZEN
+Area ID: null
 ```
 
 ## Agente
@@ -326,6 +349,8 @@ Password: <REDACTED>
 ```text
 Username: agent@example.test
 Password: <REDACTED>
+Role: AGENT
+Area ID: null
 ```
 
 ## Responsable de área
@@ -333,20 +358,8 @@ Password: <REDACTED>
 ```text
 Username: area.responsible@example.test
 Password: <REDACTED>
-```
-
-## Supervisor
-
-```text
-Username: supervisor@example.test
-Password: <REDACTED>
-```
-
-## Auditor
-
-```text
-Username: auditor@example.test
-Password: <REDACTED>
+Role: AREA_RESPONSIBLE
+Area ID: M6
 ```
 
 ## Administrador de M2
@@ -354,6 +367,8 @@ Password: <REDACTED>
 ```text
 Username: module.admin@example.test
 Password: <REDACTED>
+Role: ADMIN
+Area ID: null
 ```
 
 Los tokens generados por las identidades mock se mantienen únicamente en memoria y se eliminan al reiniciar el backend.

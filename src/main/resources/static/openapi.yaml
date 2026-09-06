@@ -1,0 +1,744 @@
+openapi: 3.0.3
+info:
+  title: M2 - Atención Ciudadana API
+  description: API REST del módulo M2 de Atención Ciudadana, Reclamos y Solicitudes.
+  version: 1.0.0
+servers:
+  - url: /
+    description: Mismo origen que sirve Swagger UI
+tags:
+  - name: Authentication
+  - name: Catalog
+  - name: Tickets
+  - name: Information Requests
+  - name: Tracking
+paths:
+  /api/auth/login:
+    post:
+      tags: [Authentication]
+      summary: Iniciar sesión en el entorno DEV
+      description: Endpoint de autenticación utilizado por el proveedor de identidad mock del entorno DEV actual. No representa el mecanismo productivo definitivo.
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Sesión iniciada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          description: Credenciales inválidas.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+              example:
+                code: INVALID_CREDENTIALS
+                message: Usuario o contraseña inválidos
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+  /api/auth/me:
+    get:
+      tags: [Authentication]
+      summary: Obtener la identidad autenticada
+      operationId: getCurrentIdentity
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Identidad de la sesión actual.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdentityResponse'
+        '401':
+          $ref: '#/components/responses/InvalidToken'
+  /api/catalog/categories:
+    get:
+      tags: [Catalog]
+      summary: Listar categorías activas
+      operationId: getCategories
+      responses:
+        '200':
+          description: Categorías activas.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CategoryResponse'
+  /api/catalog/categories/{categoryId}/subcategories:
+    get:
+      tags: [Catalog]
+      summary: Listar subcategorías activas de una categoría
+      operationId: getSubcategories
+      parameters:
+        - $ref: '#/components/parameters/CategoryId'
+      responses:
+        '200':
+          description: Subcategorías activas.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SubcategoryResponse'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/catalog/subcategories/{subcategoryId}/request-types:
+    get:
+      tags: [Catalog]
+      summary: Listar tipos de solicitud activos de una subcategoría
+      operationId: getRequestTypes
+      parameters:
+        - $ref: '#/components/parameters/SubcategoryId'
+      responses:
+        '200':
+          description: Tipos de solicitud activos.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RequestTypeResponse'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/catalog/request-types/{requestTypeId}/form:
+    get:
+      tags: [Catalog]
+      summary: Obtener el formulario dinámico vigente
+      operationId: getRequestTypeForm
+      parameters:
+        - $ref: '#/components/parameters/RequestTypeId'
+      responses:
+        '200':
+          description: Definición pública del formulario dinámico.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FormDefinitionResponse'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/tickets:
+    post:
+      tags: [Tickets]
+      summary: Crear un ticket
+      description: |
+        Crea un ticket autenticado. La misma operación acepta JSON puro o multipart.
+
+        En JSON no se adjuntan archivos; si el riesgo calculado internamente es HIGH o CRITICAL,
+        responde 422 EVIDENCE_REQUIRED. En multipart, `data` es un part JSON obligatorio y
+        `evidence` admite hasta 5 archivos opcionales, de 10 MB cada uno y 50 MB en total.
+        MIME admitidos: image/jpeg, image/png, image/webp, image/heic, image/heif y application/pdf.
+      operationId: createTicket
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTicketRequest'
+          multipart/form-data:
+            schema:
+              type: object
+              required: [data]
+              properties:
+                data:
+                  $ref: '#/components/schemas/CreateTicketRequest'
+                evidence:
+                  type: array
+                  maxItems: 5
+                  description: Archivos opcionales; máximo 10 MB por archivo y 50 MB en total.
+                  items:
+                    type: string
+                    format: binary
+            encoding:
+              data:
+                contentType: application/json
+              evidence:
+                contentType: image/jpeg, image/png, image/webp, image/heic, image/heif, application/pdf
+      responses:
+        '201':
+          description: Ticket creado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateTicketResponse'
+        '400':
+          description: Request inválido, part `data` ausente o adjunto inválido. INVALID_ATTACHMENT sólo aplica a multipart.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+              examples:
+                missingData:
+                  value:
+                    code: INVALID_REQUEST
+                    message: Falta el part obligatorio 'data'
+                invalidAttachment:
+                  value:
+                    code: INVALID_ATTACHMENT
+                    message: Cada evidencia debe contener un archivo no vacío.
+        '401':
+          $ref: '#/components/responses/InvalidToken'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '413':
+          description: Límite de adjuntos excedido; sólo aplica a multipart.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+              example:
+                code: PAYLOAD_TOO_LARGE
+                message: La evidencia supera el tamaño máximo permitido.
+        '415':
+          description: Content-Type del request no soportado o MIME de evidencia no admitido. El MIME de evidencia sólo aplica a multipart.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+              example:
+                code: UNSUPPORTED_MEDIA_TYPE
+                message: Tipo de contenido no soportado
+        '422':
+          description: El riesgo calculado requiere al menos una evidencia.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+              example:
+                code: EVIDENCE_REQUIRED
+                message: El nivel de riesgo detectado requiere adjuntar al menos una evidencia.
+        '503':
+          description: El almacenamiento de adjuntos no está disponible; sólo aplica cuando multipart contiene evidencia.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+              example:
+                code: ATTACHMENT_STORAGE_UNAVAILABLE
+                message: No fue posible almacenar la evidencia. Intentá nuevamente más tarde.
+  /api/tickets/{ticketId}/information-request:
+    post:
+      tags: [Information Requests]
+      summary: Solicitar información adicional
+      description: Operación permitida a AGENT o ADMIN sobre un ticket ajeno y en un estado compatible.
+      operationId: requestTicketInformation
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TicketId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateInformationRequest'
+      responses:
+        '201':
+          description: Solicitud de información creada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InformationRequestResponse'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/InvalidToken'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/InformationRequestConflict'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+  /api/tickets/{ticketId}/information-response:
+    post:
+      tags: [Information Requests]
+      summary: Responder una solicitud de información
+      description: Operación permitida al ciudadano propietario del ticket identificado.
+      operationId: answerTicketInformation
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TicketId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnswerInformationRequest'
+      responses:
+        '200':
+          description: Solicitud de información respondida.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InformationRequestResponse'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/InvalidToken'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/InformationRequestConflict'
+        '410':
+          description: El plazo para responder venció.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+              example:
+                code: INFORMATION_REQUEST_EXPIRED
+                message: El plazo para responder la solicitud de información venció
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+  /api/tracking/access:
+    post:
+      tags: [Tracking]
+      summary: Consultar un ticket por código de seguimiento
+      operationId: accessTracking
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TrackingAccessRequest'
+      responses:
+        '200':
+          description: Vista pública del ticket.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrackingTicketResponse'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Token Bearer obtenido del proveedor de identidad vigente. En DEV puede obtenerse mediante /api/auth/login.
+  parameters:
+    CategoryId:
+      name: categoryId
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+    SubcategoryId:
+      name: subcategoryId
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+    RequestTypeId:
+      name: requestTypeId
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+    TicketId:
+      name: ticketId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  responses:
+    InvalidRequest:
+      description: Solicitud inválida.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          example:
+            code: INVALID_REQUEST
+            message: El request es inválido
+    InvalidToken:
+      description: Token Bearer ausente o inválido.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          example:
+            code: INVALID_TOKEN
+            message: La sesión no es válida
+    Forbidden:
+      description: La identidad autenticada no tiene permiso para realizar la operación.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          example:
+            code: FORBIDDEN
+            message: No está autorizado para realizar esta operación
+    NotFound:
+      description: Recurso no encontrado.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          example:
+            code: NOT_FOUND
+            message: Recurso no encontrado
+    InformationRequestConflict:
+      description: El estado del ticket o de su solicitud pendiente impide la operación.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          example:
+            code: INFORMATION_REQUEST_CONFLICT
+            message: El estado actual del ticket no permite realizar esta operación
+    UnsupportedMediaType:
+      description: Tipo de contenido no soportado.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          example:
+            code: UNSUPPORTED_MEDIA_TYPE
+            message: Tipo de contenido no soportado
+  schemas:
+    ApiError:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+      additionalProperties: false
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+          format: password
+      additionalProperties: false
+    LoginResponse:
+      type: object
+      required: [token, tokenType, expiresAt, identity]
+      properties:
+        token:
+          type: string
+        tokenType:
+          type: string
+          enum: [Bearer]
+        expiresAt:
+          type: string
+          format: date-time
+        identity:
+          $ref: '#/components/schemas/IdentityResponse'
+    IdentityResponse:
+      type: object
+      required: [subjectId, citizenId, displayName, areaId, role]
+      properties:
+        subjectId:
+          type: string
+        citizenId:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+        areaId:
+          allOf:
+            - $ref: '#/components/schemas/ModuleId'
+          nullable: true
+        role:
+          $ref: '#/components/schemas/ModuleRole'
+    CategoryResponse:
+      type: object
+      required: [id, name, description]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        description:
+          type: string
+    SubcategoryResponse:
+      type: object
+      required: [id, name, description]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+    RequestTypeResponse:
+      type: object
+      required: [id, code, name, description, ticketType, responsibleAreaId, allowsAnonymous, requiresLocation]
+      properties:
+        id:
+          type: integer
+          format: int64
+        code:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        ticketType:
+          $ref: '#/components/schemas/TicketType'
+        responsibleAreaId:
+          $ref: '#/components/schemas/ModuleId'
+        allowsAnonymous:
+          type: boolean
+        requiresLocation:
+          type: boolean
+    FormDefinitionResponse:
+      type: object
+      required: [requestTypeId, requestTypeCode, version, fields]
+      properties:
+        requestTypeId:
+          type: integer
+          format: int64
+        requestTypeCode:
+          type: string
+        version:
+          type: integer
+          format: int32
+        fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/FormFieldResponse'
+    FormFieldResponse:
+      type: object
+      description: Campo público de un formulario dinámico. Sus opciones y demás configuración viajan en `config`.
+      required: [code, label, type, displayOrder, config]
+      properties:
+        code:
+          type: string
+        label:
+          type: string
+        type:
+          $ref: '#/components/schemas/FormFieldType'
+        displayOrder:
+          type: integer
+          format: int32
+        config:
+          type: object
+          additionalProperties: true
+    CreateTicketRequest:
+      type: object
+      required: [requestTypeId, summary, description, formData]
+      properties:
+        requestTypeId:
+          type: integer
+          format: int64
+        summary:
+          type: string
+          maxLength: 200
+        description:
+          type: string
+        formData:
+          type: object
+          description: Objeto dinámico cuyas keys corresponden al `code` de los campos del formulario vigente.
+          additionalProperties: true
+        location:
+          allOf:
+            - $ref: '#/components/schemas/LocationData'
+          nullable: true
+      additionalProperties: false
+    LocationData:
+      type: object
+      properties:
+        addressLine:
+          type: string
+          maxLength: 300
+          nullable: true
+        street:
+          type: string
+          maxLength: 150
+          nullable: true
+        streetNumber:
+          type: string
+          maxLength: 30
+          nullable: true
+        neighborhoodId:
+          type: string
+          format: uuid
+          nullable: true
+        latitude:
+          type: number
+          nullable: true
+        longitude:
+          type: number
+          nullable: true
+        reference:
+          type: string
+          maxLength: 500
+          nullable: true
+    CreateTicketResponse:
+      type: object
+      required: [ticketId, publicId, trackingCode, status]
+      properties:
+        ticketId:
+          type: string
+          format: uuid
+        publicId:
+          type: string
+        trackingCode:
+          type: string
+          description: Código que permite consultar el ticket mediante el endpoint público de tracking.
+        status:
+          $ref: '#/components/schemas/TicketStatus'
+    CreateInformationRequest:
+      type: object
+      required: [messageForCitizen]
+      properties:
+        messageForCitizen:
+          type: string
+        internalMessage:
+          type: string
+          nullable: true
+      additionalProperties: false
+    AnswerInformationRequest:
+      type: object
+      required: [responseMessage]
+      properties:
+        responseMessage:
+          type: string
+      additionalProperties: false
+    InformationRequestResponse:
+      type: object
+      required: [informationRequestId, ticketId, status, messageForCitizen, requestedAt, dueAt, resumeStatus, responseMessage, answeredAt]
+      properties:
+        informationRequestId:
+          type: string
+          format: uuid
+        ticketId:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/InformationRequestStatus'
+        messageForCitizen:
+          type: string
+        requestedAt:
+          type: string
+          format: date-time
+        dueAt:
+          type: string
+          format: date-time
+        resumeStatus:
+          $ref: '#/components/schemas/TicketStatus'
+        responseMessage:
+          type: string
+          nullable: true
+        answeredAt:
+          type: string
+          format: date-time
+          nullable: true
+    TrackingAccessRequest:
+      type: object
+      required: [trackingCode]
+      properties:
+        trackingCode:
+          type: string
+      additionalProperties: false
+    TrackingTicketResponse:
+      type: object
+      required: [publicId, currentStatus, summary, createdAt, statusChangedAt, requestType, category, subcategory]
+      properties:
+        publicId:
+          type: string
+        currentStatus:
+          $ref: '#/components/schemas/TicketStatus'
+        summary:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        statusChangedAt:
+          type: string
+          format: date-time
+        requestType:
+          $ref: '#/components/schemas/TrackingRequestTypeSummary'
+        category:
+          $ref: '#/components/schemas/TrackingCategorySummary'
+        subcategory:
+          $ref: '#/components/schemas/TrackingSubcategorySummary'
+    TrackingRequestTypeSummary:
+      type: object
+      required: [id, code, name]
+      properties:
+        id:
+          type: integer
+          format: int64
+        code:
+          type: string
+        name:
+          type: string
+    TrackingCategorySummary:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+    TrackingSubcategorySummary:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+    ModuleId:
+      type: string
+      description: Identificador técnico de módulo; los valores admitidos pertenecen al rango M1 a M9.
+      enum: [M1, M2, M3, M4, M5, M6, M7, M8, M9]
+    ModuleRole:
+      type: string
+      enum: [CITIZEN, AGENT, AREA_RESPONSIBLE, ADMIN]
+    TicketType:
+      type: string
+      enum: [COMPLAINT, REQUEST, INQUIRY, SUGGESTION]
+    TicketStatus:
+      type: string
+      enum: [REGISTERED, IN_REVIEW, ROUTED, IN_PROGRESS, PENDING_INFORMATION, DUPLICATE, RESOLVED, CLOSED, CANCELLED]
+    InformationRequestStatus:
+      type: string
+      enum: [PENDING, ANSWERED, EXPIRED]
+    FormFieldType:
+      type: string
+      enum: [TEXT, TEXTAREA, SELECT, BOOLEAN, NUMBER, DATE]

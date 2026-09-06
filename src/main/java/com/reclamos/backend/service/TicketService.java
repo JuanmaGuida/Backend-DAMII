@@ -20,6 +20,7 @@ import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.HashMap;
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -34,6 +35,7 @@ public class TicketService {
     private final FormValidationService formValidationService;
     private final RiskCalculationService riskCalculationService;
     private final TrackingCodeService trackingCodeService;
+    private final AttachmentService attachmentService;
 
     @Transactional
     public CreateTicketResponse create(CreateTicketRequest request, AuthenticatedIdentity identity,
@@ -46,12 +48,11 @@ public class TicketService {
         if (!requestType.isActive()) {
             throw new InvalidTicketRequestException("El Request Type seleccionado está inactivo");
         }
-        var fields = formValidationService.validateAndGetFields(requestType, request.formData());
-        Risk risk = riskCalculationService.calculateRisk(requestType, request.formData(), fields);
-        // TODO Attachment: evidence is only checked for presence in this US. Persist it when storage exists.
-        boolean validEvidence = evidence != null && java.util.Arrays.stream(evidence)
-                .anyMatch(file -> file != null && !file.isEmpty() && file.getSize() > 0);
-        if ((risk == Risk.HIGH || risk == Risk.CRITICAL) && !validEvidence) {
+        ResolvedForm resolvedForm = formValidationService.resolveAndValidate(requestType, request.formData());
+        RiskAssessment assessment = riskCalculationService.calculateRisk(requestType, resolvedForm);
+        Risk risk = assessment.calculatedRisk();
+        List<AttachmentService.ValidatedAttachment> validatedAttachments = attachmentService.validate(evidence);
+        if ((risk == Risk.HIGH || risk == Risk.CRITICAL) && validatedAttachments.isEmpty()) {
             throw new EvidenceRequiredException();
         }
         validateLocation(requestType, request.location());
@@ -75,11 +76,12 @@ public class TicketService {
         ticket.setCitizenId(identity.citizenId());
         ticket.setAnonymous(false);
         ticket.setRequestType(requestType);
+        ticket.setFormTemplateId(resolvedForm.formTemplateId());
         ticket.setTicketType(requestType.getTicketType());
         ticket.setResponsibleAreaId(requestType.getResponsibleAreaId());
         ticket.setSummary(request.summary());
         ticket.setDescription(request.description());
-        ticket.setFormData(new HashMap<>(request.formData()));
+        ticket.setFormData(new HashMap<>(resolvedForm.formData()));
         ticket.setCurrentStatus(TicketStatus.REGISTERED);
         ticket.setCurrentPriority(max(requestType.getMinimumPriority(), risk));
         ticket.setEstimatedAffectedCount(0);
@@ -88,6 +90,11 @@ public class TicketService {
         ticket.setPublic(false);
         ticket.setStatusChangedAt(now);
         ticket = ticketRepository.save(ticket);
+        ticketRepository.flush();
+
+        if (!validatedAttachments.isEmpty()) {
+            attachmentService.storeForTicket(ticket, identity, validatedAttachments, now);
+        }
 
         if (request.location() != null) {
             locationRepository.save(toLocation(ticket, request.location()));
@@ -99,9 +106,10 @@ public class TicketService {
         activity.setPreviousStatus(null);
         activity.setNewStatus(TicketStatus.REGISTERED);
         activity.setActorType(ActorType.CITIZEN);
-        activity.setActorId(identity.subjectId());
+        activity.setActorId(identity.citizenId().toString());
         activity.setOccurredAt(now);
         activityRepository.save(activity);
+        ticketRepository.flush();
         return new CreateTicketResponse(ticket.getId(), ticket.getPublicId(), trackingCode,
                 TicketStatus.REGISTERED);
     }
@@ -148,7 +156,16 @@ public class TicketService {
 
     private Priority max(Priority minimum, Risk risk) {
         Priority fromRisk = Priority.valueOf(risk.name());
-        return minimum.ordinal() >= fromRisk.ordinal() ? minimum : fromRisk;
+        return priorityRank(minimum) >= priorityRank(fromRisk) ? minimum : fromRisk;
+    }
+
+    private int priorityRank(Priority priority) {
+        return switch (priority) {
+            case LOW -> 0;
+            case MEDIUM -> 1;
+            case HIGH -> 2;
+            case CRITICAL -> 3;
+        };
     }
 
     private String generatePublicId() {
