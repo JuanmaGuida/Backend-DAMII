@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -49,10 +50,30 @@ public class GlobalExceptionHandler {
         return response(HttpStatus.METHOD_NOT_ALLOWED, "METHOD_NOT_ALLOWED", "Método HTTP no permitido");
     }
 
-    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
-    public ResponseEntity<ApiErrorResponse> handleUnsupportedMediaType(HttpMediaTypeNotSupportedException exception) {
+    @ExceptionHandler({HttpMediaTypeNotSupportedException.class, UnsupportedAttachmentMediaTypeException.class})
+    public ResponseEntity<ApiErrorResponse> handleUnsupportedMediaType(Exception exception) {
         return response(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "UNSUPPORTED_MEDIA_TYPE",
                 "Tipo de contenido no soportado");
+    }
+
+    @ExceptionHandler(InvalidAttachmentException.class)
+    public ResponseEntity<ApiErrorResponse> handleInvalidAttachment(InvalidAttachmentException exception) {
+        return response(HttpStatus.BAD_REQUEST, InvalidAttachmentException.CODE, exception.getMessage());
+    }
+
+    @ExceptionHandler({AttachmentPayloadTooLargeException.class, MaxUploadSizeExceededException.class})
+    public ResponseEntity<ApiErrorResponse> handlePayloadTooLarge(Exception exception) {
+        String message = exception instanceof AttachmentPayloadTooLargeException
+                ? exception.getMessage()
+                : "La evidencia supera el tamaño máximo permitido.";
+        return response(HttpStatus.PAYLOAD_TOO_LARGE, AttachmentPayloadTooLargeException.CODE, message);
+    }
+
+    @ExceptionHandler(AttachmentStorageUnavailableException.class)
+    public ResponseEntity<ApiErrorResponse> handleAttachmentStorageUnavailable(
+            AttachmentStorageUnavailableException exception) {
+        return response(HttpStatus.SERVICE_UNAVAILABLE, AttachmentStorageUnavailableException.CODE,
+                exception.getMessage());
     }
 
     @ExceptionHandler(EvidenceRequiredException.class)

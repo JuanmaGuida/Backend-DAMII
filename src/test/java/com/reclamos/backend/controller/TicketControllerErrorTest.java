@@ -3,6 +3,8 @@ package com.reclamos.backend.controller;
 import com.reclamos.backend.exception.EvidenceRequiredException;
 import com.reclamos.backend.exception.GlobalExceptionHandler;
 import com.reclamos.backend.exception.InformationRequestConflictException;
+import com.reclamos.backend.exception.AttachmentStorageUnavailableException;
+import com.reclamos.backend.exception.UnsupportedAttachmentMediaTypeException;
 import com.reclamos.backend.exception.UnauthorizedTicketOperationException;
 import com.reclamos.backend.identity.AuthenticatedIdentity;
 import com.reclamos.backend.service.InformationRequestService;
@@ -10,16 +12,20 @@ import com.reclamos.backend.service.TicketService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.web.method.annotation.AuthenticationPrincipalArgumentResolver;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -121,9 +127,49 @@ class TicketControllerErrorTest {
                 .andExpect(jsonPath("$.length()").value(2));
     }
 
+    @Test
+    void multipartAttachmentFailuresUseCanonicalErrors() throws Exception {
+        when(ticketService.create(any(), nullable(AuthenticatedIdentity.class), any(MultipartFile[].class)))
+                .thenThrow(new UnsupportedAttachmentMediaTypeException("No permitido"));
+        mockMvc.perform(multipart("/api/tickets")
+                        .file(dataPart())
+                        .file(new MockMultipartFile("evidence", "file.zip", "application/zip", new byte[]{1})))
+                .andExpect(status().isUnsupportedMediaType())
+                .andExpect(jsonPath("$.code").value("UNSUPPORTED_MEDIA_TYPE"));
+
+        reset(ticketService);
+        when(ticketService.create(any(), nullable(AuthenticatedIdentity.class), any(MultipartFile[].class)))
+                .thenThrow(new AttachmentStorageUnavailableException());
+        mockMvc.perform(multipart("/api/tickets")
+                        .file(dataPart())
+                        .file(new MockMultipartFile("evidence", "file.jpg", "image/jpeg", new byte[]{1})))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("ATTACHMENT_STORAGE_UNAVAILABLE"));
+
+        reset(ticketService);
+        when(ticketService.create(any(), nullable(AuthenticatedIdentity.class), any(MultipartFile[].class)))
+                .thenThrow(new MaxUploadSizeExceededException(10));
+        mockMvc.perform(multipart("/api/tickets")
+                        .file(dataPart())
+                        .file(new MockMultipartFile("evidence", "file.jpg", "image/jpeg", new byte[]{1})))
+                .andExpect(status().isPayloadTooLarge())
+                .andExpect(jsonPath("$.code").value("PAYLOAD_TOO_LARGE"));
+    }
+
     private org.springframework.test.web.servlet.ResultActions performInformationRequest() throws Exception {
         return mockMvc.perform(post("/api/tickets/10000000-0000-0000-0000-000000000001/information-request")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"messageForCitizen\":\"Dato\"}"));
+    }
+
+    private MockMultipartFile dataPart() {
+        return new MockMultipartFile("data", "", MediaType.APPLICATION_JSON_VALUE, """
+                {
+                  "requestTypeId": 1,
+                  "summary": "Resumen",
+                  "description": "Descripción",
+                  "formData": {}
+                }
+                """.getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
 }
