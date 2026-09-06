@@ -15,6 +15,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockMultipartFile;
 
 import java.math.BigDecimal;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -42,6 +44,13 @@ class TicketServiceTest {
                 trackingCodes);
         requestType = requestType(true);
         when(requestTypes.findById(1L)).thenReturn(Optional.of(requestType));
+        FormTemplate template = new FormTemplate();
+        template.setId(3L);
+        template.setRequestType(requestType);
+        when(forms.resolveAndValidate(any(), any())).thenAnswer(invocation -> {
+            Map<String, Object> data = invocation.getArgument(1);
+            return new ResolvedForm(template, List.of(), data == null ? Map.of() : data);
+        });
         when(tickets.save(any())).thenAnswer(invocation -> {
             Ticket ticket = invocation.getArgument(0);
             ticket.setId(UUID.randomUUID());
@@ -51,7 +60,8 @@ class TicketServiceTest {
 
     @Test
     void lowRiskWithoutEvidenceCreatesRegisteredServerClassifiedTicket() {
-        when(risks.calculateRisk(any(), any(), any())).thenReturn(Risk.LOW);
+        when(risks.calculateRisk(any(), any(ResolvedForm.class)))
+                .thenReturn(new RiskAssessment(0, Risk.LOW));
         CreateTicketResponse response = service.create(request(), identity(), null);
 
         assertEquals(TicketStatus.REGISTERED, response.status());
@@ -61,6 +71,7 @@ class TicketServiceTest {
         verify(tickets).save(argThat(ticket -> ticket.getCurrentStatus() == TicketStatus.REGISTERED
                 && ticket.getTicketType() == requestType.getTicketType()
                 && ticket.getResponsibleAreaId().equals(requestType.getResponsibleAreaId())
+                && ticket.getFormTemplateId().equals(3L)
                 && ticket.getRequestType().getSubcategory().getCategory() != null
                 && !ticket.getTrackingCodeHash().equals(response.trackingCode())));
         verify(activities).save(argThat(activity -> activity.getActionType() == ActivityType.TICKET_CREATED
@@ -69,21 +80,24 @@ class TicketServiceTest {
 
     @Test
     void mediumRiskWithoutEvidenceCreatesTicket() {
-        when(risks.calculateRisk(any(), any(), any())).thenReturn(Risk.MEDIUM);
+        when(risks.calculateRisk(any(), any(ResolvedForm.class)))
+                .thenReturn(new RiskAssessment(36, Risk.MEDIUM));
         assertNotNull(service.create(request(), identity(), null).ticketId());
     }
 
     @Test
     void highAndCriticalRiskWithEvidenceCreateTickets() {
         MockMultipartFile evidence = new MockMultipartFile("evidence", "photo.jpg", "image/jpeg", new byte[]{1});
-        when(risks.calculateRisk(any(), any(), any())).thenReturn(Risk.HIGH, Risk.CRITICAL);
+        when(risks.calculateRisk(any(), any(ResolvedForm.class)))
+                .thenReturn(new RiskAssessment(62, Risk.HIGH), new RiskAssessment(100, Risk.CRITICAL));
         assertNotNull(service.create(request(), identity(), new MockMultipartFile[]{evidence}).ticketId());
         assertNotNull(service.create(request(), identity(), new MockMultipartFile[]{evidence}).ticketId());
     }
 
     @Test
     void highAndCriticalRiskWithoutEvidenceDoNotPersist() {
-        when(risks.calculateRisk(any(), any(), any())).thenReturn(Risk.HIGH, Risk.CRITICAL);
+        when(risks.calculateRisk(any(), any(ResolvedForm.class)))
+                .thenReturn(new RiskAssessment(62, Risk.HIGH), new RiskAssessment(100, Risk.CRITICAL));
         assertThrows(EvidenceRequiredException.class, () -> service.create(request(), identity(), null));
         assertThrows(EvidenceRequiredException.class, () -> service.create(request(), identity(), null));
         verify(tickets, never()).save(any());
@@ -103,14 +117,15 @@ class TicketServiceTest {
 
     @Test
     void validationFailureDoesNotPersist() {
-        when(forms.validateAndGetFields(any(), any())).thenThrow(new FormValidationException("required"));
+        when(forms.resolveAndValidate(any(), any())).thenThrow(new FormValidationException("invalid"));
         assertThrows(FormValidationException.class, () -> service.create(request(), identity(), null));
         verify(tickets, never()).save(any());
     }
 
     @Test
     void trackingCodesAreDifferentAndOnlyTheirHashesAreStored() {
-        when(risks.calculateRisk(any(), any(), any())).thenReturn(Risk.LOW);
+        when(risks.calculateRisk(any(), any(ResolvedForm.class)))
+                .thenReturn(new RiskAssessment(0, Risk.LOW));
         CreateTicketResponse first = service.create(request(), identity(), null);
         CreateTicketResponse second = service.create(request(), identity(), null);
         assertNotEquals(first.trackingCode(), second.trackingCode());
@@ -139,7 +154,8 @@ class TicketServiceTest {
     @Test
     void minimumPriorityIsAlwaysAppliedAsFloor() {
         requestType.setMinimumPriority(Priority.HIGH);
-        when(risks.calculateRisk(any(), any(), any())).thenReturn(Risk.LOW);
+        when(risks.calculateRisk(any(), any(ResolvedForm.class)))
+                .thenReturn(new RiskAssessment(0, Risk.LOW));
         service.create(request(), identity(), null);
         verify(tickets).save(argThat(ticket -> ticket.getCurrentPriority() == Priority.HIGH));
     }
@@ -212,6 +228,33 @@ class TicketServiceTest {
         verify(locations, never()).save(any());
     }
 
+    @Test
+    void persistsFalseZeroAndExactTemplateId() {
+        allowLowRisk();
+        Map<String, Object> formData = new HashMap<>();
+        formData.put("danger", false);
+        formData.put("amount", 0);
+
+        service.create(new CreateTicketRequest(1L, "Resumen", "Descripción", formData, null),
+                identity(), null);
+
+        verify(tickets).save(argThat(ticket -> ticket.getFormTemplateId().equals(3L)
+                && Boolean.FALSE.equals(ticket.getFormData().get("danger"))
+                && Integer.valueOf(0).equals(ticket.getFormData().get("amount"))));
+    }
+
+    @Test
+    void requestTypeWithoutTemplatePersistsNullTemplateForEmptyForm() {
+        when(forms.resolveAndValidate(any(), any())).thenReturn(new ResolvedForm(null, List.of(), Map.of()));
+        allowLowRisk();
+
+        service.create(new CreateTicketRequest(1L, "Resumen", "Descripción", Map.of(), null),
+                identity(), null);
+
+        verify(tickets).save(argThat(ticket -> ticket.getFormTemplateId() == null
+                && ticket.getFormData().isEmpty()));
+    }
+
     private CreateTicketRequest request() {
         return new CreateTicketRequest(1L, "Resumen", "Descripción", Map.of("answer", true), null);
     }
@@ -227,7 +270,8 @@ class TicketServiceTest {
     }
 
     private void allowLowRisk() {
-        when(risks.calculateRisk(any(), any(), any())).thenReturn(Risk.LOW);
+        when(risks.calculateRisk(any(), any(ResolvedForm.class)))
+                .thenReturn(new RiskAssessment(0, Risk.LOW));
     }
 
     private AuthenticatedIdentity identity() {

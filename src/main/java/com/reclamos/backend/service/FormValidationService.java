@@ -4,7 +4,6 @@ import com.reclamos.backend.entity.FormField;
 import com.reclamos.backend.entity.FormTemplate;
 import com.reclamos.backend.entity.RequestType;
 import com.reclamos.backend.exception.FormValidationException;
-import com.reclamos.backend.exception.ResourceNotFoundException;
 import com.reclamos.backend.repository.FormFieldRepository;
 import com.reclamos.backend.repository.FormTemplateRepository;
 import lombok.RequiredArgsConstructor;
@@ -27,23 +26,29 @@ public class FormValidationService {
     private final FormFieldRepository formFieldRepository;
 
     public void validate(RequestType requestType, Map<String, Object> formData) {
-        validateAndGetFields(requestType, formData);
+        resolveAndValidate(requestType, formData);
     }
 
-    public List<FormField> validateAndGetFields(RequestType requestType, Map<String, Object> formData) {
+    public ResolvedForm resolveAndValidate(RequestType requestType, Map<String, Object> formData) {
         if (requestType == null || requestType.getId() == null) {
             throw new FormValidationException("El Request Type es obligatorio");
         }
         if (!requestType.isActive()) {
             throw new FormValidationException("El Request Type seleccionado está inactivo");
         }
+        Map<String, Object> data = formData == null ? Collections.emptyMap() : formData;
         FormTemplate template = formTemplateRepository
                 .findFirstByRequestType_IdAndActiveTrueOrderByVersionDesc(requestType.getId())
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "No existe un formulario configurado para el Request Type seleccionado"));
+                .orElse(null);
+        if (template == null) {
+            if (!data.isEmpty()) {
+                throw new FormValidationException(
+                        "El Request Type seleccionado no posee un formulario para las respuestas informadas");
+            }
+            return new ResolvedForm(null, List.of(), data);
+        }
         List<FormField> fields = formFieldRepository
                 .findAllByFormTemplate_IdOrderByDisplayOrderAsc(template.getId());
-        Map<String, Object> data = formData == null ? Collections.emptyMap() : formData;
         Set<String> allowedCodes = fields.stream().map(FormField::getCode).collect(Collectors.toSet());
 
         data.keySet().stream().filter(code -> !allowedCodes.contains(code)).findFirst()
@@ -53,21 +58,15 @@ public class FormValidationService {
                 });
 
         for (FormField field : fields) {
-            Object value = data.get(field.getCode());
-            if (Boolean.TRUE.equals(field.getRequired()) && (value == null || isBlankText(field, value))) {
-                throw new FormValidationException("El campo '" + field.getLabel() + "' es obligatorio");
+            if (!data.containsKey(field.getCode())) {
+                continue;
             }
+            Object value = data.get(field.getCode());
             if (value != null) {
                 validateValue(field, value);
             }
         }
-        return List.copyOf(fields);
-    }
-
-    private boolean isBlankText(FormField field, Object value) {
-        return (field.getType() == com.reclamos.backend.entity.FormFieldType.TEXT
-                || field.getType() == com.reclamos.backend.entity.FormFieldType.TEXTAREA)
-                && value instanceof String text && text.isBlank();
+        return new ResolvedForm(template, fields, data);
     }
 
     private void validateValue(FormField field, Object value) {

@@ -46,8 +46,9 @@ public class TicketService {
         if (!requestType.isActive()) {
             throw new InvalidTicketRequestException("El Request Type seleccionado está inactivo");
         }
-        var fields = formValidationService.validateAndGetFields(requestType, request.formData());
-        Risk risk = riskCalculationService.calculateRisk(requestType, request.formData(), fields);
+        ResolvedForm resolvedForm = formValidationService.resolveAndValidate(requestType, request.formData());
+        RiskAssessment assessment = riskCalculationService.calculateRisk(requestType, resolvedForm);
+        Risk risk = assessment.calculatedRisk();
         // TODO Attachment: evidence is only checked for presence in this US. Persist it when storage exists.
         boolean validEvidence = evidence != null && java.util.Arrays.stream(evidence)
                 .anyMatch(file -> file != null && !file.isEmpty() && file.getSize() > 0);
@@ -75,11 +76,12 @@ public class TicketService {
         ticket.setCitizenId(identity.citizenId());
         ticket.setAnonymous(false);
         ticket.setRequestType(requestType);
+        ticket.setFormTemplateId(resolvedForm.formTemplateId());
         ticket.setTicketType(requestType.getTicketType());
         ticket.setResponsibleAreaId(requestType.getResponsibleAreaId());
         ticket.setSummary(request.summary());
         ticket.setDescription(request.description());
-        ticket.setFormData(new HashMap<>(request.formData()));
+        ticket.setFormData(new HashMap<>(resolvedForm.formData()));
         ticket.setCurrentStatus(TicketStatus.REGISTERED);
         ticket.setCurrentPriority(max(requestType.getMinimumPriority(), risk));
         ticket.setEstimatedAffectedCount(0);
@@ -148,7 +150,16 @@ public class TicketService {
 
     private Priority max(Priority minimum, Risk risk) {
         Priority fromRisk = Priority.valueOf(risk.name());
-        return minimum.ordinal() >= fromRisk.ordinal() ? minimum : fromRisk;
+        return priorityRank(minimum) >= priorityRank(fromRisk) ? minimum : fromRisk;
+    }
+
+    private int priorityRank(Priority priority) {
+        return switch (priority) {
+            case LOW -> 0;
+            case MEDIUM -> 1;
+            case HIGH -> 2;
+            case CRITICAL -> 3;
+        };
     }
 
     private String generatePublicId() {
