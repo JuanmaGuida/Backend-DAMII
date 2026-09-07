@@ -29,8 +29,8 @@ class ActorSemanticsMigrationIntegrationTest {
     private JdbcTemplate jdbcTemplate;
 
     @Test
-    void cleanV1ToV10HasTheApprovedActorConstraints() {
-        assertEquals("10", jdbcTemplate.queryForObject(
+    void cleanV1ToV11HasTheApprovedActorConstraints() {
+        assertEquals("11", jdbcTemplate.queryForObject(
                 "SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank DESC LIMIT 1",
                 String.class));
 
@@ -41,14 +41,13 @@ class ActorSemanticsMigrationIntegrationTest {
             assertTrue(activity.contains(actor));
             assertTrue(message.contains(actor));
         }
-        for (String actor : new String[]{"CITIZEN", "AGENT", "AREA_RESPONSIBLE", "ADMIN", "SYSTEM"}) {
+        for (String actor : new String[]{"CITIZEN", "AGENT", "AREA_RESPONSIBLE", "ADMIN", "EXTERNAL_USER", "SYSTEM"}) {
             assertTrue(cancellation.contains(actor));
         }
-        assertFalse(cancellation.contains("EXTERNAL_USER"));
     }
 
     @Test
-    void v10ConvertsOnlyUnambiguousHistoryAndEnforcesFinalActorTypes() {
+    void v10AndV11ConvertOnlyUnambiguousHistoryAndEnforceFinalActorTypes() {
         String schema = temporarySchema();
         JdbcTemplate database = new JdbcTemplate(dataSource);
         try {
@@ -110,12 +109,20 @@ class ActorSemanticsMigrationIntegrationTest {
                             + "cancelled_by_module_id, cancelled_at) "
                             + "VALUES (?, ?, 'INFO_TIMEOUT', 'SYSTEM', NULL, 'M2', CURRENT_TIMESTAMP)",
                     UUID.randomUUID(), unrelatedTicket);
+            database.update("INSERT INTO " + schema + ".ticket_cancellations "
+                            + "(id, ticket_id, reason_code, cancelled_by_type, cancelled_by_id, "
+                            + "cancelled_by_module_id, cancelled_at) "
+                            + "VALUES (?, ?, 'INFO_TIMEOUT', 'EXTERNAL_USER', 'USR-M6-77', 'M6', CURRENT_TIMESTAMP)",
+                    UUID.randomUUID(), anonymousTicket);
+            assertEquals("EXTERNAL_USER|USR-M6-77|M6", scalar(database,
+                    "SELECT cancelled_by_type || '|' || cancelled_by_id || '|' || cancelled_by_module_id "
+                            + "FROM " + schema + ".ticket_cancellations WHERE ticket_id='" + anonymousTicket + "'"));
             assertThrows(DataIntegrityViolationException.class,
                     () -> database.update("INSERT INTO " + schema + ".ticket_cancellations "
                                     + "(id, ticket_id, reason_code, cancelled_by_type, cancelled_by_id, "
                                     + "cancelled_by_module_id, cancelled_at) "
-                                    + "VALUES (?, ?, 'INFO_TIMEOUT', 'EXTERNAL_USER', 'external', 'M6', CURRENT_TIMESTAMP)",
-                            UUID.randomUUID(), anonymousTicket));
+                                    + "VALUES (?, ?, 'INFO_TIMEOUT', 'UNKNOWN', 'external', 'M6', CURRENT_TIMESTAMP)",
+                            UUID.randomUUID(), identifiedTicket));
         } finally {
             database.execute("DROP SCHEMA IF EXISTS " + schema + " CASCADE");
         }
