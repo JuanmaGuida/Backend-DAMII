@@ -58,13 +58,23 @@ public class FormValidationService {
                 });
 
         for (FormField field : fields) {
-            if (!data.containsKey(field.getCode())) {
+            boolean present = data.containsKey(field.getCode());
+            if (!present) {
+                if (field.isRequired()) {
+                    throw new FormValidationException(
+                            "El campo '" + field.getCode() + "' es obligatorio");
+                }
                 continue;
             }
             Object value = data.get(field.getCode());
-            if (value != null) {
-                validateValue(field, value);
+            if (value == null) {
+                if (!field.isAllowUnknown()) {
+                    throw new FormValidationException(
+                            "El campo '" + field.getCode() + "' no admite un valor desconocido");
+                }
+                continue;
             }
+            validateValue(field, value);
         }
         return new ResolvedForm(template, fields, data);
     }

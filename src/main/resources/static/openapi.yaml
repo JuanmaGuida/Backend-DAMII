@@ -541,7 +541,7 @@ components:
     FormFieldResponse:
       type: object
       description: Campo público de un formulario dinámico. Sus opciones y demás configuración viajan en `config`.
-      required: [code, label, type, displayOrder, config]
+      required: [code, label, type, required, allowUnknown, displayOrder, config]
       properties:
         code:
           type: string
@@ -549,6 +549,12 @@ components:
           type: string
         type:
           $ref: '#/components/schemas/FormFieldType'
+        required:
+          type: boolean
+          description: Indica si la clave debe estar presente en `formData`.
+        allowUnknown:
+          type: boolean
+          description: Indica si un valor JSON `null` representa una respuesta desconocida válida.
         displayOrder:
           type: integer
           format: int32

@@ -131,9 +131,8 @@ class OpenApiContractTest {
     void reusableSchemasExposeOnlyTheCurrentRestModel() {
         Map<String, Object> schemas = map(spec, "components", "schemas");
         assertEquals(Set.of("code", "message"), map(schemas, "ApiError", "properties").keySet());
-        assertEquals(Set.of("code", "label", "type", "displayOrder", "config"),
+        assertEquals(Set.of("code", "label", "type", "required", "allowUnknown", "displayOrder", "config"),
                 map(schemas, "FormFieldResponse", "properties").keySet());
-        assertFalse(map(schemas, "FormFieldResponse", "properties").containsKey("required"));
         assertEquals(Set.of("M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8", "M9"),
                 Set.copyOf(list(map(schemas, "ModuleId"), "enum")));
 

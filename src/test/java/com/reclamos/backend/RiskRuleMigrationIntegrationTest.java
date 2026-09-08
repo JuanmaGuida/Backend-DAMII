@@ -1,6 +1,7 @@
 package com.reclamos.backend;
 
 import com.reclamos.backend.entity.FormFieldType;
+import com.reclamos.backend.entity.RiskOperator;
 import com.reclamos.backend.entity.RiskRule;
 import com.reclamos.backend.repository.RiskRuleRepository;
 import org.junit.jupiter.api.Test;
@@ -12,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -50,18 +52,29 @@ class RiskRuleMigrationIntegrationTest {
                 .filter(rule -> rule.getExpectedValue() instanceof String)
                 .count());
         assertTrue(rules.stream().allMatch(RiskRule::isActive));
+        assertEquals(Set.of(FormFieldType.BOOLEAN, FormFieldType.SELECT), rules.stream()
+                .map(rule -> rule.getFormField().getType())
+                .collect(Collectors.toSet()));
+        assertTrue(rules.stream().allMatch(rule -> rule.getOperator() == RiskOperator.EQUALS));
+        assertEquals(rules.size(), rules.stream()
+                .map(rule -> rule.getFormField().getId() + "|" + rule.getExpectedValue())
+                .distinct()
+                .count());
     }
 
     @Test
-    void migrationRemovesLegacySchemaAndConfig() {
+    void migrationRemovesLegacyConfigAndAddsAnswerRequirementColumns() {
         Integer residualRiskScores = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM form_fields "
                         + "WHERE jsonb_path_exists(config, '$.**.riskScore')",
                 Integer.class);
-        Integer requiredColumns = jdbcTemplate.queryForObject(
+        Integer requirementColumns = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM information_schema.columns "
                         + "WHERE table_schema='public' AND table_name='form_fields' "
-                        + "AND column_name='required'",
+                        + "AND column_name IN ('required', 'allow_unknown')",
+                Integer.class);
+        Integer configuredRequirements = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM form_fields WHERE required OR allow_unknown",
                 Integer.class);
         Integer templateIdColumns = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM information_schema.columns "
@@ -70,7 +83,8 @@ class RiskRuleMigrationIntegrationTest {
                 Integer.class);
 
         assertEquals(0, residualRiskScores);
-        assertEquals(0, requiredColumns);
+        assertEquals(2, requirementColumns);
+        assertEquals(0, configuredRequirements);
         assertEquals(1, templateIdColumns);
     }
 }

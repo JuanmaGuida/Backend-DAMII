@@ -51,17 +51,18 @@ class RiskCalculationServiceTest {
     }
 
     @Test
-    void nullAndFalseDoNotMatchEqualsTrueWhileNumericZeroRemainsPresent() {
+    void nullDoesNotMatchWhileFalseAndNumericZeroRemainEvaluable() {
         FormField danger = field("danger", FormFieldType.BOOLEAN, template);
         FormField amount = field("amount", FormFieldType.NUMBER, template);
-        RiskRule booleanRule = rule(danger, RiskOperator.EQUALS, true, null, null, 18);
+        RiskRule trueRule = rule(danger, RiskOperator.EQUALS, true, null, null, 18);
+        RiskRule falseRule = rule(danger, RiskOperator.EQUALS, false, null, null, 10);
         RiskRule zeroRule = rule(amount, RiskOperator.EQUALS, 0, null, null, 10);
-        List<RiskRule> configuredRules = List.of(booleanRule, zeroRule);
+        List<RiskRule> configuredRules = List.of(trueRule, falseRule, zeroRule);
 
         Map<String, Object> nullAnswer = new HashMap<>();
         nullAnswer.put("danger", null);
         assertAssessment(Risk.LOW, nullAnswer, configuredRules, 0, Risk.LOW);
-        assertAssessment(Risk.LOW, Map.of("danger", false), configuredRules, 0, Risk.LOW);
+        assertAssessment(Risk.LOW, Map.of("danger", false), configuredRules, 10, Risk.LOW);
         assertAssessment(Risk.LOW, Map.of("danger", true), configuredRules, 18, Risk.LOW);
         assertAssessment(Risk.LOW, Map.of("amount", 0), configuredRules, 10, Risk.LOW);
     }
@@ -105,15 +106,45 @@ class RiskCalculationServiceTest {
                 rule(amount, RiskOperator.BETWEEN, null,
                         new BigDecimal("10.0"), new BigDecimal("20.0"), 5),
                 rule(amount, RiskOperator.GREATER_THAN, null,
-                        new BigDecimal("15"), null, 10),
+                        new BigDecimal("20"), null, 10),
                 rule(amount, RiskOperator.LESS_THAN, null,
-                        null, new BigDecimal("21"), 13)
+                        null, new BigDecimal("10"), 13)
         );
 
         assertAssessment(Risk.LOW, Map.of("amount", new BigDecimal("10.00")),
-                configuredRules, 18, Risk.LOW);
-        assertAssessment(Risk.LOW, Map.of("amount", 20), configuredRules, 28, Risk.MEDIUM);
+                configuredRules, 5, Risk.LOW);
+        assertAssessment(Risk.LOW, Map.of("amount", 20), configuredRules, 5, Risk.LOW);
         assertAssessment(Risk.LOW, Map.of("amount", 21), configuredRules, 10, Risk.LOW);
+        assertAssessment(Risk.LOW, Map.of("amount", 9), configuredRules, 13, Risk.LOW);
+    }
+
+    @Test
+    void rejectsMoreThanOneMatchingRuleForTheSameField() {
+        FormField amount = field("amount", FormFieldType.NUMBER, template);
+        List<RiskRule> overlappingRules = List.of(
+                rule(amount, RiskOperator.BETWEEN, null,
+                        new BigDecimal("10"), new BigDecimal("20"), 5),
+                rule(amount, RiskOperator.GREATER_THAN, null,
+                        new BigDecimal("15"), null, 10)
+        );
+        when(rules.findAllByFormField_FormTemplate_IdAndActiveTrue(11L))
+                .thenReturn(overlappingRules);
+
+        assertThrows(IllegalStateException.class, () -> service.calculateRisk(requestType(Risk.LOW),
+                new ResolvedForm(template, List.of(), Map.of("amount", 18))));
+    }
+
+    @Test
+    void rejectsRulesForContextualFieldTypes() {
+        for (FormFieldType type : List.of(FormFieldType.TEXT, FormFieldType.TEXTAREA, FormFieldType.DATE)) {
+            RiskRule contextualRule = rule(field("context", type, template),
+                    RiskOperator.EQUALS, "value", null, null, 36);
+            when(rules.findAllByFormField_FormTemplate_IdAndActiveTrue(11L))
+                    .thenReturn(List.of(contextualRule));
+
+            assertThrows(IllegalStateException.class, () -> service.calculateRisk(requestType(Risk.LOW),
+                    new ResolvedForm(template, List.of(), Map.of("context", "value"))));
+        }
     }
 
     @Test

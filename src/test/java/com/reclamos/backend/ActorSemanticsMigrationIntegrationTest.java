@@ -29,8 +29,8 @@ class ActorSemanticsMigrationIntegrationTest {
     private JdbcTemplate jdbcTemplate;
 
     @Test
-    void cleanV1ToV11HasTheApprovedActorConstraints() {
-        assertEquals("11", jdbcTemplate.queryForObject(
+    void cleanV1ToV12HasTheApprovedActorConstraints() {
+        assertEquals("12", jdbcTemplate.queryForObject(
                 "SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank DESC LIMIT 1",
                 String.class));
 
