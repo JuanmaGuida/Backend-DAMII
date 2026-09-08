@@ -52,6 +52,8 @@ public class FormService {
         response.setCode(field.getCode());
         response.setLabel(field.getLabel());
         response.setType(field.getType());
+        response.setRequired(field.isRequired());
+        response.setAllowUnknown(field.isAllowUnknown());
         response.setDisplayOrder(field.getDisplayOrder());
         response.setConfig(field.getConfig() == null ? Map.of() : new HashMap<>(field.getConfig()));
         return response;

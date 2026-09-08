@@ -24,6 +24,7 @@ import java.util.Optional;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
@@ -54,11 +55,13 @@ class FormServiceTest {
     }
 
     @Test
-    void returnsDefinitionInRepositoryOrderWithoutInternalRiskOrRequiredFields() {
+    void returnsDefinitionInRepositoryOrderWithAnswerRequirements() {
         when(requestTypeRepository.findById(17L)).thenReturn(Optional.of(requestType));
         when(templateRepository.findFirstByRequestType_IdAndActiveTrueOrderByVersionDesc(17L))
                 .thenReturn(Optional.of(template));
         FormField first = field("damageType", 1);
+        first.setRequired(true);
+        first.setAllowUnknown(true);
         first.setConfig(new HashMap<>(Map.of(
                 "placeholder", "Seleccione",
                 "options", List.of(Map.of("value", "YES", "label", "Sí")))));
@@ -75,6 +78,10 @@ class FormServiceTest {
                 response.getFields().stream().map(field -> field.getCode()).toList());
         assertEquals("Seleccione", response.getFields().getFirst().getConfig().get("placeholder"));
         assertTrue(response.getFields().getFirst().getConfig().containsKey("options"));
+        assertTrue(response.getFields().getFirst().isRequired());
+        assertTrue(response.getFields().getFirst().isAllowUnknown());
+        assertFalse(response.getFields().get(1).isRequired());
+        assertFalse(response.getFields().get(1).isAllowUnknown());
     }
 
     @Test
@@ -99,12 +106,13 @@ class FormServiceTest {
     }
 
     @Test
-    void publicFieldContractDoesNotExposeRequired() {
+    void publicFieldContractExposesAnswerRequirements() {
         Set<String> fields = Arrays.stream(FormFieldResponse.class.getDeclaredFields())
                 .map(java.lang.reflect.Field::getName)
                 .collect(java.util.stream.Collectors.toSet());
 
-        assertTrue(!fields.contains("required"));
+        assertTrue(fields.contains("required"));
+        assertTrue(fields.contains("allowUnknown"));
     }
 
     private FormField field(String code, int order) {

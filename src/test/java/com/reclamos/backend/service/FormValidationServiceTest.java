@@ -96,6 +96,40 @@ class FormValidationServiceTest {
     }
 
     @Test
+    void rejectsOmittedRequiredField() {
+        FormField required = field("danger", "Peligro", FormFieldType.BOOLEAN, Map.of());
+        required.setRequired(true);
+        configureFields(required);
+
+        assertThrows(FormValidationException.class,
+                () -> service.validate(requestType, Map.of()));
+    }
+
+    @Test
+    void requiredFieldAcceptsExplicitUnknownWhenConfigured() {
+        FormField required = field("danger", "Peligro", FormFieldType.BOOLEAN, Map.of());
+        required.setRequired(true);
+        required.setAllowUnknown(true);
+        configureFields(required);
+        Map<String, Object> data = new HashMap<>();
+        data.put("danger", null);
+
+        ResolvedForm resolved = service.resolveAndValidate(requestType, data);
+
+        assertNull(resolved.formData().get("danger"));
+    }
+
+    @Test
+    void rejectsExplicitUnknownWhenNotConfigured() {
+        configureFields(field("danger", "Peligro", FormFieldType.BOOLEAN, Map.of()));
+        Map<String, Object> data = new HashMap<>();
+        data.put("danger", null);
+
+        assertThrows(FormValidationException.class,
+                () -> service.validate(requestType, data));
+    }
+
+    @Test
     void acceptsIsoDate() {
         configureFields(field("date", "Fecha", FormFieldType.DATE, Map.of()));
         assertDoesNotThrow(() -> service.validate(requestType, Map.of("date", "2026-08-30")));
@@ -109,11 +143,13 @@ class FormValidationServiceTest {
     }
 
     @Test
-    void preservesFalseZeroAndNullInValidatedData() {
+    void preservesFalseZeroAndAllowedNullInValidatedData() {
+        FormField comment = field("comment", "Comentario", FormFieldType.TEXT, Map.of());
+        comment.setAllowUnknown(true);
         configureFields(
                 field("danger", "Peligro", FormFieldType.BOOLEAN, Map.of()),
                 field("amount", "Cantidad", FormFieldType.NUMBER, Map.of()),
-                field("comment", "Comentario", FormFieldType.TEXT, Map.of())
+                comment
         );
         Map<String, Object> data = new HashMap<>();
         data.put("danger", false);

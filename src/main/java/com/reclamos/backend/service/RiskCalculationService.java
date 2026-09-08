@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -47,23 +48,43 @@ public class RiskCalculationService {
                 ? List.of()
                 : riskRuleRepository.findAllByFormField_FormTemplate_IdAndActiveTrue(formTemplateId);
 
-        int incrementSum = 0;
+        Map<String, RiskRule> matchingRules = new HashMap<>();
         for (RiskRule rule : rules) {
             if (!rule.isActive()
                     || !Objects.equals(rule.getFormField().getFormTemplate().getId(), formTemplateId)) {
                 continue;
             }
+            requireRiskCompatibleType(rule);
             String fieldCode = rule.getFormField().getCode();
             if (!data.containsKey(fieldCode)) {
                 continue;
             }
             Object answer = data.get(fieldCode);
             if (answer != null && matches(rule, answer)) {
-                incrementSum += rule.getRiskIncrement();
+                RiskRule previous = matchingRules.putIfAbsent(fieldCode, rule);
+                if (previous != null) {
+                    throw new IllegalStateException(
+                            "Configuración de riesgo inválida: más de una regla coincide con el campo '"
+                                    + fieldCode + "'");
+                }
             }
         }
+        int incrementSum = matchingRules.values().stream()
+                .mapToInt(RiskRule::getRiskIncrement)
+                .sum();
         int score = riskScalePolicy.cap(baseScore + incrementSum);
         return new RiskAssessment(score, riskScalePolicy.classify(score));
+    }
+
+    private void requireRiskCompatibleType(RiskRule rule) {
+        switch (rule.getFormField().getType()) {
+            case BOOLEAN, SELECT, NUMBER -> {
+                return;
+            }
+            case TEXT, TEXTAREA, DATE -> throw new IllegalStateException(
+                    "Configuración de riesgo inválida: el campo '" + rule.getFormField().getCode()
+                            + "' es de tipo contextual " + rule.getFormField().getType());
+        }
     }
 
     private boolean matches(RiskRule rule, Object answer) {
