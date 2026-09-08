@@ -313,6 +313,41 @@ paths:
                 message: El plazo para responder la solicitud de información venció
         '415':
           $ref: '#/components/responses/UnsupportedMediaType'
+  /api/tickets/{ticketId}/resolution:
+    post:
+      tags: [ Tickets ]
+      summary: Registrar la resolución manual de un ticket
+      description: Operación de AGENT o ADMIN para tickets ajenos gestionados por M2 en estado IN_PROGRESS.
+      operationId: resolveTicketManually
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - $ref: '#/components/parameters/TicketId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResolveTicketRequest'
+      responses:
+        '201':
+          description: Resolución registrada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketResolutionResponse'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/InvalidToken'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/TicketResolutionConflict'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
   /api/tracking/access:
     post:
       tags: [Tracking]
@@ -418,6 +453,15 @@ components:
           example:
             code: INFORMATION_REQUEST_CONFLICT
             message: El estado actual del ticket no permite realizar esta operación
+    TicketResolutionConflict:
+      description: El área responsable o el estado actual impiden la resolución manual.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          example:
+            code: TICKET_RESOLUTION_CONFLICT
+            message: El estado actual del ticket no permite su resolución manual
     UnsupportedMediaType:
       description: Tipo de contenido no soportado.
       content:
@@ -671,6 +715,41 @@ components:
           type: string
           format: date-time
           nullable: true
+    ResolveTicketRequest:
+      type: object
+      required: [ type, publicMessage ]
+      properties:
+        type:
+          $ref: '#/components/schemas/ResolutionType'
+        publicMessage:
+          type: string
+          minLength: 1
+        internalMessage:
+          type: string
+          nullable: true
+      additionalProperties: false
+    TicketResolutionResponse:
+      type: object
+      required: [ resolutionId, ticketId, status, type, publicMessage, internalMessage, resolvedAt ]
+      properties:
+        resolutionId:
+          type: string
+          format: uuid
+        ticketId:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/TicketStatus'
+        type:
+          $ref: '#/components/schemas/ResolutionType'
+        publicMessage:
+          type: string
+        internalMessage:
+          type: string
+          nullable: true
+        resolvedAt:
+          type: string
+          format: date-time
     TrackingAccessRequest:
       type: object
       required: [trackingCode]
@@ -745,6 +824,9 @@ components:
     InformationRequestStatus:
       type: string
       enum: [PENDING, ANSWERED, EXPIRED]
+    ResolutionType:
+      type: string
+      enum: [ ACTION_COMPLETED, REQUEST_FULFILLED, INQUIRY_ANSWERED, ACKNOWLEDGED, NO_FURTHER_ACTION_REQUIRED ]
     FormFieldType:
       type: string
       enum: [TEXT, TEXTAREA, SELECT, BOOLEAN, NUMBER, DATE]

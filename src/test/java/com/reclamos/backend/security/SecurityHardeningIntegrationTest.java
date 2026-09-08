@@ -12,6 +12,9 @@ import com.reclamos.backend.service.FormService;
 import com.reclamos.backend.service.InformationRequestService;
 import com.reclamos.backend.service.TicketService;
 import com.reclamos.backend.service.TrackingService;
+import com.reclamos.backend.service.TicketResolutionService;
+import com.reclamos.backend.dto.response.TicketResolutionResponse;
+import com.reclamos.backend.entity.ResolutionType;
 import jakarta.servlet.DispatcherType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -69,6 +72,8 @@ class SecurityHardeningIntegrationTest {
     private TicketService ticketService;
     @MockitoBean
     private InformationRequestService informationRequestService;
+    @MockitoBean
+    private TicketResolutionService ticketResolutionService;
 
     @BeforeEach
     void configureControllerResponses() {
@@ -104,6 +109,9 @@ class SecurityHardeningIntegrationTest {
                 TicketStatus.IN_PROGRESS, null, null);
         when(informationRequestService.requestInformation(any(), any(), any())).thenReturn(informationResponse);
         when(informationRequestService.answerInformation(any(), any(), any())).thenReturn(informationResponse);
+        when(ticketResolutionService.resolveManually(any(), any(), any())).thenReturn(new TicketResolutionResponse(
+                UUID.randomUUID(), TICKET_ID, TicketStatus.RESOLVED, ResolutionType.ACTION_COMPLETED,
+                "Listo", null, Instant.parse("2026-09-01T10:00:00Z")));
     }
 
     @Test
@@ -186,7 +194,9 @@ class SecurityHardeningIntegrationTest {
                 get("/api/auth/me"),
                 ticketJsonRequest(),
                 informationRequest(),
-                informationResponse()
+                informationResponse(),
+                informationResponse(),
+                resolutionRequest()
         );
         for (RequestBuilder request : requests) {
             assertCanonicalUnauthorized(request);
@@ -198,7 +208,9 @@ class SecurityHardeningIntegrationTest {
                 get("/api/auth/me"),
                 ticketJsonRequest(),
                 informationRequest(),
-                informationResponse()
+                informationResponse(),
+                informationResponse(),
+                resolutionRequest()
         );
         for (MockHttpServletRequestBuilder request : invalidBearerRequests) {
             assertCanonicalUnauthorized(request.header("Authorization", "Bearer invalid"));
@@ -213,6 +225,7 @@ class SecurityHardeningIntegrationTest {
         mockMvc.perform(withBearer(multipartTicketRequest(), token)).andExpect(status().isCreated());
         mockMvc.perform(withBearer(informationRequest(), token)).andExpect(status().isCreated());
         mockMvc.perform(withBearer(informationResponse(), token)).andExpect(status().isOk());
+        mockMvc.perform(withBearer(resolutionRequest(), token)).andExpect(status().isCreated());
     }
 
     @Test
@@ -307,6 +320,12 @@ class SecurityHardeningIntegrationTest {
         return post("/api/tickets/" + TICKET_ID + "/information-response")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"responseMessage\":\"Respuesta\"}");
+    }
+
+    private MockHttpServletRequestBuilder resolutionRequest() {
+        return post("/api/tickets/" + TICKET_ID + "/resolution")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"type\":\"ACTION_COMPLETED\",\"publicMessage\":\"Listo\"}");
     }
 
     private <B extends AbstractMockHttpServletRequestBuilder<B>> B withBearer(B request, String token) {

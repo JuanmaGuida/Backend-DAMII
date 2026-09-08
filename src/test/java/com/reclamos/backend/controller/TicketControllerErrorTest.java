@@ -9,6 +9,8 @@ import com.reclamos.backend.exception.UnauthorizedTicketOperationException;
 import com.reclamos.backend.identity.AuthenticatedIdentity;
 import com.reclamos.backend.service.InformationRequestService;
 import com.reclamos.backend.service.TicketService;
+import com.reclamos.backend.service.TicketResolutionService;
+import com.reclamos.backend.exception.TicketResolutionConflictException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
@@ -24,6 +26,7 @@ import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -33,12 +36,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class TicketControllerErrorTest {
     private final TicketService ticketService = mock(TicketService.class);
     private final InformationRequestService informationRequestService = mock(InformationRequestService.class);
+    private final TicketResolutionService ticketResolutionService = mock(TicketResolutionService.class);
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
         mockMvc = MockMvcBuilders.standaloneSetup(
-                        new TicketController(ticketService, informationRequestService))
+                        new TicketController(ticketService, informationRequestService, ticketResolutionService))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
                 .build();
@@ -66,6 +70,34 @@ class TicketControllerErrorTest {
                 .andExpect(jsonPath("$.code").value("INFORMATION_REQUEST_CONFLICT"))
                 .andExpect(jsonPath("$.message").value("Ya existe una solicitud pendiente"))
                 .andExpect(jsonPath("$.length()").value(2));
+    }
+
+    @Test
+    void resolutionConflictUsesCanonicalError() throws Exception {
+        when(ticketResolutionService.resolveManually(any(), any(), nullable(AuthenticatedIdentity.class)))
+                .thenThrow(new TicketResolutionConflictException("Estado incompatible"));
+
+        mockMvc.perform(post("/api/tickets/10000000-0000-0000-0000-000000000001/resolution")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"type\":\"ACTION_COMPLETED\",\"publicMessage\":\"Listo\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("TICKET_RESOLUTION_CONFLICT"))
+                .andExpect(jsonPath("$.message").value("Estado incompatible"))
+                .andExpect(jsonPath("$.length()").value(2));
+    }
+
+    @Test
+    void resolutionRequiresTypeAndNonBlankPublicMessage() throws Exception {
+        String endpoint = "/api/tickets/10000000-0000-0000-0000-000000000001/resolution";
+        mockMvc.perform(post(endpoint).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"publicMessage\":\"Listo\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+        mockMvc.perform(post(endpoint).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"type\":\"ACTION_COMPLETED\",\"publicMessage\":\"   \"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+        verifyNoInteractions(ticketResolutionService);
     }
 
     @Test
