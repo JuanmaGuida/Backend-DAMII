@@ -4,6 +4,8 @@ import com.reclamos.backend.entity.FormFieldType;
 import com.reclamos.backend.entity.RiskOperator;
 import com.reclamos.backend.entity.RiskRule;
 import com.reclamos.backend.repository.RiskRuleRepository;
+import org.flywaydb.core.Flyway;
+import org.flywaydb.core.api.MigrationVersion;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -14,7 +16,9 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
+import javax.sql.DataSource;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -28,6 +32,9 @@ class RiskRuleMigrationIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private DataSource dataSource;
 
     @Test
     void migrationProducesApprovedRulesAndTypedExpectedValues() {
@@ -63,28 +70,47 @@ class RiskRuleMigrationIntegrationTest {
     }
 
     @Test
-    void migrationRemovesLegacyConfigAndAddsAnswerRequirementColumns() {
-        Integer residualRiskScores = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM form_fields "
-                        + "WHERE jsonb_path_exists(config, '$.**.riskScore')",
-                Integer.class);
-        Integer requirementColumns = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM information_schema.columns "
-                        + "WHERE table_schema='public' AND table_name='form_fields' "
-                        + "AND column_name IN ('required', 'allow_unknown')",
-                Integer.class);
-        Integer configuredRequirements = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM form_fields WHERE required OR allow_unknown",
-                Integer.class);
-        Integer templateIdColumns = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM information_schema.columns "
-                        + "WHERE table_schema='public' AND table_name='tickets' "
-                        + "AND column_name='form_template_id'",
-                Integer.class);
+    void migrationRemovesLegacyConfigAndAddsAnswerRequirementColumnsWithTrueDefaults() {
+        String schema = "risk_" + UUID.randomUUID().toString().replace("-", "");
+        try {
+            Flyway.configure()
+                    .dataSource(dataSource)
+                    .locations("classpath:db/migration")
+                    .schemas(schema)
+                    .defaultSchema(schema)
+                    .target(MigrationVersion.fromVersion("12"))
+                    .load()
+                    .migrate();
 
-        assertEquals(0, residualRiskScores);
-        assertEquals(2, requirementColumns);
-        assertEquals(0, configuredRequirements);
-        assertEquals(1, templateIdColumns);
+            Integer residualRiskScores = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM " + schema + ".form_fields "
+                            + "WHERE jsonb_path_exists(config, '$.**.riskScore')",
+                    Integer.class);
+            Integer requirementColumns = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM information_schema.columns "
+                            + "WHERE table_schema=? AND table_name='form_fields' "
+                            + "AND column_name IN ('required', 'allow_unknown')",
+                    Integer.class, schema);
+            Integer fieldsWithoutRequiredDefaults = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM " + schema + ".form_fields WHERE NOT required OR NOT allow_unknown",
+                    Integer.class);
+            Integer trueDefaults = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM information_schema.columns "
+                            + "WHERE table_schema=? AND table_name='form_fields' "
+                            + "AND column_name IN ('required', 'allow_unknown') AND column_default='true'",
+                    Integer.class, schema);
+            Integer templateIdColumns = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM information_schema.columns "
+                            + "WHERE table_schema=? AND table_name='tickets' AND column_name='form_template_id'",
+                    Integer.class, schema);
+
+            assertEquals(0, residualRiskScores);
+            assertEquals(2, requirementColumns);
+            assertEquals(0, fieldsWithoutRequiredDefaults);
+            assertEquals(2, trueDefaults);
+            assertEquals(1, templateIdColumns);
+        } finally {
+            jdbcTemplate.execute("DROP SCHEMA IF EXISTS " + schema + " CASCADE");
+        }
     }
 }

@@ -30,19 +30,28 @@ class ActorSemanticsMigrationIntegrationTest {
 
     @Test
     void cleanV1ToV12HasTheApprovedActorConstraints() {
-        assertEquals("12", jdbcTemplate.queryForObject(
-                "SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank DESC LIMIT 1",
-                String.class));
+        String schema = temporarySchema();
+        JdbcTemplate database = new JdbcTemplate(dataSource);
+        try {
+            flyway(schema, "12").migrate();
 
-        String activity = constraintDefinition(jdbcTemplate, "public", "ck_ticket_activity_actor_type");
-        String message = constraintDefinition(jdbcTemplate, "public", "ck_ticket_message_author_type");
-        String cancellation = constraintDefinition(jdbcTemplate, "public", "ck_ticket_cancellation_actor");
-        for (String actor : new String[]{"CITIZEN", "AGENT", "AREA_RESPONSIBLE", "ADMIN", "EXTERNAL_USER", "SYSTEM"}) {
-            assertTrue(activity.contains(actor));
-            assertTrue(message.contains(actor));
-        }
-        for (String actor : new String[]{"CITIZEN", "AGENT", "AREA_RESPONSIBLE", "ADMIN", "EXTERNAL_USER", "SYSTEM"}) {
-            assertTrue(cancellation.contains(actor));
+            assertEquals("12", database.queryForObject(
+                    "SELECT version FROM " + schema
+                            + ".flyway_schema_history WHERE success ORDER BY installed_rank DESC LIMIT 1",
+                    String.class));
+
+            String activity = constraintDefinition(database, schema, "ck_ticket_activity_actor_type");
+            String message = constraintDefinition(database, schema, "ck_ticket_message_author_type");
+            String cancellation = constraintDefinition(database, schema, "ck_ticket_cancellation_actor");
+            for (String actor : new String[]{"CITIZEN", "AGENT", "AREA_RESPONSIBLE", "ADMIN", "EXTERNAL_USER", "SYSTEM"}) {
+                assertTrue(activity.contains(actor));
+                assertTrue(message.contains(actor));
+            }
+            for (String actor : new String[]{"CITIZEN", "AGENT", "AREA_RESPONSIBLE", "ADMIN", "EXTERNAL_USER", "SYSTEM"}) {
+                assertTrue(cancellation.contains(actor));
+            }
+        } finally {
+            database.execute("DROP SCHEMA IF EXISTS " + schema + " CASCADE");
         }
     }
 
