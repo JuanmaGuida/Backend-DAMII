@@ -16,6 +16,8 @@ public class TrackingTicketResponse {
     private String summary;
     private Instant createdAt;
     private Instant statusChangedAt;
+    private Instant firstResponseDueAt;
+    private Instant resolutionDueAt;
     private RequestTypeSummary requestType;
     private CategorySummary category;
     private SubcategorySummary subcategory;

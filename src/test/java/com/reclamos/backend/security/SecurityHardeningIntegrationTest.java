@@ -84,11 +84,17 @@ class SecurityHardeningIntegrationTest {
         when(formService.getFormForRequestType(1L)).thenReturn(form);
 
         when(trackingService.findByTrackingCode("tracking-code")).thenReturn(new TrackingTicketResponse(
-                "OP-123", TicketStatus.REGISTERED, "Resumen",
-                Instant.parse("2026-09-01T10:00:00Z"), Instant.parse("2026-09-01T10:00:00Z"),
+                "OP-123",
+                TicketStatus.REGISTERED,
+                "Resumen",
+                Instant.parse("2026-09-01T10:00:00Z"),
+                Instant.parse("2026-09-01T10:00:00Z"),
+                null, // firstResponseDueAt
+                null, // resolutionDueAt
                 new TrackingTicketResponse.RequestTypeSummary(1L, "TEST", "Tipo"),
                 new TrackingTicketResponse.CategorySummary(1L, "Categoría"),
-                new TrackingTicketResponse.SubcategorySummary(1L, "Subcategoría")));
+                new TrackingTicketResponse.SubcategorySummary(1L, "Subcategoría")
+        ));
 
         when(ticketService.create(any(), any(), any())).thenReturn(new CreateTicketResponse(
                 TICKET_ID, "OP-123", "tracking-code", TicketStatus.REGISTERED));

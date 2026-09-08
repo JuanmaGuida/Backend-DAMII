@@ -136,6 +136,22 @@ public class Ticket {
     @Column(name = "status_changed_at", nullable = false)
     private Instant statusChangedAt;
 
+    @Column(name = "resolution_due_at")
+    private Instant resolutionDueAt;
+
+    @Column(name = "first_response_due_at")
+    private Instant firstResponseDueAt;
+
+    @Transient
+    public Instant getEffectiveFirstResponseDueAt() {
+        return mainTicket == null ? firstResponseDueAt : mainTicket.getEffectiveFirstResponseDueAt();
+    }
+
+    @Transient
+    public Instant getEffectiveResolutionDueAt() {
+        return mainTicket == null ? resolutionDueAt : mainTicket.getEffectiveResolutionDueAt();
+    }
+
     @Column(name = "resolution_confirmation_due_at")
     private Instant resolutionConfirmationDueAt;
 

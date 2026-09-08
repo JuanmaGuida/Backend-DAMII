@@ -40,6 +40,8 @@ class TrackingControllerTest {
         when(trackingService.findByTrackingCode("code"))
                 .thenReturn(new TrackingTicketResponse("OP-123", TicketStatus.REGISTERED, "Resumen",
                         Instant.parse("2026-09-01T10:00:00Z"), Instant.parse("2026-09-01T10:00:00Z"),
+                        Instant.parse("2026-09-01T14:00:00Z"),
+                        Instant.parse("2026-09-03T10:00:00Z"),
                         new TrackingTicketResponse.RequestTypeSummary(1L, "RT", "Tipo"),
                         new TrackingTicketResponse.CategorySummary(2L, "Categoría"),
                         new TrackingTicketResponse.SubcategorySummary(3L, "Subcategoría")));

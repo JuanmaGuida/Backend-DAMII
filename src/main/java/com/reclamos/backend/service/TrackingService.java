@@ -38,6 +38,8 @@ public class TrackingService {
                 ticket.getSummary(),
                 ticket.getCreatedAt(),
                 ticket.getStatusChangedAt(),
+                ticket.getEffectiveFirstResponseDueAt(),
+                ticket.getEffectiveResolutionDueAt(),
                 new TrackingTicketResponse.RequestTypeSummary(
                         requestType.getId(), requestType.getCode(), requestType.getName()),
                 new TrackingTicketResponse.CategorySummary(category.getId(), category.getName()),
