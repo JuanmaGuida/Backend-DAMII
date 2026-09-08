@@ -28,39 +28,47 @@ class ModuleAreaIdMigrationIntegrationTest {
     @Autowired
     private DataSource dataSource;
 
-    @Autowired
-    private JdbcTemplate jdbcTemplate;
 
     @Test
     void cleanV1ToV9NormalizesTheWholeActiveCatalogAndAddsAllConstraints() {
-        Map<String, Integer> counts = new LinkedHashMap<>();
-        jdbcTemplate.queryForList("SELECT responsible_area_id, COUNT(*) AS total FROM request_types "
-                        + "WHERE active GROUP BY responsible_area_id ORDER BY responsible_area_id")
-                .forEach(row -> counts.put((String) row.get("responsible_area_id"),
-                        ((Number) row.get("total")).intValue()));
+        String schema = temporarySchema();
+        JdbcTemplate database = new JdbcTemplate(dataSource);
+        try {
+            flyway(schema, "9").migrate();
+            Map<String, Integer> counts = new LinkedHashMap<>();
+            database.queryForList("SELECT responsible_area_id, COUNT(*) AS total FROM " + schema
+                            + ".request_types WHERE active GROUP BY responsible_area_id ORDER BY responsible_area_id")
+                    .forEach(row -> counts.put((String) row.get("responsible_area_id"),
+                            ((Number) row.get("total")).intValue()));
 
-        assertEquals(Map.of(
-                "M1", 9,
-                "M2", 11,
-                "M3", 15,
-                "M4", 11,
-                "M5", 8,
-                "M6", 32,
-                "M7", 15,
-                "M8", 9), counts);
-        assertEquals(110, count("SELECT COUNT(*) FROM request_types WHERE active"));
-        assertEquals(0, count("SELECT COUNT(*) FROM request_types WHERE responsible_area_id NOT IN (" + VALID_IDS + ")"));
-        assertEquals(5, count("SELECT COUNT(*) FROM request_types WHERE code IN ("
-                + "'INFORMAR_UNA_CABLES_EXPUESTOS','INFORMAR_UNA_COLUMNA_DANADA',"
-                + "'INFORMAR_UNA_LUMINARIA_APAGADA','INFORMAR_UNA_LUMINARIA_INTERMITENTE',"
-                + "'SOLICITAR_NUEVA_ILUMINACION') AND responsible_area_id='M6'"));
-        assertEquals(1, count("SELECT COUNT(*) FROM request_types "
-                + "WHERE code='RECLAMAR_POR_UNA_DERIVACION_INCORRECTA' AND responsible_area_id='M2'"));
-        assertEquals(7, count("SELECT COUNT(*) FROM pg_constraint WHERE contype='c' AND conname IN ("
-                + "'ck_request_type_responsible_area_namespace','ck_ticket_responsible_area_namespace',"
-                + "'ck_ticket_activity_source_module_namespace','ck_ticket_message_source_module_namespace',"
-                + "'ck_attachment_source_module_namespace','ck_information_request_module_namespace',"
-                + "'ck_ticket_cancellation_module_namespace')"));
+            assertEquals(Map.of(
+                    "M1", 9,
+                    "M2", 11,
+                    "M3", 15,
+                    "M4", 11,
+                    "M5", 8,
+                    "M6", 32,
+                    "M7", 15,
+                    "M8", 9), counts);
+            assertEquals(110, count(database, "SELECT COUNT(*) FROM " + schema + ".request_types WHERE active"));
+            assertEquals(0, count(database, "SELECT COUNT(*) FROM " + schema
+                    + ".request_types WHERE responsible_area_id NOT IN (" + VALID_IDS + ")"));
+            assertEquals(5, count(database, "SELECT COUNT(*) FROM " + schema + ".request_types WHERE code IN ("
+                    + "'INFORMAR_UNA_CABLES_EXPUESTOS','INFORMAR_UNA_COLUMNA_DANADA',"
+                    + "'INFORMAR_UNA_LUMINARIA_APAGADA','INFORMAR_UNA_LUMINARIA_INTERMITENTE',"
+                    + "'SOLICITAR_NUEVA_ILUMINACION') AND responsible_area_id='M6'"));
+            assertEquals(1, count(database, "SELECT COUNT(*) FROM " + schema + ".request_types "
+                    + "WHERE code='RECLAMAR_POR_UNA_DERIVACION_INCORRECTA' AND responsible_area_id='M2'"));
+            assertEquals(7, count(database, "SELECT COUNT(*) FROM pg_constraint c "
+                    + "JOIN pg_namespace n ON n.oid=c.connamespace "
+                    + "WHERE n.nspname=? AND c.contype='c' AND c.conname IN ("
+                    + "'ck_request_type_responsible_area_namespace','ck_ticket_responsible_area_namespace',"
+                    + "'ck_ticket_activity_source_module_namespace','ck_ticket_message_source_module_namespace',"
+                    + "'ck_attachment_source_module_namespace','ck_information_request_module_namespace',"
+                    + "'ck_ticket_cancellation_module_namespace')", schema));
+        } finally {
+            database.execute("DROP SCHEMA IF EXISTS " + schema + " CASCADE");
+        }
     }
 
     @Test
@@ -78,7 +86,7 @@ class ModuleAreaIdMigrationIntegrationTest {
             UUID lightingTicket = insertTicket(database, schema, "INFORMAR_UNA_LUMINARIA_APAGADA",
                     "Obras Públicas", "LIGHT");
 
-            flyway(schema, null).migrate();
+            flyway(schema, "9").migrate();
 
             assertEquals("M3", scalar(database, "SELECT responsible_area_id FROM " + schema
                     + ".request_types WHERE code='INFORMAR_UN_BACHE'"));
@@ -119,7 +127,7 @@ class ModuleAreaIdMigrationIntegrationTest {
             database.update("UPDATE " + schema + ".request_types SET responsible_area_id='UNKNOWN-AREA' "
                     + "WHERE code='INFORMAR_UN_BACHE'");
 
-            FlywayException exception = assertThrows(FlywayException.class, () -> flyway(schema, null).migrate());
+            FlywayException exception = assertThrows(FlywayException.class, () -> flyway(schema, "9").migrate());
 
             assertTrue(allMessages(exception).contains(
                     "V9 abortada: valor desconocido en request_types.responsible_area_id: UNKNOWN-AREA"));
@@ -160,8 +168,8 @@ class ModuleAreaIdMigrationIntegrationTest {
         return database.queryForObject(sql, String.class);
     }
 
-    private int count(String sql) {
-        return jdbcTemplate.queryForObject(sql, Integer.class);
+    private int count(JdbcTemplate database, String sql, Object... arguments) {
+        return database.queryForObject(sql, Integer.class, arguments);
     }
 
     private String temporarySchema() {

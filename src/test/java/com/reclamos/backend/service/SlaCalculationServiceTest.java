@@ -66,6 +66,11 @@ class SlaCalculationServiceTest {
         assertEquals(Instant.parse("2026-09-11T21:00:00Z"),
                 service.calculateDueAt(Instant.parse("2026-09-07T12:00:00Z"), policy));
     }
+    @Test void businessDaysSkipAConfiguredHoliday() {
+        calendar.getNonWorkingDays().add(LocalDate.of(2026, 9, 8));
+        assertEquals(Instant.parse("2026-09-14T21:00:00Z"),
+                service.calculateDueAt(Instant.parse("2026-09-07T12:00:00Z"), businessDays(5)));
+    }
     @Test void inquiryResolutionUsesTicketTypeOverride() {
         SlaPolicy override = sameBusinessDay();
         when(policies.findByTicketTypeAndSlaType(TicketType.INQUIRY, SlaType.RESOLUTION))
@@ -167,6 +172,16 @@ class SlaCalculationServiceTest {
         policy.setSlaType(SlaType.RESOLUTION);
         assertEquals(Instant.parse("2026-09-16T21:00:00Z"),
                 service.calculateDueAt(Instant.parse("2026-09-07T12:00:00Z"), policy));
+    }
+    @Test void mediumResolutionSupportsFiveBusinessDays() {
+        assertEquals(Instant.parse("2026-09-11T21:00:00Z"), service.calculateDueAt(
+                Instant.parse("2026-09-07T12:00:00Z"), businessDays(5)));
+    }
+    @Test void lowResolutionSupportsTenBusinessDays() {
+        SlaPolicy policy = businessDays(10);
+        policy.setPriority(Priority.LOW);
+        assertEquals(Instant.parse("2026-09-18T21:00:00Z"), service.calculateDueAt(
+                Instant.parse("2026-09-07T12:00:00Z"), policy));
     }
     @Test void lowFirstResponseSupportsTwentyFourBusinessHours() {
         SlaPolicy policy = business(24);

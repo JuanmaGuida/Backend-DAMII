@@ -37,6 +37,9 @@ public class SlaPolicy {
             throw new IllegalArgumentException("SUGGESTION requiere BUSINESS_DAYS");
         if (priority == Priority.CRITICAL && mode != SlaMode.CONTINUOUS_24X7)
             throw new IllegalArgumentException("CRITICAL requiere el modo 24x7");
+        if (priority == Priority.CRITICAL && (deadlineRule != SlaDeadlineRule.HOURS
+                || durationSeconds == null || durationSeconds != criticalDurationSeconds()))
+            throw new IllegalArgumentException("CRITICAL requiere la duración 24x7 definida para el tipo de SLA");
         if (priority != null && priority != Priority.CRITICAL && mode != SlaMode.BUSINESS_HOURS)
             throw new IllegalArgumentException("Las prioridades no críticas requieren horario laboral");
         validateDuration();
@@ -62,5 +65,9 @@ public class SlaPolicy {
             throw new IllegalArgumentException("SAME_BUSINESS_DAY no admite duración");
         if (deadlineRule != SlaDeadlineRule.HOURS && mode != SlaMode.BUSINESS_HOURS)
             throw new IllegalArgumentException("La regla seleccionada requiere horario laboral");
+    }
+
+    private long criticalDurationSeconds() {
+        return slaType == SlaType.FIRST_RESPONSE ? 2 * 60 * 60L : 24 * 60 * 60L;
     }
 }

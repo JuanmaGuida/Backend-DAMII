@@ -1,5 +1,7 @@
 package com.reclamos.backend.repository;
 
-public interface WorkCalendarRepository <WorkCalendar, Long>{
+import com.reclamos.backend.entity.WorkCalendar;
+import org.springframework.data.jpa.repository.JpaRepository;
 
+public interface WorkCalendarRepository extends JpaRepository<WorkCalendar, Long>{
 }
