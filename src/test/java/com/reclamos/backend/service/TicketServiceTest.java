@@ -993,6 +993,44 @@ class TicketServiceTest {
         );
     }
 
+    @Test
+    void routingPreservesFirstResponseDueAt() {
+        UUID id = UUID.randomUUID();
+        Instant firstResponseDueAt = Instant.parse("2026-09-02T12:00:00Z");
+        Ticket ticket = routedTicket(Priority.MEDIUM, Instant.parse("2026-09-05T12:00:00Z"));
+        ticket.setCreatedAt(Instant.parse("2026-09-01T12:00:00Z"));
+        ticket.setFirstResponseDueAt(firstResponseDueAt);
+
+        when(tickets.findByIdForUpdate(id)).thenReturn(Optional.of(ticket));
+        when(sla.calculateResolutionDueAt(
+                ticket.getCreatedAt(), Priority.MEDIUM, TicketType.REQUEST
+        )).thenReturn(Optional.of(ticket.getResolutionDueAt()));
+        when(tickets.save(ticket)).thenReturn(ticket);
+
+        Ticket routed = service.route(id, "AREA-2", clock.instant());
+
+        assertEquals(firstResponseDueAt, routed.getFirstResponseDueAt());
+        verify(sla, never()).calculateDueAt(any(), any(Priority.class), eq(SlaType.FIRST_RESPONSE));
+    }
+
+    @Test
+    void duplicateCannotBeRoutedOrReceiveAnIndependentSla() {
+        UUID id = UUID.randomUUID();
+        Ticket duplicate = routedTicket(Priority.HIGH, null);
+        duplicate.setCurrentStatus(TicketStatus.DUPLICATE);
+        duplicate.setCreatedAt(Instant.parse("2026-09-01T12:00:00Z"));
+
+        when(tickets.findByIdForUpdate(id)).thenReturn(Optional.of(duplicate));
+
+        assertThrows(
+                InvalidTicketRequestException.class,
+                () -> service.route(id, "AREA-2", clock.instant())
+        );
+
+        verifyNoInteractions(sla);
+        verify(tickets, never()).save(any());
+    }
+
     private Ticket routedTicket(
             Priority priority,
             Instant dueAt
