@@ -9,17 +9,17 @@ import jakarta.validation.constraints.NotNull;
 import java.time.Instant;
 
 /**
- * Payload del evento updateTicketStatus (Eventos v1.6 §8), usado tanto por
- * el simulador interno (Story 3.4 / DDA2-61) como por
- * {@code TicketStatusUpdateService} (DDA2-62), que aplica la transición
- * real. La forma sigue el contrato lo más de cerca posible para que estos
- * mismos payloads sirvan de referencia cuando exista la integración real.
+ * Payload de negocio ({@code data}) del evento updateTicketStatus (Eventos
+ * v1.6 §8.1), usado tanto por el simulador interno (Story 3.4 / DDA2-61)
+ * como por {@code TicketStatusUpdateService} (DDA2-62), que aplica la
+ * transición real. Viaja envuelto en {@link UpdateTicketStatusEnvelope}, que
+ * es donde vive el envelope común (specVersion/eventId/eventType/producer/
+ * subject) — por eso este record ya no tiene un campo producerModuleId
+ * propio: el productor del hecho es {@code envelope.producer().moduleId()}.
  * <p>
- * Simplificación consciente: no incluye {@code attachments} (el módulo
- * todavía no persiste adjuntos, Sprint 5 / Story 8.1) ni el envelope común
- * completo (specVersion/eventId) — este endpoint es un simulador interno,
- * no un consumidor de bus de eventos real, así que no se implementa
- * idempotencia por eventId (InboxEvent) acá.
+ * Simplificación consciente que sigue vigente: no incluye
+ * {@code attachments} (el módulo todavía no persiste adjuntos, Sprint 5 /
+ * Story 8.1).
  */
 public record UpdateTicketStatusRequest(
         @NotNull(message = "updateType es obligatorio") UpdateTicketStatusType updateType,
@@ -29,8 +29,7 @@ public record UpdateTicketStatusRequest(
         @Max(value = 100, message = "progress debe estar entre 0 y 100") Integer progress,
         @Valid Details details,
         @NotNull(message = "updatedBy es obligatorio") @Valid Actor updatedBy,
-        @NotNull(message = "updateOccurredAt es obligatorio") Instant updateOccurredAt,
-        String producerModuleId
+        @NotNull(message = "updateOccurredAt es obligatorio") Instant updateOccurredAt
 ) {
     public record Details(
             InformationRequest informationRequest,

@@ -217,6 +217,12 @@ class TicketServiceTest {
         verify(requestTypeRepository, never()).findById(any());
     }
 
+    /**
+     * Cubre el guard en sí (classificationFinalizedAt != null -&gt; conflicto).
+     * El bug que QA encontró era que nada seteaba ese campo en el flujo real
+     * — ver routeToAreaKeepsOriginalClassificationFinalizedAtOnSecondRouting
+     * y el fix en TicketService.routeToArea.
+     */
     @Test
     void correctClassificationRejectsWhenClassificationAlreadyFinalized() {
         Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.LOW);
@@ -254,6 +260,10 @@ class TicketServiceTest {
 
         assertThat(response.getCurrentStatus()).isEqualTo(TicketStatus.ROUTED);
         assertThat(ticket.getCurrentStatus()).isEqualTo(TicketStatus.ROUTED);
+        // Regresión QA: classificationFinalizedAt nunca se seteaba acá, así que
+        // correctClassification seguía aceptando correcciones después de un
+        // ROUTED -> RETURNED -> IN_REVIEW.
+        assertThat(ticket.getClassificationFinalizedAt()).isNotNull();
 
         ArgumentCaptor<TicketActivity> activityCaptor = ArgumentCaptor.forClass(TicketActivity.class);
         verify(activityRepository).save(activityCaptor.capture());
@@ -305,6 +315,30 @@ class TicketServiceTest {
                 .isInstanceOf(TicketStateConflictException.class);
 
         verify(ticketRepository, never()).save(any());
+    }
+
+    /**
+     * Regresión QA (BE - Endpoint de corrección de clasificación): reproduce
+     * exactamente el escenario que falló — ROUTED -&gt; RETURNED -&gt;
+     * IN_REVIEW -&gt; nueva derivación no debe volver a mover
+     * classificationFinalizedAt, y esa segunda IN_REVIEW ya debería tener la
+     * clasificación bloqueada (ver
+     * correctClassificationRejectsWhenClassificationAlreadyFinalized).
+     */
+    @Test
+    void routeToAreaKeepsOriginalClassificationFinalizedAtOnSecondRouting() {
+        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.LOW);
+        ticket.setResponsibleAreaId("M6");
+        Instant firstFinalization = Instant.now().minusSeconds(3600);
+        ticket.setClassificationFinalizedAt(firstFinalization);
+
+        when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+        when(activityRepository.countByTicket_Id(ticketId)).thenReturn(2L);
+        when(locationRepository.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+
+        ticketService.routeToArea(ticketId, actor);
+
+        assertThat(ticket.getClassificationFinalizedAt()).isEqualTo(firstFinalization);
     }
 
     // ---- listTickets ----

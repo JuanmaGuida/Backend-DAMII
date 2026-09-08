@@ -12,7 +12,6 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-import java.time.Instant;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -28,6 +27,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * TicketSimulationController), así que este slice test lo fuerza vía
  * @TestPropertySource para poder cargarlo — en application.properties
  * "real" el default es false.
+ * <p>
+ * Post-QA: el body ahora es el envelope común completo (specVersion/
+ * eventId/eventType/producer/subject + data), no sólo el payload plano de
+ * updateType. Como el service está mockeado acá, estos tests sólo cubren el
+ * wiring HTTP y las validaciones de Bean Validation sobre el DTO — la
+ * validación semántica del envelope (eventType/subject/dedupe) está cubierta
+ * en TicketStatusUpdateServiceTest, no acá.
  */
 @WebMvcTest(TicketSimulationController.class)
 @TestPropertySource(properties = "app.simulator.enabled=true")
@@ -47,15 +53,14 @@ class TicketSimulationControllerTest {
         response.setCurrentStatus(TicketStatus.IN_PROGRESS);
         when(ticketStatusUpdateService.applyUpdate(eq(ticketId), any())).thenReturn(response);
 
-        String body = """
+        String body = envelopeJson(ticketId, """
                 {
                   "updateType": "STARTED",
                   "publicMessage": "Comenzamos a trabajar en esto.",
                   "updatedBy": {"type": "AREA_USER", "id": "USR-M6-77"},
-                  "updateOccurredAt": "2026-09-02T12:00:00Z",
-                  "producerModuleId": "M6"
+                  "updateOccurredAt": "2026-09-02T12:00:00Z"
                 }
-                """;
+                """);
 
         mockMvc.perform(post("/api/tickets/{ticketId}/simulate-status-update", ticketId)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -68,12 +73,37 @@ class TicketSimulationControllerTest {
     void simulateStatusUpdateWithoutUpdateTypeReturnsBadRequest() throws Exception {
         UUID ticketId = UUID.randomUUID();
 
-        String body = """
+        String body = envelopeJson(ticketId, """
                 {
                   "updatedBy": {"type": "AREA_USER", "id": "USR-M6-77"},
                   "updateOccurredAt": "2026-09-02T12:00:00Z"
                 }
-                """;
+                """);
+
+        mockMvc.perform(post("/api/tickets/{ticketId}/simulate-status-update", ticketId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void simulateStatusUpdateWithoutEventIdReturnsBadRequest() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+
+        String body = """
+                {
+                  "specVersion": "1.0",
+                  "eventType": "updateTicketStatus",
+                  "occurredAt": "2026-09-02T12:00:00Z",
+                  "producer": {"moduleId": "M6", "service": "urban-services-api"},
+                  "subject": "tickets/%s",
+                  "data": {
+                    "updateType": "STARTED",
+                    "updatedBy": {"type": "AREA_USER", "id": "USR-M6-77"},
+                    "updateOccurredAt": "2026-09-02T12:00:00Z"
+                  }
+                }
+                """.formatted(ticketId);
 
         mockMvc.perform(post("/api/tickets/{ticketId}/simulate-status-update", ticketId)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -87,18 +117,32 @@ class TicketSimulationControllerTest {
         when(ticketStatusUpdateService.applyUpdate(eq(ticketId), any()))
                 .thenThrow(new TicketStateConflictException("El ticket no está ROUTED"));
 
-        String body = """
+        String body = envelopeJson(ticketId, """
                 {
                   "updateType": "STARTED",
                   "updatedBy": {"type": "AREA_USER", "id": "USR-M6-77"},
                   "updateOccurredAt": "2026-09-02T12:00:00Z"
                 }
-                """;
+                """);
 
         mockMvc.perform(post("/api/tickets/{ticketId}/simulate-status-update", ticketId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.message").value("El ticket no está ROUTED"));
+    }
+
+    private String envelopeJson(UUID ticketId, String data) {
+        return """
+                {
+                  "specVersion": "1.0",
+                  "eventId": "%s",
+                  "eventType": "updateTicketStatus",
+                  "occurredAt": "2026-09-02T12:00:00Z",
+                  "producer": {"moduleId": "M6", "service": "urban-services-api"},
+                  "subject": "tickets/%s",
+                  "data": %s
+                }
+                """.formatted(UUID.randomUUID(), ticketId, data);
     }
 }
