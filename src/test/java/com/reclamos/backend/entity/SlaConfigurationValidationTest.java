@@ -36,6 +36,20 @@ class SlaConfigurationValidationTest {
         assertThrows(IllegalArgumentException.class, policy::validate);
     }
 
+    @Test void criticalFirstResponseRequiresExactlyTwoHours() {
+        SlaPolicy policy = policy(SlaMode.CONTINUOUS_24X7, null);
+        policy.setPriority(Priority.CRITICAL);
+        policy.setSlaType(SlaType.FIRST_RESPONSE);
+        assertThrows(IllegalArgumentException.class, policy::validate);
+    }
+
+    @Test void criticalResolutionRequiresExactlyTwentyFourHours() {
+        SlaPolicy policy = policy(SlaMode.CONTINUOUS_24X7, null);
+        policy.setPriority(Priority.CRITICAL);
+        policy.setDurationSeconds(Duration.ofHours(24).toSeconds());
+        assertDoesNotThrow(policy::validate);
+    }
+
     private SlaPolicy policy(SlaMode mode, WorkCalendar calendar) {
         SlaPolicy policy = new SlaPolicy();
         policy.setPriority(Priority.HIGH);
