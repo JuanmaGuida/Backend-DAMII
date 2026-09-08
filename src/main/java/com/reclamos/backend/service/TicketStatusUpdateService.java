@@ -1,10 +1,13 @@
 package com.reclamos.backend.service;
 
 import com.reclamos.backend.dto.TicketResponse;
+import com.reclamos.backend.dto.UpdateTicketStatusEnvelope;
 import com.reclamos.backend.dto.UpdateTicketStatusRequest;
 import com.reclamos.backend.entity.ActivityType;
 import com.reclamos.backend.entity.ActorType;
 import com.reclamos.backend.entity.Category;
+import com.reclamos.backend.entity.InboxEvent;
+import com.reclamos.backend.entity.InboxStatus;
 import com.reclamos.backend.entity.RequestType;
 import com.reclamos.backend.entity.Subcategory;
 import com.reclamos.backend.entity.Ticket;
@@ -17,6 +20,7 @@ import com.reclamos.backend.entity.UpdateTicketStatusType;
 import com.reclamos.backend.exception.InvalidTicketRequestException;
 import com.reclamos.backend.exception.ResourceNotFoundException;
 import com.reclamos.backend.exception.TicketStateConflictException;
+import com.reclamos.backend.repository.InboxEventRepository;
 import com.reclamos.backend.repository.TicketActivityRepository;
 import com.reclamos.backend.repository.TicketLocationRepository;
 import com.reclamos.backend.repository.TicketMessageRepository;
@@ -26,6 +30,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -33,39 +38,74 @@ import java.util.UUID;
  * DDA2-62 (BE - Implementar transiciones a partir del consumo de eventos):
  * aplica la MISMA lógica de transición canónica que va a usar la
  * integración real de updateTicketStatus (Eventos v1.6 §8), a partir de un
- * payload ya parseado. Hoy la única forma de llegar a este service es el
- * simulador interno (DDA2-61 / {@code TicketSimulationController}); cuando
- * exista un consumidor real de bus de eventos, va a llamar a este mismo
- * método sin tener que tocar la lógica de negocio.
+ * envelope ya deserializado. Hoy la única forma de llegar a este service es
+ * el simulador interno (DDA2-61 / {@code TicketSimulationController});
+ * cuando exista un consumidor real de bus de eventos, va a llamar a este
+ * mismo método sin tener que tocar la lógica de negocio.
  * <p>
- * ALCANCE REDUCIDO A PROPÓSITO respecto del contrato completo (documentado
- * updateType por updateType más abajo): no existen todavía las entidades
- * InformationRequest, TicketResolution ni TicketCancellation (Sprint 4/5),
- * así que esos hechos se registran con los campos genéricos que ya tiene
- * TicketActivity (reasonCode, message) en lugar de un modelo dedicado. Esto
- * es explícitamente temporal y hay que revisarlo cuando esas entidades se
- * construyan.
+ * REVISIÓN POST-QA: la primera versión recibía sólo el payload plano de
+ * {@code data} y no el envelope común, así que no validaba eventId,
+ * eventType ni subject, y no deduplicaba por eventId — un mismo evento
+ * reenviado producía Activity/TicketMessage duplicados, y un envelope
+ * inválido llegaba a cambiar el estado del ticket. Ahora {@code applyUpdate}
+ * recibe el {@link UpdateTicketStatusEnvelope} completo, valida el envelope
+ * ANTES de tocar el Ticket (§23.3 paso 1), deduplica contra
+ * {@link InboxEventRepository} (§19.1) y valida producer.moduleId contra
+ * responsibleAreaId (§23.3 paso 2) antes de aplicar cualquier transición.
  * <p>
- * Tampoco se implementa la republicación de ticketUpdated después de
- * consumir un updateTicketStatus (Eventos v1.6 §10) ni InboxEvent/dedupe
- * por eventId — el AC de la Story 3.4 pide reproducir la transición, no el
- * eco de vuelta al bus. Ver aviso en el chat.
+ * ALCANCE REDUCIDO A PROPÓSITO que sigue vigente (documentado updateType por
+ * updateType más abajo): no existen todavía las entidades InformationRequest,
+ * TicketResolution ni TicketCancellation (Sprint 4/5), así que esos hechos
+ * se registran con los campos genéricos que ya tiene TicketActivity
+ * (reasonCode, message) en lugar de un modelo dedicado. Tampoco se
+ * implementa la republicación de ticketUpdated después de consumir un
+ * updateTicketStatus (Eventos v1.6 §10) — el AC de la Story 3.4 pide
+ * reproducir la transición, no el eco de vuelta al bus.
+ * <p>
+ * NO IMPLEMENTADO A PROPÓSITO: si el envelope es válido pero el payload de
+ * negocio no lo es para ese updateType (ej. falta details.returnInfo), la
+ * excepción revierte toda la transacción — incluida cualquier fila de
+ * InboxEvent que se hubiera intentado insertar en el medio — así que no
+ * queda un registro FAILED auditable de ese intento. Un reintento con el
+ * mismo eventId ya corregido simplemente se vuelve a procesar de cero, lo
+ * cual es el comportamiento correcto para un productor que corrige y
+ * reenvía; lo que no existe es un historial de los intentos rechazados con
+ * ese eventId. Habría que persistir el InboxEvent(FAILED) en una
+ * transacción separada (REQUIRES_NEW) para lograr eso.
  */
 @Service
 @RequiredArgsConstructor
 public class TicketStatusUpdateService {
 
     private static final Set<String> KNOWN_ACTOR_TYPES = Set.of("CITIZEN", "AGENT", "AREA_USER", "SYSTEM");
+    private static final String SUPPORTED_SPEC_VERSION = "1.0";
+    private static final String SUPPORTED_EVENT_TYPE = "updateTicketStatus";
 
     private final TicketRepository ticketRepository;
     private final TicketActivityRepository activityRepository;
     private final TicketLocationRepository locationRepository;
     private final TicketMessageRepository messageRepository;
+    private final InboxEventRepository inboxEventRepository;
 
     @Transactional
-    public TicketResponse applyUpdate(UUID ticketId, UpdateTicketStatusRequest request) {
+    public TicketResponse applyUpdate(UUID ticketId, UpdateTicketStatusEnvelope envelope) {
+        validateEnvelope(ticketId, envelope);
+
+        Optional<InboxEvent> existing = inboxEventRepository.findById(envelope.eventId());
+        if (existing.isPresent()) {
+            return handleDuplicateEvent(ticketId, existing.get());
+        }
+
+        UpdateTicketStatusRequest request = envelope.data();
         Ticket ticket = ticketRepository.findByIdForUpdate(ticketId)
                 .orElseThrow(() -> new ResourceNotFoundException("El ticket solicitado no existe"));
+
+        if (!envelope.producer().moduleId().equalsIgnoreCase(ticket.getResponsibleAreaId())) {
+            throw new InvalidTicketRequestException(
+                    "producer.moduleId ('" + envelope.producer().moduleId()
+                            + "') no coincide con el área responsable del ticket ('"
+                            + ticket.getResponsibleAreaId() + "')");
+        }
 
         ActorType actorType = mapActorType(request.updatedBy().type());
         String reasonCode = null;
@@ -160,21 +200,81 @@ public class TicketStatusUpdateService {
         ticket.setStatusChangedAt(Instant.now());
         ticketRepository.save(ticket);
 
+        String sourceModuleId = envelope.producer().moduleId();
         if (!isBlank(request.publicMessage())) {
             messageRepository.save(buildMessage(ticket, MessageVisibility.PUBLIC, request.publicMessage(),
-                    actorType, request.updatedBy().id(), request.producerModuleId()));
+                    actorType, request.updatedBy().id(), sourceModuleId));
         }
         if (!isBlank(request.internalMessage())) {
             messageRepository.save(buildMessage(ticket, MessageVisibility.INTERNAL, request.internalMessage(),
-                    actorType, request.updatedBy().id(), request.producerModuleId()));
+                    actorType, request.updatedBy().id(), sourceModuleId));
         }
 
         recordActivity(ticket, activityType, previousStatus, newStatus, actorType, request.updatedBy().id(),
-                request.producerModuleId(), reasonCode,
+                sourceModuleId, reasonCode,
                 !isBlank(request.internalMessage()) ? request.internalMessage() : request.publicMessage());
+
+        // InboxEvent se inserta en la MISMA transacción que el resto: si esto
+        // violara la unicidad de eventId (dos requests concurrentes con el
+        // mismo eventId ganándole ambos al chequeo de arriba), todo el
+        // commit falla junto y ninguna de las dos aplica efectos duplicados.
+        inboxEventRepository.save(toInboxEvent(envelope));
 
         TicketLocation location = locationRepository.findByTicket_Id(ticketId).orElse(null);
         return toResponse(ticket, location);
+    }
+
+    /**
+     * Eventos v1.6 §23.3 paso 1: valida el envelope común ANTES de tocar el
+     * Ticket. specVersion/eventType/subject inválidos son rechazo puro de
+     * request (400), sin ningún efecto de negocio — así se corrige el bug
+     * que QA encontró (un envelope inválido llegaba a cambiar el estado).
+     */
+    private void validateEnvelope(UUID ticketId, UpdateTicketStatusEnvelope envelope) {
+        if (!SUPPORTED_SPEC_VERSION.equals(envelope.specVersion())) {
+            throw new InvalidTicketRequestException(
+                    "specVersion no soportado: " + envelope.specVersion() + " (se espera " + SUPPORTED_SPEC_VERSION + ")");
+        }
+        if (!SUPPORTED_EVENT_TYPE.equals(envelope.eventType())) {
+            throw new InvalidTicketRequestException(
+                    "eventType inválido: se esperaba '" + SUPPORTED_EVENT_TYPE + "'");
+        }
+        String expectedSubject = "tickets/" + ticketId;
+        if (!expectedSubject.equals(envelope.subject())) {
+            throw new InvalidTicketRequestException(
+                    "subject ('" + envelope.subject() + "') no coincide con el ticket de la URL ('"
+                            + expectedSubject + "')");
+        }
+    }
+
+    /**
+     * Eventos v1.6 §12 "Errores y reintentos": eventId ya procesado se
+     * confirma como éxito idempotente sin repetir efectos. Un eventId que ya
+     * falló antes se rechaza de nuevo con el mismo motivo, en vez de
+     * reprocesarlo silenciosamente — un reintento legítimo de un productor
+     * que corrigió el payload debería llegar con un eventId nuevo.
+     */
+    private TicketResponse handleDuplicateEvent(UUID ticketId, InboxEvent existing) {
+        if (existing.getStatus() == InboxStatus.FAILED) {
+            throw new InvalidTicketRequestException(
+                    "El evento " + existing.getEventId() + " ya fue rechazado anteriormente: " + existing.getError());
+        }
+        Ticket ticket = ticketRepository.findById(ticketId)
+                .orElseThrow(() -> new ResourceNotFoundException("El ticket solicitado no existe"));
+        TicketLocation location = locationRepository.findByTicket_Id(ticketId).orElse(null);
+        return toResponse(ticket, location);
+    }
+
+    private InboxEvent toInboxEvent(UpdateTicketStatusEnvelope envelope) {
+        InboxEvent event = new InboxEvent();
+        event.setEventId(envelope.eventId());
+        event.setEventType(envelope.eventType());
+        event.setProducerModuleId(envelope.producer().moduleId());
+        Instant now = Instant.now();
+        event.setReceivedAt(now);
+        event.setProcessedAt(now);
+        event.setStatus(InboxStatus.PROCESSED);
+        return event;
     }
 
     private void requireCurrentStatus(Ticket ticket, TicketStatus expected, String message) {

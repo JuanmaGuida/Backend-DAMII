@@ -1,7 +1,7 @@
 package com.reclamos.backend.controller;
 
 import com.reclamos.backend.dto.TicketResponse;
-import com.reclamos.backend.dto.UpdateTicketStatusRequest;
+import com.reclamos.backend.dto.UpdateTicketStatusEnvelope;
 import com.reclamos.backend.service.TicketStatusUpdateService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -27,6 +27,10 @@ import java.util.UUID;
  * existe y el endpoint no existe — no es un chequeo de rol (todavía no hay
  * enforcement de permisos), es un apagado a nivel de entorno, que es lo que
  * pide el AC ("no debe estar disponible para usuarios finales").
+ * <p>
+ * Post-QA: el body ahora es el envelope común completo (Eventos v1.6 §4),
+ * no sólo el payload de {@code data} — ver {@link UpdateTicketStatusEnvelope}
+ * y el javadoc de {@link TicketStatusUpdateService}.
  */
 @RestController
 @RequestMapping("/api/tickets")
@@ -39,8 +43,8 @@ public class TicketSimulationController {
     @PostMapping("/{ticketId}/simulate-status-update")
     public TicketResponse simulateStatusUpdate(
             @PathVariable UUID ticketId,
-            @Valid @RequestBody UpdateTicketStatusRequest request
+            @Valid @RequestBody UpdateTicketStatusEnvelope envelope
     ) {
-        return ticketStatusUpdateService.applyUpdate(ticketId, request);
+        return ticketStatusUpdateService.applyUpdate(ticketId, envelope);
     }
 }

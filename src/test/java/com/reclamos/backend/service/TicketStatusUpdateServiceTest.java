@@ -1,9 +1,12 @@
 package com.reclamos.backend.service;
 
 import com.reclamos.backend.dto.TicketResponse;
+import com.reclamos.backend.dto.UpdateTicketStatusEnvelope;
 import com.reclamos.backend.dto.UpdateTicketStatusRequest;
 import com.reclamos.backend.entity.ActivityType;
 import com.reclamos.backend.entity.Category;
+import com.reclamos.backend.entity.InboxEvent;
+import com.reclamos.backend.entity.InboxStatus;
 import com.reclamos.backend.entity.Priority;
 import com.reclamos.backend.entity.RequestType;
 import com.reclamos.backend.entity.Subcategory;
@@ -15,6 +18,7 @@ import com.reclamos.backend.entity.UpdateTicketStatusType;
 import com.reclamos.backend.exception.InvalidTicketRequestException;
 import com.reclamos.backend.exception.ResourceNotFoundException;
 import com.reclamos.backend.exception.TicketStateConflictException;
+import com.reclamos.backend.repository.InboxEventRepository;
 import com.reclamos.backend.repository.TicketActivityRepository;
 import com.reclamos.backend.repository.TicketLocationRepository;
 import com.reclamos.backend.repository.TicketMessageRepository;
@@ -34,10 +38,18 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+/**
+ * Post-QA: estos tests ya no llaman a applyUpdate con el payload plano —
+ * ahora reciben el {@link UpdateTicketStatusEnvelope} completo, y se agregan
+ * casos específicos para lo que QA encontró roto: envelope inválido acepta
+ * do sin cambiar nada, y el mismo eventId reenviado duplicando efectos.
+ */
 @ExtendWith(MockitoExtension.class)
 class TicketStatusUpdateServiceTest {
 
@@ -49,6 +61,8 @@ class TicketStatusUpdateServiceTest {
     private TicketLocationRepository locationRepository;
     @Mock
     private TicketMessageRepository messageRepository;
+    @Mock
+    private InboxEventRepository inboxEventRepository;
 
     private TicketStatusUpdateService service;
 
@@ -59,7 +73,10 @@ class TicketStatusUpdateServiceTest {
     @BeforeEach
     void setUp() {
         service = new TicketStatusUpdateService(ticketRepository, activityRepository, locationRepository,
-                messageRepository);
+                messageRepository, inboxEventRepository);
+        // Default para los tests que no ejercitan dedupe en sí: "eventId nunca visto".
+        // Los tests de dedupe pisan este stub explícitamente.
+        lenient().when(inboxEventRepository.findById(any())).thenReturn(Optional.empty());
     }
 
     @Test
@@ -69,11 +86,11 @@ class TicketStatusUpdateServiceTest {
         when(activityRepository.countByTicket_Id(ticketId)).thenReturn(0L);
         when(locationRepository.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
 
-        UpdateTicketStatusRequest request = new UpdateTicketStatusRequest(
+        UpdateTicketStatusRequest data = new UpdateTicketStatusRequest(
                 UpdateTicketStatusType.STARTED, "Comenzamos a trabajar en esto.", null,
-                null, null, areaActor, Instant.now(), "M6");
+                null, null, areaActor, Instant.now());
 
-        TicketResponse response = service.applyUpdate(ticketId, request);
+        TicketResponse response = service.applyUpdate(ticketId, envelope(data));
 
         assertThat(response.getCurrentStatus()).isEqualTo(TicketStatus.IN_PROGRESS);
         verify(messageRepository).save(any());
@@ -81,6 +98,8 @@ class TicketStatusUpdateServiceTest {
         ArgumentCaptor<TicketActivity> captor = ArgumentCaptor.forClass(TicketActivity.class);
         verify(activityRepository).save(captor.capture());
         assertThat(captor.getValue().getActionType()).isEqualTo(ActivityType.STATE_CHANGED);
+
+        verify(inboxEventRepository).save(any());
     }
 
     @Test
@@ -88,10 +107,10 @@ class TicketStatusUpdateServiceTest {
         Ticket ticket = ticket(TicketStatus.IN_REVIEW);
         when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
 
-        UpdateTicketStatusRequest request = new UpdateTicketStatusRequest(
-                UpdateTicketStatusType.STARTED, null, null, null, null, areaActor, Instant.now(), "M6");
+        UpdateTicketStatusRequest data = new UpdateTicketStatusRequest(
+                UpdateTicketStatusType.STARTED, null, null, null, null, areaActor, Instant.now());
 
-        assertThatThrownBy(() -> service.applyUpdate(ticketId, request))
+        assertThatThrownBy(() -> service.applyUpdate(ticketId, envelope(data)))
                 .isInstanceOf(TicketStateConflictException.class);
     }
 
@@ -100,10 +119,10 @@ class TicketStatusUpdateServiceTest {
         Ticket ticket = ticket(TicketStatus.IN_PROGRESS);
         when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
 
-        UpdateTicketStatusRequest request = new UpdateTicketStatusRequest(
-                UpdateTicketStatusType.PROGRESS, null, null, null, null, areaActor, Instant.now(), "M6");
+        UpdateTicketStatusRequest data = new UpdateTicketStatusRequest(
+                UpdateTicketStatusType.PROGRESS, null, null, null, null, areaActor, Instant.now());
 
-        assertThatThrownBy(() -> service.applyUpdate(ticketId, request))
+        assertThatThrownBy(() -> service.applyUpdate(ticketId, envelope(data)))
                 .isInstanceOf(InvalidTicketRequestException.class);
     }
 
@@ -114,10 +133,10 @@ class TicketStatusUpdateServiceTest {
         when(activityRepository.countByTicket_Id(ticketId)).thenReturn(1L);
         when(locationRepository.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
 
-        UpdateTicketStatusRequest request = new UpdateTicketStatusRequest(
-                UpdateTicketStatusType.PROGRESS, null, null, 40, null, areaActor, Instant.now(), "M6");
+        UpdateTicketStatusRequest data = new UpdateTicketStatusRequest(
+                UpdateTicketStatusType.PROGRESS, null, null, 40, null, areaActor, Instant.now());
 
-        TicketResponse response = service.applyUpdate(ticketId, request);
+        TicketResponse response = service.applyUpdate(ticketId, envelope(data));
 
         assertThat(response.getCurrentStatus()).isEqualTo(TicketStatus.IN_PROGRESS);
         assertThat(ticket.getCurrentProgress()).isEqualTo((short) 40);
@@ -128,12 +147,12 @@ class TicketStatusUpdateServiceTest {
         Ticket ticket = ticket(TicketStatus.ROUTED);
         when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
 
-        UpdateTicketStatusRequest request = new UpdateTicketStatusRequest(
+        UpdateTicketStatusRequest data = new UpdateTicketStatusRequest(
                 UpdateTicketStatusType.INFORMATION_REQUIRED, null, null, null,
                 new UpdateTicketStatusRequest.Details(null, null, null, null),
-                areaActor, Instant.now(), "M6");
+                areaActor, Instant.now());
 
-        assertThatThrownBy(() -> service.applyUpdate(ticketId, request))
+        assertThatThrownBy(() -> service.applyUpdate(ticketId, envelope(data)))
                 .isInstanceOf(InvalidTicketRequestException.class);
     }
 
@@ -147,11 +166,11 @@ class TicketStatusUpdateServiceTest {
         UpdateTicketStatusRequest.Details details = new UpdateTicketStatusRequest.Details(
                 new UpdateTicketStatusRequest.InformationRequest("Indique la altura aproximada.", null),
                 null, null, null);
-        UpdateTicketStatusRequest request = new UpdateTicketStatusRequest(
+        UpdateTicketStatusRequest data = new UpdateTicketStatusRequest(
                 UpdateTicketStatusType.INFORMATION_REQUIRED, null, null, null, details,
-                areaActor, Instant.now(), "M6");
+                areaActor, Instant.now());
 
-        TicketResponse response = service.applyUpdate(ticketId, request);
+        TicketResponse response = service.applyUpdate(ticketId, envelope(data));
 
         assertThat(response.getCurrentStatus()).isEqualTo(TicketStatus.PENDING_INFORMATION);
     }
@@ -165,11 +184,11 @@ class TicketStatusUpdateServiceTest {
 
         UpdateTicketStatusRequest.Details details = new UpdateTicketStatusRequest.Details(
                 null, new UpdateTicketStatusRequest.ReturnInfo("REQUEST_TYPE_MISMATCH"), null, null);
-        UpdateTicketStatusRequest request = new UpdateTicketStatusRequest(
+        UpdateTicketStatusRequest data = new UpdateTicketStatusRequest(
                 UpdateTicketStatusType.RETURNED, null, "No corresponde a nuestra área.", null, details,
-                areaActor, Instant.now(), "M6");
+                areaActor, Instant.now());
 
-        TicketResponse response = service.applyUpdate(ticketId, request);
+        TicketResponse response = service.applyUpdate(ticketId, envelope(data));
 
         assertThat(response.getCurrentStatus()).isEqualTo(TicketStatus.IN_REVIEW);
 
@@ -185,11 +204,11 @@ class TicketStatusUpdateServiceTest {
 
         UpdateTicketStatusRequest.Details details = new UpdateTicketStatusRequest.Details(
                 null, null, new UpdateTicketStatusRequest.Resolution("ACTION_COMPLETED"), null);
-        UpdateTicketStatusRequest request = new UpdateTicketStatusRequest(
+        UpdateTicketStatusRequest data = new UpdateTicketStatusRequest(
                 UpdateTicketStatusType.RESOLVED, null, "Se cambió la lámpara.", null, details,
-                areaActor, Instant.now(), "M6");
+                areaActor, Instant.now());
 
-        assertThatThrownBy(() -> service.applyUpdate(ticketId, request))
+        assertThatThrownBy(() -> service.applyUpdate(ticketId, envelope(data)))
                 .isInstanceOf(InvalidTicketRequestException.class);
     }
 
@@ -202,11 +221,11 @@ class TicketStatusUpdateServiceTest {
 
         UpdateTicketStatusRequest.Details details = new UpdateTicketStatusRequest.Details(
                 null, null, new UpdateTicketStatusRequest.Resolution("ACTION_COMPLETED"), null);
-        UpdateTicketStatusRequest request = new UpdateTicketStatusRequest(
+        UpdateTicketStatusRequest data = new UpdateTicketStatusRequest(
                 UpdateTicketStatusType.RESOLVED, "La luminaria fue reparada.", "Se reemplazó el artefacto.",
-                null, details, areaActor, Instant.now(), "M6");
+                null, details, areaActor, Instant.now());
 
-        TicketResponse response = service.applyUpdate(ticketId, request);
+        TicketResponse response = service.applyUpdate(ticketId, envelope(data));
 
         assertThat(response.getCurrentStatus()).isEqualTo(TicketStatus.RESOLVED);
     }
@@ -220,11 +239,11 @@ class TicketStatusUpdateServiceTest {
 
         UpdateTicketStatusRequest.Details details = new UpdateTicketStatusRequest.Details(
                 null, null, null, new UpdateTicketStatusRequest.Cancellation("OUT_OF_SCOPE"));
-        UpdateTicketStatusRequest request = new UpdateTicketStatusRequest(
+        UpdateTicketStatusRequest data = new UpdateTicketStatusRequest(
                 UpdateTicketStatusType.REJECTED, "No corresponde a esta gestión.", null, null, details,
-                areaActor, Instant.now(), "M6");
+                areaActor, Instant.now());
 
-        TicketResponse response = service.applyUpdate(ticketId, request);
+        TicketResponse response = service.applyUpdate(ticketId, envelope(data));
 
         assertThat(response.getCurrentStatus()).isEqualTo(TicketStatus.CANCELLED);
     }
@@ -235,10 +254,10 @@ class TicketStatusUpdateServiceTest {
         when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
 
         UpdateTicketStatusRequest.Actor badActor = new UpdateTicketStatusRequest.Actor("ROBOT", "x");
-        UpdateTicketStatusRequest request = new UpdateTicketStatusRequest(
-                UpdateTicketStatusType.STARTED, null, null, null, null, badActor, Instant.now(), "M6");
+        UpdateTicketStatusRequest data = new UpdateTicketStatusRequest(
+                UpdateTicketStatusType.STARTED, null, null, null, null, badActor, Instant.now());
 
-        assertThatThrownBy(() -> service.applyUpdate(ticketId, request))
+        assertThatThrownBy(() -> service.applyUpdate(ticketId, envelope(data)))
                 .isInstanceOf(InvalidTicketRequestException.class);
 
         verify(ticketRepository, never()).save(any());
@@ -248,11 +267,150 @@ class TicketStatusUpdateServiceTest {
     void missingTicketThrowsNotFound() {
         when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.empty());
 
-        UpdateTicketStatusRequest request = new UpdateTicketStatusRequest(
-                UpdateTicketStatusType.STARTED, null, null, null, null, areaActor, Instant.now(), "M6");
+        UpdateTicketStatusRequest data = new UpdateTicketStatusRequest(
+                UpdateTicketStatusType.STARTED, null, null, null, null, areaActor, Instant.now());
 
-        assertThatThrownBy(() -> service.applyUpdate(ticketId, request))
+        assertThatThrownBy(() -> service.applyUpdate(ticketId, envelope(data)))
                 .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    // ---- Regresión QA: validación de envelope y deduplicación por eventId ----
+
+    @Test
+    void wrongEventTypeIsRejectedWithoutTouchingTheTicket() {
+        UpdateTicketStatusRequest data = new UpdateTicketStatusRequest(
+                UpdateTicketStatusType.STARTED, null, null, null, null, areaActor, Instant.now());
+        UpdateTicketStatusEnvelope badEnvelope = new UpdateTicketStatusEnvelope(
+                "1.0", UUID.randomUUID(), "ticketUpdated", Instant.now(),
+                new UpdateTicketStatusEnvelope.Producer("M6", "urban-services-api"),
+                "tickets/" + ticketId, data);
+
+        assertThatThrownBy(() -> service.applyUpdate(ticketId, badEnvelope))
+                .isInstanceOf(InvalidTicketRequestException.class);
+
+        verify(ticketRepository, never()).findByIdForUpdate(any());
+        verify(ticketRepository, never()).save(any());
+    }
+
+    @Test
+    void mismatchedSubjectIsRejectedWithoutTouchingTheTicket() {
+        UpdateTicketStatusRequest data = new UpdateTicketStatusRequest(
+                UpdateTicketStatusType.STARTED, null, null, null, null, areaActor, Instant.now());
+        UpdateTicketStatusEnvelope badEnvelope = new UpdateTicketStatusEnvelope(
+                "1.0", UUID.randomUUID(), "updateTicketStatus", Instant.now(),
+                new UpdateTicketStatusEnvelope.Producer("M6", "urban-services-api"),
+                "tickets/" + UUID.randomUUID(), data);
+
+        assertThatThrownBy(() -> service.applyUpdate(ticketId, badEnvelope))
+                .isInstanceOf(InvalidTicketRequestException.class);
+
+        verify(ticketRepository, never()).findByIdForUpdate(any());
+        verify(ticketRepository, never()).save(any());
+    }
+
+    @Test
+    void unsupportedSpecVersionIsRejectedWithoutTouchingTheTicket() {
+        UpdateTicketStatusRequest data = new UpdateTicketStatusRequest(
+                UpdateTicketStatusType.STARTED, null, null, null, null, areaActor, Instant.now());
+        UpdateTicketStatusEnvelope badEnvelope = new UpdateTicketStatusEnvelope(
+                "2.0", UUID.randomUUID(), "updateTicketStatus", Instant.now(),
+                new UpdateTicketStatusEnvelope.Producer("M6", "urban-services-api"),
+                "tickets/" + ticketId, data);
+
+        assertThatThrownBy(() -> service.applyUpdate(ticketId, badEnvelope))
+                .isInstanceOf(InvalidTicketRequestException.class);
+
+        verify(ticketRepository, never()).findByIdForUpdate(any());
+    }
+
+    @Test
+    void producerModuleMismatchWithResponsibleAreaIsRejected() {
+        Ticket ticket = ticket(TicketStatus.ROUTED); // responsibleAreaId = "M6"
+        when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+
+        UpdateTicketStatusRequest data = new UpdateTicketStatusRequest(
+                UpdateTicketStatusType.STARTED, null, null, null, null, areaActor, Instant.now());
+        UpdateTicketStatusEnvelope envelope = new UpdateTicketStatusEnvelope(
+                "1.0", UUID.randomUUID(), "updateTicketStatus", Instant.now(),
+                new UpdateTicketStatusEnvelope.Producer("M9", "other-area-api"),
+                "tickets/" + ticketId, data);
+
+        assertThatThrownBy(() -> service.applyUpdate(ticketId, envelope))
+                .isInstanceOf(InvalidTicketRequestException.class);
+
+        verify(ticketRepository, never()).save(any());
+        verify(activityRepository, never()).save(any());
+    }
+
+    @Test
+    void duplicateEventIdReturnsIdempotentSuccessWithoutRepeatingEffects() {
+        Ticket ticket = ticket(TicketStatus.ROUTED);
+        when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+        when(activityRepository.countByTicket_Id(ticketId)).thenReturn(0L);
+        when(locationRepository.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+
+        UpdateTicketStatusRequest data = new UpdateTicketStatusRequest(
+                UpdateTicketStatusType.STARTED, "Comenzamos a trabajar en esto.", null,
+                null, null, areaActor, Instant.now());
+        UpdateTicketStatusEnvelope envelope = envelope(data);
+
+        InboxEvent alreadyProcessed = new InboxEvent();
+        alreadyProcessed.setEventId(envelope.eventId());
+        alreadyProcessed.setEventType(envelope.eventType());
+        alreadyProcessed.setProducerModuleId(envelope.producer().moduleId());
+        alreadyProcessed.setStatus(InboxStatus.PROCESSED);
+
+        when(inboxEventRepository.findById(envelope.eventId()))
+                .thenReturn(Optional.empty())          // primer envío: no visto
+                .thenReturn(Optional.of(alreadyProcessed)); // reenvío: ya procesado
+
+        TicketResponse first = service.applyUpdate(ticketId, envelope);
+        TicketResponse second = service.applyUpdate(ticketId, envelope);
+
+        assertThat(first.getCurrentStatus()).isEqualTo(TicketStatus.IN_PROGRESS);
+        assertThat(second.getCurrentStatus()).isEqualTo(TicketStatus.IN_PROGRESS);
+
+        // El reenvío no debe repetir NINGÚN efecto de negocio: sólo una vez cada uno.
+        verify(messageRepository, times(1)).save(any());
+        verify(activityRepository, times(1)).save(any());
+        verify(ticketRepository, times(1)).save(any());
+        verify(inboxEventRepository, times(1)).save(any());
+    }
+
+    @Test
+    void eventIdThatPreviouslyFailedIsRejectedAgainWithoutReprocessing() {
+        UUID eventId = UUID.randomUUID();
+        InboxEvent failed = new InboxEvent();
+        failed.setEventId(eventId);
+        failed.setStatus(InboxStatus.FAILED);
+        failed.setError("subject no coincidía con el ticket de la URL");
+
+        UpdateTicketStatusRequest data = new UpdateTicketStatusRequest(
+                UpdateTicketStatusType.STARTED, null, null, null, null, areaActor, Instant.now());
+        UpdateTicketStatusEnvelope envelope = new UpdateTicketStatusEnvelope(
+                "1.0", eventId, "updateTicketStatus", Instant.now(),
+                new UpdateTicketStatusEnvelope.Producer("M6", "urban-services-api"),
+                "tickets/" + ticketId, data);
+
+        when(inboxEventRepository.findById(eventId)).thenReturn(Optional.of(failed));
+
+        assertThatThrownBy(() -> service.applyUpdate(ticketId, envelope))
+                .isInstanceOf(InvalidTicketRequestException.class);
+
+        verify(ticketRepository, never()).findByIdForUpdate(any());
+    }
+
+    private UpdateTicketStatusEnvelope envelope(UpdateTicketStatusRequest data) {
+        return new UpdateTicketStatusEnvelope(
+                "1.0",
+                UUID.randomUUID(),
+                "updateTicketStatus",
+                Instant.now(),
+                new UpdateTicketStatusEnvelope.Producer("M6", "urban-services-api"),
+                "tickets/" + ticketId,
+                data
+        );
     }
 
     private Ticket ticket(TicketStatus status) {

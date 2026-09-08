@@ -245,6 +245,17 @@ public class TicketService {
         TicketStatus previousStatus = ticket.getCurrentStatus();
         ticket.setCurrentStatus(TicketStatus.ROUTED);
         ticket.setStatusChangedAt(Instant.now());
+        // BUG post-QA: esto nunca se seteaba, así que classificationFinalizedAt
+        // quedaba siempre null y correctClassification() aceptaba correcciones
+        // después de un ROUTED -> RETURNED -> IN_REVIEW, cuando la clasificación
+        // ya debería estar bloqueada para siempre (Entidades v1.3 §6 / §4.1: "Al
+        // salir por primera vez de IN_REVIEW hacia gestión ... se fija"). Sólo se
+        // fija la primera vez: una vuelta posterior a ROUTED no debe correr esto
+        // de nuevo (aunque en la práctica ya sería no-op porque no puede volver a
+        // IN_REVIEW -> ROUTED sin pasar por acá con el valor ya seteado).
+        if (ticket.getClassificationFinalizedAt() == null) {
+            ticket.setClassificationFinalizedAt(Instant.now());
+        }
         ticketRepository.save(ticket);
 
         recordActivity(ticket, ActivityType.ROUTED, previousStatus, TicketStatus.ROUTED, actor, null, null,
