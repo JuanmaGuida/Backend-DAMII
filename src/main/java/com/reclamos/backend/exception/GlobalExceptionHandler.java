@@ -46,6 +46,11 @@ public class GlobalExceptionHandler {
                 "Falta el part obligatorio '" + exception.getRequestPartName() + "'");
     }
 
+    @ExceptionHandler(TicketResolutionConflictException.class)
+    public ResponseEntity<ApiErrorResponse> handleResolutionConflict(TicketResolutionConflictException exception) {
+        return response(HttpStatus.CONFLICT, TicketResolutionConflictException.CODE, exception.getMessage());
+    }
+
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     public ResponseEntity<ApiErrorResponse> handleTypeMismatch(MethodArgumentTypeMismatchException exception) {
         return response(HttpStatus.BAD_REQUEST, "INVALID_REQUEST",

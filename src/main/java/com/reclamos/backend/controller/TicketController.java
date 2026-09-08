@@ -8,6 +8,9 @@ import com.reclamos.backend.service.TicketService;
 import com.reclamos.backend.dto.request.CreateTicketRequest;
 import com.reclamos.backend.dto.response.CreateTicketResponse;
 import com.reclamos.backend.identity.AuthenticatedIdentity;
+import com.reclamos.backend.service.TicketResolutionService;
+import com.reclamos.backend.dto.request.ResolveTicketRequest;
+import com.reclamos.backend.dto.response.TicketResolutionResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -25,6 +28,7 @@ public class TicketController {
 
     private final TicketService ticketService;
     private final InformationRequestService informationRequestService;
+    private final TicketResolutionService ticketResolutionService;
 
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
@@ -59,4 +63,12 @@ public class TicketController {
         return informationRequestService.answerInformation(ticketId, request, identity);
     }
 
+    @PostMapping(path = "/{ticketId}/resolution", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @ResponseStatus(HttpStatus.CREATED)
+    public TicketResolutionResponse resolve(
+            @PathVariable UUID ticketId,
+            @Valid @RequestBody ResolveTicketRequest request,
+            @AuthenticationPrincipal AuthenticatedIdentity identity) {
+        return ticketResolutionService.resolveManually(ticketId, request, identity);
+    }
 }
