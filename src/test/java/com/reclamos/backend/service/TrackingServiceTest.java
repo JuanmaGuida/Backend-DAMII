@@ -18,6 +18,7 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -42,6 +43,8 @@ class TrackingServiceTest {
         assertEquals(TicketStatus.IN_PROGRESS, first.getCurrentStatus());
         assertEquals(Instant.parse("2026-09-01T10:00:00Z"), first.getCreatedAt());
         assertEquals(Instant.parse("2026-09-02T10:00:00Z"), first.getStatusChangedAt());
+        assertEquals(Instant.parse("2026-09-01T14:00:00Z"), first.getFirstResponseDueAt());
+        assertEquals(Instant.parse("2026-09-04T10:00:00Z"), first.getResolutionDueAt());
         assertEquals("RT-1", first.getRequestType().getCode());
         assertEquals("Categoría", first.getCategory().getName());
         assertEquals("Subcategoría", first.getSubcategory().getName());
@@ -56,6 +59,15 @@ class TrackingServiceTest {
         service.findByTrackingCode(CODE);
 
         verify(tickets).findByTrackingCodeHash(trackingCodes.hash(CODE));
+    }
+
+    @Test
+    void ticketWithoutPolicyReturnsNullResolutionDueAt() {
+        Ticket ticket = ticket(false);
+        ticket.setResolutionDueAt(null);
+        when(tickets.findByTrackingCodeHash(trackingCodes.hash(CODE))).thenReturn(Optional.of(ticket));
+
+        assertNull(service.findByTrackingCode(CODE).getResolutionDueAt());
     }
 
     @Test
@@ -101,6 +113,8 @@ class TrackingServiceTest {
         ticket.setCurrentStatus(TicketStatus.IN_PROGRESS);
         ticket.setCreatedAt(Instant.parse("2026-09-01T10:00:00Z"));
         ticket.setStatusChangedAt(Instant.parse("2026-09-02T10:00:00Z"));
+        ticket.setFirstResponseDueAt(Instant.parse("2026-09-01T14:00:00Z"));
+        ticket.setResolutionDueAt(Instant.parse("2026-09-04T10:00:00Z"));
         return ticket;
     }
 }

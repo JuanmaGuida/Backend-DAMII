@@ -17,10 +17,12 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -32,10 +34,12 @@ public class TicketService {
     private final TicketActivityRepository activityRepository;
     private final TicketLocationRepository locationRepository;
     private final NeighborhoodRepository neighborhoodRepository;
+    private final SlaCalculationService slaCalculationService;
     private final FormValidationService formValidationService;
     private final RiskCalculationService riskCalculationService;
     private final TrackingCodeService trackingCodeService;
     private final AttachmentService attachmentService;
+    private final Clock clock;
 
     @Transactional
     public CreateTicketResponse create(CreateTicketRequest request, AuthenticatedIdentity identity,
@@ -69,7 +73,7 @@ public class TicketService {
             publicId = generatePublicId();
         } while (ticketRepository.existsByPublicId(publicId));
 
-        Instant now = Instant.now();
+        Instant now = clock.instant();
         Ticket ticket = new Ticket();
         ticket.setPublicId(publicId);
         ticket.setTrackingCodeHash(trackingHash);
@@ -84,6 +88,11 @@ public class TicketService {
         ticket.setFormData(new HashMap<>(resolvedForm.formData()));
         ticket.setCurrentStatus(TicketStatus.REGISTERED);
         ticket.setCurrentPriority(max(requestType.getMinimumPriority(), risk));
+        ticket.setCreatedAt(now);
+        ticket.setFirstResponseDueAt(slaCalculationService
+                .calculateDueAt(now, ticket.getCurrentPriority(), SlaType.FIRST_RESPONSE).orElse(null));
+        ticket.setResolutionDueAt(slaCalculationService
+                .calculateResolutionDueAt(now, ticket.getCurrentPriority(), ticket.getTicketType()).orElse(null));
         ticket.setEstimatedAffectedCount(0);
         ticket.setReopenCount(0);
         ticket.setEscalated(false);
@@ -112,6 +121,20 @@ public class TicketService {
         ticketRepository.flush();
         return new CreateTicketResponse(ticket.getId(), ticket.getPublicId(), trackingCode,
                 TicketStatus.REGISTERED);
+    }
+
+    @Transactional
+    public Ticket route(UUID ticketId, String responsibleAreaId, Instant routedAt) {
+        Ticket ticket = ticketRepository.findByIdForUpdate(ticketId)
+                .orElseThrow(() -> new ResourceNotFoundException("Ticket no encontrado"));
+        if (ticket.getCurrentStatus() == TicketStatus.DUPLICATE)
+            throw new InvalidTicketRequestException("Un ticket duplicado hereda el SLA del ticket principal");
+        ticket.setResolutionDueAt(slaCalculationService.calculateResolutionDueAt(
+                ticket.getCreatedAt(), ticket.getCurrentPriority(), ticket.getTicketType()).orElse(null));
+        ticket.setResponsibleAreaId(responsibleAreaId);
+        ticket.setCurrentStatus(TicketStatus.ROUTED);
+        ticket.setStatusChangedAt(routedAt);
+        return ticketRepository.save(ticket);
     }
 
     private void validateLocation(RequestType type, CreateTicketRequest.LocationData location) {
