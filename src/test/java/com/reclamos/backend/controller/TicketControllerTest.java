@@ -3,6 +3,7 @@ package com.reclamos.backend.controller;
 import com.reclamos.backend.dto.TicketFilter;
 import com.reclamos.backend.dto.TicketResponse;
 import com.reclamos.backend.entity.TicketStatus;
+import com.reclamos.backend.exception.InvalidTicketRequestException;
 import com.reclamos.backend.exception.ResourceNotFoundException;
 import com.reclamos.backend.exception.TicketStateConflictException;
 import com.reclamos.backend.service.TicketService;
@@ -51,6 +52,24 @@ class TicketControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].currentStatus").value("ROUTED"))
                 .andExpect(jsonPath("$.totalElements").value(1));
+    }
+
+    /**
+     * QA (BE - Endpoint de listado): ?sort=notAField,desc devolvía 500 en vez
+     * de 400. La corrección no vive en este controller ni en
+     * GlobalExceptionHandler: TicketService.listTickets ahora valida el Sort
+     * contra una whitelist propia de propiedades de Ticket ANTES de llegar al
+     * repository, y tira InvalidTicketRequestException (400) si el campo no
+     * es válido. Este slice test sólo verifica que ese 400 llega bien al
+     * cliente HTTP; la whitelist en sí está cubierta en TicketServiceTest.
+     */
+    @Test
+    void listWithInvalidSortFieldReturnsBadRequestInsteadOf500() throws Exception {
+        when(ticketService.listTickets(any(TicketFilter.class), any(Pageable.class)))
+                .thenThrow(new InvalidTicketRequestException("El campo de ordenamiento 'notAField' no es válido"));
+
+        mockMvc.perform(get("/api/tickets").param("sort", "notAField,desc"))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
