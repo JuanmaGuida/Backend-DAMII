@@ -4,11 +4,13 @@ import com.reclamos.backend.dto.response.CategoryResponse;
 import com.reclamos.backend.dto.response.FormDefinitionResponse;
 import com.reclamos.backend.dto.response.RequestTypeResponse;
 import com.reclamos.backend.dto.response.SubcategoryResponse;
+import com.reclamos.backend.dto.response.NeighborhoodResponse;
 import com.reclamos.backend.entity.TicketType;
 import com.reclamos.backend.exception.GlobalExceptionHandler;
 import com.reclamos.backend.exception.ResourceNotFoundException;
 import com.reclamos.backend.service.CatalogService;
 import com.reclamos.backend.service.FormService;
+import com.reclamos.backend.service.NeighborhoodService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -18,6 +20,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.util.List;
+import java.util.UUID;
 
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -29,6 +32,8 @@ class CatalogControllerTest {
     @Mock
     private CatalogService catalogService;
     @Mock
+    private NeighborhoodService neighborhoodService;
+    @Mock
     private FormService formService;
 
     private MockMvc mockMvc;
@@ -36,9 +41,80 @@ class CatalogControllerTest {
     @BeforeEach
     void setUp() {
         mockMvc = MockMvcBuilders.standaloneSetup(
-                        new CatalogController(catalogService), new CatalogFormController(formService))
+                        new CatalogController(catalogService, neighborhoodService),
+                        new CatalogFormController(formService))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
+    }
+
+    @Test
+    void listsNeighborhoodsAsJsonWithoutAdditionalFields() throws Exception {
+        UUID id = UUID.fromString("0c02dffa-8a9c-5007-bce1-2b46669dc7d8");
+        NeighborhoodResponse neighborhood = new NeighborhoodResponse();
+        neighborhood.setId(id);
+        neighborhood.setName("Agronomía");
+        neighborhood.setPopulation(13912);
+        when(neighborhoodService.findAll()).thenReturn(List.of(neighborhood));
+
+        mockMvc.perform(get("/api/catalog/neighborhoods"))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content()
+                        .contentTypeCompatibleWith("application/json"))
+                .andExpect(jsonPath("$").isArray())
+                .andExpect(jsonPath("$[0].length()").value(3))
+                .andExpect(jsonPath("$[0].id").value(id.toString()))
+                .andExpect(jsonPath("$[0].name").value("Agronomía"))
+                .andExpect(jsonPath("$[0].population").value(13912));
+    }
+
+    @Test
+    void emptyNeighborhoodCatalogReturnsEmptyArray() throws Exception {
+        when(neighborhoodService.findAll()).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/catalog/neighborhoods"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isArray())
+                .andExpect(jsonPath("$.length()").value(0));
+    }
+
+    @Test
+    void getsNeighborhoodByIdWithoutAdditionalFields() throws Exception {
+        UUID id = UUID.fromString("0c02dffa-8a9c-5007-bce1-2b46669dc7d8");
+        NeighborhoodResponse neighborhood = new NeighborhoodResponse();
+        neighborhood.setId(id);
+        neighborhood.setName("Agronomía");
+        neighborhood.setPopulation(13912);
+        when(neighborhoodService.findById(id)).thenReturn(neighborhood);
+
+        mockMvc.perform(get("/api/catalog/neighborhoods/{neighborhoodId}", id))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(3))
+                .andExpect(jsonPath("$.id").value(id.toString()))
+                .andExpect(jsonPath("$.name").value("Agronomía"))
+                .andExpect(jsonPath("$.population").value(13912));
+    }
+
+    @Test
+    void missingNeighborhoodReturnsCanonicalNotFound() throws Exception {
+        UUID id = UUID.fromString("00000000-0000-0000-0000-000000000099");
+        when(neighborhoodService.findById(id))
+                .thenThrow(new ResourceNotFoundException("No se encontró el barrio solicitado."));
+
+        mockMvc.perform(get("/api/catalog/neighborhoods/{neighborhoodId}", id))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("NOT_FOUND"))
+                .andExpect(jsonPath("$.message").value("No se encontró el barrio solicitado."))
+                .andExpect(jsonPath("$.length()").value(2));
+    }
+
+    @Test
+    void invalidNeighborhoodIdReturnsCanonicalBadRequest() throws Exception {
+        mockMvc.perform(get("/api/catalog/neighborhoods/no-es-un-uuid"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.message")
+                        .value("El parámetro 'neighborhoodId' tiene un valor inválido"))
+                .andExpect(jsonPath("$.length()").value(2));
     }
 
     @Test

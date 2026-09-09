@@ -1,4 +1,4 @@
-package com.reclamos.backend;
+package com.reclamos.backend.migration;
 
 import com.reclamos.backend.entity.*;
 import com.reclamos.backend.repository.SlaPolicyRepository;
