@@ -5,8 +5,8 @@ import com.reclamos.backend.dto.response.TrackingTicketResponse;
 import com.reclamos.backend.entity.TicketStatus;
 import com.reclamos.backend.exception.GlobalExceptionHandler;
 import com.reclamos.backend.exception.ResourceNotFoundException;
-import com.reclamos.backend.identity.IdentityProvider;
 import com.reclamos.backend.security.BearerTokenAuthenticationFilter;
+import com.reclamos.backend.service.AuthService;
 import com.reclamos.backend.service.TrackingService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -33,7 +33,7 @@ class TrackingControllerTest {
     @MockitoBean
     private TrackingService trackingService;
     @MockitoBean
-    private IdentityProvider identityProvider;
+    private AuthService authService;
 
     @Test
     void validCodeReturnsPublicStatusWithoutAuthenticationOrInternalData() throws Exception {
