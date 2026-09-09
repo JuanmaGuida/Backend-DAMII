@@ -9,6 +9,16 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 
 import java.time.Instant;
 
+/**
+ * QA (BE - Endpoint de listado): la corrección de "?sort=notAField,desc
+ * devuelve 500" NO vive acá — probé capturando la excepción interna de
+ * Spring Data que traduce el Sort contra la entidad (PropertyReferenceException),
+ * pero esa clase no resolvía contra la versión de Spring Data que baja este
+ * proyecto (Spring Boot 4.1.0) y no tengo forma de verificar el paquete/
+ * constructor correcto en este entorno. En vez de seguir adivinando contra
+ * un tipo interno del framework, la validación de sort se hizo explícita en
+ * TicketService.listTickets con una whitelist propia — ver ahí.
+ */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
     @ExceptionHandler(FormValidationException.class)

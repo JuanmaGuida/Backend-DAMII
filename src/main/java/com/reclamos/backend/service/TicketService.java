@@ -15,6 +15,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,6 +33,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -47,6 +49,28 @@ public class TicketService {
      * generar OutboxEvent.
      */
     private static final String SELF_MANAGED_AREA_ID = "M2";
+
+    /**
+     * QA (BE - Endpoint de listado): "?sort=notAField,desc" devolvía 500 en
+     * vez de 400, porque Spring Data traduce el Sort contra las propiedades
+     * de la entidad Ticket recién al ejecutar la query, y esa traducción
+     * lanza una excepción interna del framework que no estaba manejada. En
+     * vez de mapear esa excepción interna (su paquete/firma exacta depende
+     * de la versión de Spring Data que baja Spring Boot y no es algo que
+     * convenga acoplar), se valida acá mismo, antes de tocar el repository,
+     * contra una whitelist explícita de propiedades de Ticket que tiene
+     * sentido exponer para ordenar. Quedan afuera relaciones (requestType,
+     * mainTicket), el mapa formData y trackingCodeHash (dato sensible). Si
+     * el equipo quiere habilitar más/menos campos, este es el único lugar
+     * que hay que tocar.
+     */
+    private static final Set<String> SORTABLE_TICKET_PROPERTIES = Set.of(
+            "id", "publicId", "ticketType", "responsibleAreaId", "assignedAgentId",
+            "summary", "currentStatus", "currentPriority", "estimatedAffectedCount",
+            "escalated", "escalationReasonCode", "escalatedAt", "reopenCount",
+            "statusChangedAt", "resolutionConfirmationDueAt", "classificationFinalizedAt",
+            "currentProgress", "createdAt", "updatedAt"
+    );
 
     private final RequestTypeRepository requestTypeRepository;
     private final TicketRepository ticketRepository;
@@ -357,6 +381,7 @@ public class TicketService {
      */
     @Transactional(readOnly = true)
     public Page<TicketResponse> listTickets(TicketFilter filter, Pageable pageable) {
+        validateSort(pageable.getSort());
         Specification<Ticket> specification = TicketSpecifications.build(filter);
         Page<Ticket> page = ticketRepository.findAll(specification, pageable);
 
@@ -366,6 +391,15 @@ public class TicketService {
                 .collect(Collectors.toMap(location -> location.getTicket().getId(), Function.identity()));
 
         return page.map(ticket -> toResponse(ticket, locationsByTicket.get(ticket.getId())));
+    }
+
+    private void validateSort(Sort sort) {
+        for (Sort.Order order : sort) {
+            if (!SORTABLE_TICKET_PROPERTIES.contains(order.getProperty())) {
+                throw new InvalidTicketRequestException(
+                        "El campo de ordenamiento '" + order.getProperty() + "' no es válido");
+            }
+        }
     }
 
     private Ticket loadForUpdate(UUID ticketId) {

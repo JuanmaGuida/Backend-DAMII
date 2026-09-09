@@ -14,6 +14,7 @@ import com.reclamos.backend.entity.TicketActivity;
 import com.reclamos.backend.entity.TicketLocation;
 import com.reclamos.backend.entity.TicketStatus;
 import com.reclamos.backend.entity.TicketType;
+import com.reclamos.backend.exception.InvalidTicketRequestException;
 import com.reclamos.backend.exception.ResourceNotFoundException;
 import com.reclamos.backend.exception.TicketStateConflictException;
 import com.reclamos.backend.identity.AuthenticatedIdentity;
@@ -32,7 +33,9 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -381,6 +384,25 @@ class TicketServiceTest {
         Page<TicketResponse> result = ticketService.listTickets(filter, pageable);
 
         assertThat(result.getContent().get(0).getNeighborhoodId()).isNull();
+    }
+
+    /**
+     * QA (BE - Endpoint de listado): ?sort=notAField,desc devolvía 500
+     * porque el Sort inválido llegaba sin validar hasta el repository, que
+     * lanzaba una excepción interna de Spring Data sin manejar. Ahora se
+     * valida contra una whitelist propia (TicketService.SORTABLE_TICKET_PROPERTIES)
+     * antes de tocar el repository, así que el 400 no depende de ninguna
+     * clase interna del framework.
+     */
+    @Test
+    void listTicketsWithInvalidSortFieldThrowsBadRequestWithoutQueryingRepository() {
+        TicketFilter filter = new TicketFilter(null, null, null, null, null);
+        Pageable pageable = PageRequest.of(0, 20, Sort.by("notAField"));
+
+        assertThatThrownBy(() -> ticketService.listTickets(filter, pageable))
+                .isInstanceOf(InvalidTicketRequestException.class);
+
+        verify(ticketRepository, never()).findAll(any(Specification.class), any(Pageable.class));
     }
 
     // ---- fixtures ----
