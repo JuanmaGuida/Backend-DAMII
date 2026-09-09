@@ -111,8 +111,9 @@ class OpenApiContractTest {
             } else if (operation.startsWith("GET /api/catalog/neighborhoods")) {
                 assertEquals(java.util.List.of(), operationNode.get("security"), operation);
             } else {
-                assertFalse(operationNode.containsKey("security"), operation + " debe ser público");
-            }
+                assertTrue(!operationNode.containsKey("security")
+                                || java.util.List.of().equals(operationNode.get("security")),
+                        operation + " debe ser público");            }
         }
     }
 
@@ -150,6 +151,11 @@ class OpenApiContractTest {
         assertFalse(serialized.contains("riskIncrement"));
         assertFalse(serialized.contains("formTemplateId"));
         assertFalse(serialized.contains("storageKey"));
+        assertFalse(serialized.contains("trackingCodeHash"));
+        assertFalse(serialized.contains("trackingAccessCode"));
+
+        assertFalse(map(schemas, "TrackingTicketResponse", "properties").containsKey("ticketId"));
+        assertEquals(Set.of("name"), map(schemas, "TrackingRequestTypeSummary", "properties").keySet());
     }
 
     @Test

@@ -4,7 +4,7 @@ import com.reclamos.backend.config.SecurityConfiguration;
 import com.reclamos.backend.dto.response.TrackingTicketResponse;
 import com.reclamos.backend.entity.TicketStatus;
 import com.reclamos.backend.exception.GlobalExceptionHandler;
-import com.reclamos.backend.exception.ResourceNotFoundException;
+import com.reclamos.backend.exception.TrackingTicketNotFoundException;
 import com.reclamos.backend.security.BearerTokenAuthenticationFilter;
 import com.reclamos.backend.service.AuthService;
 import com.reclamos.backend.service.TrackingService;
@@ -12,21 +12,28 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.Instant;
 
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(TrackingController.class)
 @Import({SecurityConfiguration.class, BearerTokenAuthenticationFilter.class, GlobalExceptionHandler.class})
 class TrackingControllerTest {
+    private static final String CODE = "0123456789abcdefghijklmnopqrstuv";
+
     @Autowired
     private MockMvc mockMvc;
 
@@ -36,48 +43,69 @@ class TrackingControllerTest {
     private AuthService authService;
 
     @Test
-    void validCodeReturnsPublicStatusWithoutAuthenticationOrInternalData() throws Exception {
-        when(trackingService.findByTrackingCode("code"))
-                .thenReturn(new TrackingTicketResponse("OP-123", TicketStatus.REGISTERED, "Resumen",
-                        Instant.parse("2026-09-01T10:00:00Z"), Instant.parse("2026-09-01T10:00:00Z"),
-                        Instant.parse("2026-09-01T14:00:00Z"),
-                        Instant.parse("2026-09-03T10:00:00Z"),
-                        new TrackingTicketResponse.RequestTypeSummary(1L, "RT", "Tipo"),
-                        new TrackingTicketResponse.CategorySummary(2L, "Categoría"),
-                        new TrackingTicketResponse.SubcategorySummary(3L, "Subcategoría")));
+    void validCodeReturnsNonCacheablePublicDataWithoutAuthenticationOrReservedFields() throws Exception {
+        when(trackingService.findByTrackingCode(CODE)).thenReturn(response());
 
         mockMvc.perform(post("/api/tracking/access")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"trackingCode\":\"code\"}"))
+                        .content("{\"trackingCode\":\"" + CODE + "\"}"))
                 .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, containsString("no-store")))
                 .andExpect(jsonPath("$.publicId").value("OP-123"))
-                .andExpect(jsonPath("$.currentStatus").value("REGISTERED"))
+                .andExpect(jsonPath("$.status").value("REGISTERED"))
+                .andExpect(jsonPath("$.summary").value("Resumen"))
+                .andExpect(jsonPath("$.createdAt").value("2026-09-01T10:00:00Z"))
                 .andExpect(jsonPath("$.statusChangedAt").value("2026-09-01T10:00:00Z"))
-                .andExpect(jsonPath("$.citizenId").doesNotExist())
-                .andExpect(jsonPath("$.trackingCodeHash").doesNotExist());
+                .andExpect(jsonPath("$.requestType.name").value("Tipo"))
+                .andExpect(jsonPath("$.category.name").value("Categoría"))
+                .andExpect(jsonPath("$.subcategory.name").value("Subcategoría"))
+                .andExpect(jsonPath("$.ticketId").doesNotExist())
+                .andExpect(jsonPath("$.requestType.code").doesNotExist())
+                .andExpect(jsonPath("$.requestType.id").doesNotExist())
+                .andExpect(jsonPath("$.category.id").doesNotExist())
+                .andExpect(jsonPath("$.subcategory.id").doesNotExist())
+                .andExpect(content().string(not(containsString("citizenId"))))
+                .andExpect(content().string(not(containsString("trackingCode\""))))
+                .andExpect(content().string(not(containsString("trackingCodeHash"))))
+                .andExpect(content().string(not(containsString("trackingAccessCode"))))
+                .andExpect(content().string(not(containsString("responsibleAreaId"))))
+                .andExpect(content().string(not(containsString("riskScore"))))
+                .andExpect(content().string(not(containsString("riskLevel"))))
+                .andExpect(content().string(not(containsString("internalMessage"))))
+                .andExpect(content().string(not(containsString("actorId"))))
+                .andExpect(content().string(not(containsString("resolvedById"))))
+                .andExpect(content().string(not(containsString("sourceModuleId"))));
     }
 
     @Test
-    void blankCodeReturnsBadRequest() throws Exception {
-        mockMvc.perform(post("/api/tracking/access")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"trackingCode\":\"\"}"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value("trackingCode: El código de seguimiento es obligatorio"));
+    void unknownOrMalformedCodeReturnsTheSameNonCacheableControlledNotFound() throws Exception {
+        for (String code : new String[]{CODE, "invalid"}) {
+            when(trackingService.findByTrackingCode(code)).thenThrow(new TrackingTicketNotFoundException());
+
+            mockMvc.perform(post("/api/tracking/access")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"trackingCode\":\"" + code + "\"}"))
+                    .andExpect(status().isNotFound())
+                    .andExpect(header().string(HttpHeaders.CACHE_CONTROL, containsString("no-store")))
+                    .andExpect(jsonPath("$.code").value(TrackingTicketNotFoundException.CODE))
+                    .andExpect(jsonPath("$.message").value(TrackingTicketNotFoundException.MESSAGE))
+                    .andExpect(jsonPath("$.length()").value(2))
+                    .andExpect(content().string(not(containsString("TrackingTicketNotFoundException"))));
+        }
     }
 
-    @Test
-    void unknownCodeReturnsControlledNotFound() throws Exception {
-        when(trackingService.findByTrackingCode("unknown")).thenThrow(new ResourceNotFoundException(
-                "No se encontró un ticket para el código de seguimiento informado"));
+    void formerPublicGetRouteIsNoLongerExposed() throws Exception {
+        mockMvc.perform(get("/api/public/tickets/track/{trackingCode}", CODE))
+                .andExpect(status().isUnauthorized());
+    }
 
-        mockMvc.perform(post("/api/tracking/access")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"trackingCode\":\"unknown\"}"))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.message")
-                        .value("No se encontró un ticket para el código de seguimiento informado"))
-                .andExpect(content().string(org.hamcrest.Matchers.not(
-                        org.hamcrest.Matchers.containsString("ResourceNotFoundException"))));
+    private TrackingTicketResponse response() {
+        return new TrackingTicketResponse(
+                "OP-123", TicketStatus.REGISTERED, "Resumen", Instant.parse("2026-09-01T10:00:00Z"),
+                Instant.parse("2026-09-01T10:00:00Z"),
+                new TrackingTicketResponse.RequestTypeSummary("Tipo"),
+                new TrackingTicketResponse.CategorySummary("Categoría"),
+                new TrackingTicketResponse.SubcategorySummary("Subcategoría"));
     }
 }

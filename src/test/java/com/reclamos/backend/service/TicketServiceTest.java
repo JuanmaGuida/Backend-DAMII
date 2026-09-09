@@ -439,7 +439,7 @@ class TicketServiceTest {
 
         assertEquals(
                 created.status(),
-                tracked.getCurrentStatus()
+                tracked.getStatus()
         );
     }
 

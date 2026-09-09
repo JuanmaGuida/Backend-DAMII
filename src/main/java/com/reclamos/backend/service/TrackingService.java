@@ -5,7 +5,7 @@ import com.reclamos.backend.entity.Category;
 import com.reclamos.backend.entity.RequestType;
 import com.reclamos.backend.entity.Subcategory;
 import com.reclamos.backend.entity.Ticket;
-import com.reclamos.backend.exception.ResourceNotFoundException;
+import com.reclamos.backend.exception.TrackingTicketNotFoundException;
 import com.reclamos.backend.repository.TicketRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -14,17 +14,17 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class TrackingService {
-    private static final String NOT_FOUND_MESSAGE =
-            "No se encontró un ticket para el código de seguimiento informado";
-
     private final TicketRepository ticketRepository;
     private final TrackingCodeService trackingCodeService;
 
     @Transactional(readOnly = true)
     public TrackingTicketResponse findByTrackingCode(String trackingCode) {
+        if (!trackingCodeService.isValid(trackingCode)) {
+            throw new TrackingTicketNotFoundException();
+        }
         String trackingCodeHash = trackingCodeService.hash(trackingCode);
         Ticket ticket = ticketRepository.findByTrackingCodeHash(trackingCodeHash)
-                .orElseThrow(() -> new ResourceNotFoundException(NOT_FOUND_MESSAGE));
+                .orElseThrow(TrackingTicketNotFoundException::new);
         return toPublicResponse(ticket);
     }
 
@@ -38,12 +38,9 @@ public class TrackingService {
                 ticket.getSummary(),
                 ticket.getCreatedAt(),
                 ticket.getStatusChangedAt(),
-                ticket.getEffectiveFirstResponseDueAt(),
-                ticket.getEffectiveResolutionDueAt(),
-                new TrackingTicketResponse.RequestTypeSummary(
-                        requestType.getId(), requestType.getCode(), requestType.getName()),
-                new TrackingTicketResponse.CategorySummary(category.getId(), category.getName()),
-                new TrackingTicketResponse.SubcategorySummary(subcategory.getId(), subcategory.getName())
+                new TrackingTicketResponse.RequestTypeSummary(requestType.getName()),
+                new TrackingTicketResponse.CategorySummary(category.getName()),
+                new TrackingTicketResponse.SubcategorySummary(subcategory.getName())
         );
     }
 }
