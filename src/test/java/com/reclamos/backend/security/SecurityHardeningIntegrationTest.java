@@ -44,6 +44,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.head;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -102,11 +105,9 @@ class SecurityHardeningIntegrationTest {
                 "Resumen",
                 Instant.parse("2026-09-01T10:00:00Z"),
                 Instant.parse("2026-09-01T10:00:00Z"),
-                null, // firstResponseDueAt
-                null, // resolutionDueAt
-                new TrackingTicketResponse.RequestTypeSummary(1L, "TEST", "Tipo"),
-                new TrackingTicketResponse.CategorySummary(1L, "Categoría"),
-                new TrackingTicketResponse.SubcategorySummary(1L, "Subcategoría")
+                new TrackingTicketResponse.RequestTypeSummary("Tipo"),
+                new TrackingTicketResponse.CategorySummary("Categoría"),
+                new TrackingTicketResponse.SubcategorySummary("Subcategoría")
         ));
 
         when(ticketService.create(any(), any(), any())).thenReturn(new CreateTicketResponse(
@@ -155,6 +156,21 @@ class SecurityHardeningIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"trackingCode\":\"tracking-code\"}"))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void trackingCodeDoesNotOpenInternalOrMutatingEndpoints() throws Exception {
+        assertCanonicalUnauthorized(get("/api/tickets/" + TICKET_ID + "/information-request")
+                .header("X-Tracking-Code", "tracking-code"));
+        assertCanonicalUnauthorized(post("/api/tickets/" + TICKET_ID + "/resolution")
+                .header("X-Tracking-Code", "tracking-code")
+                .contentType(MediaType.APPLICATION_JSON).content("{}"));
+
+        assertCanonicalUnauthorized(get("/api/tracking/access"));
+        assertCanonicalUnauthorized(put("/api/tracking/access"));
+        assertCanonicalUnauthorized(patch("/api/tracking/access"));
+        assertCanonicalUnauthorized(delete("/api/tracking/access"));
+        assertCanonicalUnauthorized(get("/api/public/tickets/track/tracking-code"));
     }
 
     @Test

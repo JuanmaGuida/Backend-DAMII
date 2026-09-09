@@ -393,7 +393,9 @@ paths:
     post:
       tags: [Tracking]
       summary: Consultar un ticket por código de seguimiento
+      description: El código se envía en el body para evitar exponer esta capacidad de acceso en URLs y logs de acceso.
       operationId: accessTracking
+      security: []
       requestBody:
         required: true
         content:
@@ -410,7 +412,14 @@ paths:
         '400':
           $ref: '#/components/responses/InvalidRequest'
         '404':
-          $ref: '#/components/responses/NotFound'
+          description: El código es inválido, inexistente o no corresponde a una solicitud.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+              example:
+                code: TRACKING_TICKET_NOT_FOUND
+                message: No se encontró una solicitud para el código de seguimiento indicado.
         '415':
           $ref: '#/components/responses/UnsupportedMediaType'
 components:
@@ -809,14 +818,15 @@ components:
       properties:
         trackingCode:
           type: string
+          description: Capacidad secreta entregada al crear la solicitud; nunca se incluye en la respuesta.
       additionalProperties: false
     TrackingTicketResponse:
       type: object
-      required: [publicId, currentStatus, summary, createdAt, statusChangedAt, requestType, category, subcategory]
+      required: [publicId, status, summary, createdAt, statusChangedAt, requestType, category, subcategory]
       properties:
         publicId:
           type: string
-        currentStatus:
+        status:
           $ref: '#/components/schemas/TicketStatus'
         summary:
           type: string
@@ -834,31 +844,20 @@ components:
           $ref: '#/components/schemas/TrackingSubcategorySummary'
     TrackingRequestTypeSummary:
       type: object
-      required: [id, code, name]
+      required: [name]
       properties:
-        id:
-          type: integer
-          format: int64
-        code:
-          type: string
         name:
           type: string
     TrackingCategorySummary:
       type: object
-      required: [id, name]
+      required: [name]
       properties:
-        id:
-          type: integer
-          format: int64
         name:
           type: string
     TrackingSubcategorySummary:
       type: object
-      required: [id, name]
+      required: [name]
       properties:
-        id:
-          type: integer
-          format: int64
         name:
           type: string
     ModuleId:

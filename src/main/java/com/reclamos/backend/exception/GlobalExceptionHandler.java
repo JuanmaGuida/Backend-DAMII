@@ -1,6 +1,7 @@
 package com.reclamos.backend.exception;
 
 import com.reclamos.backend.dto.error.ApiErrorResponse;
+import org.springframework.http.CacheControl;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -23,6 +24,13 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<ApiErrorResponse> handleNotFound(ResourceNotFoundException exception) {
         return response(HttpStatus.NOT_FOUND, "NOT_FOUND", exception.getMessage());
+    }
+
+    @ExceptionHandler(TrackingTicketNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleTrackingNotFound(TrackingTicketNotFoundException exception) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .cacheControl(CacheControl.noStore())
+                .body(new ApiErrorResponse(TrackingTicketNotFoundException.CODE, exception.getMessage()));
     }
 
     @ExceptionHandler({InvalidTicketRequestException.class, MethodArgumentNotValidException.class})
