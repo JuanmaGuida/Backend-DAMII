@@ -89,8 +89,10 @@ public class Ticket {
     @Column(name = "responsible_area_id", nullable = false, length = 100)
     private String responsibleAreaId;
 
-    @Column(name = "assigned_agent_id", length = 100)
-    private String assignedAgentId;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "assigned_agent_id",
+            foreignKey = @ForeignKey(name = "fk_ticket_assigned_agent"))
+    private ModuleUser assignedAgent;
 
     @Column(nullable = false, length = 200)
     private String summary;

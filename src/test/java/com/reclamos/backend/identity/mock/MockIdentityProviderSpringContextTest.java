@@ -1,6 +1,6 @@
 package com.reclamos.backend.identity.mock;
 
-import com.reclamos.backend.identity.AuthenticatedSession;
+import com.reclamos.backend.identity.ExternalAuthenticatedSession;
 import com.reclamos.backend.identity.IdentityProvider;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -33,7 +33,7 @@ class MockIdentityProviderSpringContextTest {
         assertInstanceOf(MockIdentityProvider.class, identityProvider);
 
         Instant beforeLogin = Instant.now();
-        AuthenticatedSession session = identityProvider.authenticate(
+        ExternalAuthenticatedSession session = identityProvider.authenticate(
                 MockIdentityProvider.AGENT_USERNAME,
                 MockIdentityProvider.AGENT_PASSWORD
         ).orElseThrow();

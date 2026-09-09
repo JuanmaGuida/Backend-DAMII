@@ -1,8 +1,8 @@
 package com.reclamos.backend.security;
 
 import com.reclamos.backend.identity.AuthenticatedIdentity;
-import com.reclamos.backend.identity.IdentityProvider;
 import com.reclamos.backend.identity.ModuleRole;
+import com.reclamos.backend.service.AuthService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockFilterChain;
@@ -24,8 +24,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class BearerTokenAuthenticationFilterTest {
-    private final IdentityProvider identityProvider = mock(IdentityProvider.class);
-    private final BearerTokenAuthenticationFilter filter = new BearerTokenAuthenticationFilter(identityProvider);
+    private final AuthService authService = mock(AuthService.class);
+    private final BearerTokenAuthenticationFilter filter = new BearerTokenAuthenticationFilter(authService);
 
     @AfterEach
     void clearSecurityContext() {
@@ -41,7 +41,7 @@ class BearerTokenAuthenticationFilterTest {
                 null,
                 ModuleRole.AGENT
         );
-        when(identityProvider.resolve("valid-token")).thenReturn(Optional.of(identity));
+        when(authService.resolve("valid-token")).thenReturn(Optional.of(identity));
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/auth/me");
         request.addHeader("Authorization", "Bearer valid-token");
 
@@ -57,7 +57,7 @@ class BearerTokenAuthenticationFilterTest {
 
     @Test
     void invalidBearerLeavesRequestUnauthenticated() throws Exception {
-        when(identityProvider.resolve("invalid-token")).thenReturn(Optional.empty());
+        when(authService.resolve("invalid-token")).thenReturn(Optional.empty());
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/auth/me");
         request.addHeader("Authorization", "Bearer invalid-token");
 
@@ -74,6 +74,6 @@ class BearerTokenAuthenticationFilterTest {
         filter.doFilter(request, new MockHttpServletResponse(), new MockFilterChain());
 
         assertNull(SecurityContextHolder.getContext().getAuthentication());
-        verify(identityProvider, never()).resolve(org.mockito.ArgumentMatchers.anyString());
+        verify(authService, never()).resolve(org.mockito.ArgumentMatchers.anyString());
     }
 }

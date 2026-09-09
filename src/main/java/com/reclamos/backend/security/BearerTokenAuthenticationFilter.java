@@ -1,7 +1,7 @@
 package com.reclamos.backend.security;
 
 import com.reclamos.backend.identity.AuthenticatedIdentity;
-import com.reclamos.backend.identity.IdentityProvider;
+import com.reclamos.backend.service.AuthService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -21,10 +21,10 @@ public class BearerTokenAuthenticationFilter extends OncePerRequestFilter {
     private static final String AUTHORIZATION = "Authorization";
     private static final String BEARER_PREFIX = "Bearer ";
 
-    private final IdentityProvider identityProvider;
+    private final AuthService authService;
 
-    public BearerTokenAuthenticationFilter(IdentityProvider identityProvider) {
-        this.identityProvider = identityProvider;
+    public BearerTokenAuthenticationFilter(AuthService authService) {
+        this.authService = authService;
     }
 
     @Override
@@ -36,7 +36,7 @@ public class BearerTokenAuthenticationFilter extends OncePerRequestFilter {
         if (SecurityContextHolder.getContext().getAuthentication() == null) {
             String token = bearerToken(request);
             if (token != null) {
-                identityProvider.resolve(token).ifPresent(this::authenticate);
+                authService.resolve(token).ifPresent(this::authenticate);
             }
         }
 
