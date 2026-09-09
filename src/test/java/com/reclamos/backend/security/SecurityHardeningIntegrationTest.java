@@ -10,6 +10,7 @@ import com.reclamos.backend.identity.IdentityProvider;
 import com.reclamos.backend.service.CatalogService;
 import com.reclamos.backend.service.FormService;
 import com.reclamos.backend.service.InformationRequestService;
+import com.reclamos.backend.service.NeighborhoodService;
 import com.reclamos.backend.service.TicketService;
 import com.reclamos.backend.service.TrackingService;
 import com.reclamos.backend.service.TicketResolutionService;
@@ -39,10 +40,13 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.head;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -65,6 +69,8 @@ class SecurityHardeningIntegrationTest {
     @MockitoBean
     private CatalogService catalogService;
     @MockitoBean
+    private NeighborhoodService neighborhoodService;
+    @MockitoBean
     private FormService formService;
     @MockitoBean
     private TrackingService trackingService;
@@ -80,6 +86,8 @@ class SecurityHardeningIntegrationTest {
         when(catalogService.getCategories()).thenReturn(List.of());
         when(catalogService.getSubcategories(1L)).thenReturn(List.of());
         when(catalogService.getRequestTypes(1L)).thenReturn(List.of());
+        when(neighborhoodService.findAll()).thenReturn(List.of());
+        when(neighborhoodService.findById(TICKET_ID)).thenReturn(null);
 
         FormDefinitionResponse form = new FormDefinitionResponse();
         form.setRequestTypeId(1L);
@@ -124,6 +132,9 @@ class SecurityHardeningIntegrationTest {
                 .andExpect(status().isOk());
 
         mockMvc.perform(get("/api/catalog/categories")).andExpect(status().isOk());
+        mockMvc.perform(get("/api/catalog/neighborhoods")).andExpect(status().isOk());
+        mockMvc.perform(get("/api/catalog/neighborhoods/{neighborhoodId}", TICKET_ID))
+                .andExpect(status().isOk());
         mockMvc.perform(get("/api/catalog/categories/1/subcategories")).andExpect(status().isOk());
         mockMvc.perform(get("/api/catalog/subcategories/1/request-types")).andExpect(status().isOk());
         mockMvc.perform(get("/api/catalog/request-types/1/form")).andExpect(status().isOk());
@@ -149,9 +160,25 @@ class SecurityHardeningIntegrationTest {
     @Test
     void headForEveryPublicCatalogGetIsAlsoPublic() throws Exception {
         mockMvc.perform(head("/api/catalog/categories")).andExpect(status().isOk());
+        mockMvc.perform(head("/api/catalog/neighborhoods")).andExpect(status().isOk());
+        mockMvc.perform(head("/api/catalog/neighborhoods/{neighborhoodId}", TICKET_ID))
+                .andExpect(status().isOk());
         mockMvc.perform(head("/api/catalog/categories/1/subcategories")).andExpect(status().isOk());
         mockMvc.perform(head("/api/catalog/subcategories/1/request-types")).andExpect(status().isOk());
         mockMvc.perform(head("/api/catalog/request-types/1/form")).andExpect(status().isOk());
+    }
+
+    @Test
+    void neighborhoodCatalogOnlyExposesPublicReadMethods() throws Exception {
+        assertCanonicalUnauthorized(post("/api/catalog/neighborhoods"));
+        assertCanonicalUnauthorized(put("/api/catalog/neighborhoods"));
+        assertCanonicalUnauthorized(patch("/api/catalog/neighborhoods"));
+        assertCanonicalUnauthorized(delete("/api/catalog/neighborhoods"));
+
+        assertCanonicalUnauthorized(post("/api/catalog/neighborhoods/" + TICKET_ID));
+        assertCanonicalUnauthorized(put("/api/catalog/neighborhoods/" + TICKET_ID));
+        assertCanonicalUnauthorized(patch("/api/catalog/neighborhoods/" + TICKET_ID));
+        assertCanonicalUnauthorized(delete("/api/catalog/neighborhoods/" + TICKET_ID));
     }
 
     @Test

@@ -30,6 +30,8 @@ class OpenApiContractTest {
             "POST /api/auth/login",
             "GET /api/auth/me",
             "GET /api/catalog/categories",
+            "GET /api/catalog/neighborhoods",
+            "GET /api/catalog/neighborhoods/{neighborhoodId}",
             "GET /api/catalog/categories/{categoryId}/subcategories",
             "GET /api/catalog/subcategories/{subcategoryId}/request-types",
             "GET /api/catalog/request-types/{requestTypeId}/form",
@@ -51,6 +53,7 @@ class OpenApiContractTest {
             "LoginResponse",
             "IdentityResponse",
             "CategoryResponse",
+            "NeighborhoodResponse",
             "SubcategoryResponse",
             "RequestTypeResponse",
             "FormDefinitionResponse",
@@ -82,7 +85,7 @@ class OpenApiContractTest {
     void versionedFileIsAValidOpenApi3DocumentWithExactlyTheCurrentBusinessOperations() {
         assertTrue(string(spec.get("openapi")).startsWith("3."));
         assertEquals("3.0.3", parsedOpenApi.getOpenapi());
-        assertEquals(11, parsedOpenApi.getPaths().size());
+        assertEquals(13, parsedOpenApi.getPaths().size());
         assertNotNull(map(spec, "info").get("title"));
         assertNotNull(map(spec, "components").get("schemas"));
         assertEquals(EXPECTED_OPERATIONS, documentedOperations());
@@ -105,6 +108,8 @@ class OpenApiContractTest {
             Map<String, Object> operationNode = operation(operation);
             if (PROTECTED_OPERATIONS.contains(operation)) {
                 assertEquals("bearerAuth", firstSecurityScheme(operationNode), operation);
+            } else if (operation.startsWith("GET /api/catalog/neighborhoods")) {
+                assertEquals(java.util.List.of(), operationNode.get("security"), operation);
             } else {
                 assertFalse(operationNode.containsKey("security"), operation + " debe ser público");
             }
