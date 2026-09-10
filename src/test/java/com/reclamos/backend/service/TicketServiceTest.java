@@ -7,7 +7,9 @@ import com.reclamos.backend.entity.Category;
 import com.reclamos.backend.entity.Neighborhood;
 import com.reclamos.backend.entity.OutboxEvent;
 import com.reclamos.backend.entity.Priority;
+import com.reclamos.backend.entity.FormTemplate;
 import com.reclamos.backend.entity.RequestType;
+import com.reclamos.backend.entity.Risk;
 import com.reclamos.backend.entity.Subcategory;
 import com.reclamos.backend.entity.Ticket;
 import com.reclamos.backend.entity.TicketActivity;
@@ -41,6 +43,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -151,8 +154,12 @@ class TicketServiceTest {
     // ---- correctClassification ----
 
     @Test
-    void correctClassificationRecalculatesAreaAffectedCountAndPriorityFloor() {
+    void correctClassificationRecalculatesAreaAffectedCountFormTemplateAndPriorityFromNewRequestType() {
         Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.LOW);
+        // QA (BE - Endpoint de corrección de clasificación): formData del
+        // RequestType viejo no debe sobrevivir a la reclasificación — ver
+        // assertion de formData al final del test.
+        ticket.setFormData(new HashMap<>(Map.of("waterHeight", 35)));
         Neighborhood neighborhood = new Neighborhood();
         neighborhood.setId(UUID.randomUUID());
         neighborhood.setName("Palermo");
@@ -160,27 +167,47 @@ class TicketServiceTest {
         TicketLocation location = new TicketLocation();
         location.setNeighborhood(neighborhood);
 
+        // minimumPriority HIGH con baseRisk LOW: la prioridad final tiene que
+        // quedar en HIGH por el piso de minimumPriority, no por la
+        // currentPriority anterior del ticket (que acá es LOW, más baja).
         RequestType newRequestType = requestType(20L, "FLOODING", "obras-hidraulicas",
-                Priority.HIGH, new BigDecimal("0.1000"));
+                Priority.HIGH, Risk.LOW, new BigDecimal("0.1000"));
+        FormTemplate newFormTemplate = new FormTemplate();
+        newFormTemplate.setId(99L);
 
         when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
         when(requestTypeRepository.findById(20L)).thenReturn(Optional.of(newRequestType));
         when(locationRepository.findByTicket_Id(ticketId)).thenReturn(Optional.of(location));
         when(activityRepository.countByTicket_Id(ticketId)).thenReturn(0L);
+        when(formValidationService.resolveActiveTemplate(newRequestType)).thenReturn(newFormTemplate);
 
         TicketResponse response = ticketService.correctClassification(ticketId, 20L, actor);
 
         assertThat(ticket.getResponsibleAreaId()).isEqualTo("obras-hidraulicas");
         assertThat(ticket.getEstimatedAffectedCount()).isEqualTo(20_000);
         assertThat(ticket.getCurrentPriority()).isEqualTo(Priority.HIGH);
+        assertThat(ticket.getFormTemplate()).isSameAs(newFormTemplate);
         assertThat(response.getRequestTypeCode()).isEqualTo("FLOODING");
+        assertThat(ticket.getFormData()).isEmpty();
     }
 
+    /**
+     * Revisión post-actualización de documentación: la versión anterior de
+     * este test ("correctClassificationNeverLowersAnAlreadyHigherPriority")
+     * verificaba que la prioridad NUNCA bajara respecto a la vigente,
+     * flooreando sólo con minimumPriority. La Guía funcional complementaria
+     * M2 V1.09 §3 ("REGLA DE EVOLUCIÓN") aclara que ese piso de "nunca baja"
+     * aplica sólo a la recalculación periódica automática (por edad/SLA):
+     * "una corrección del RequestType durante la primera IN_REVIEW SÍ puede
+     * recalcularla". Este test verifica ahora el comportamiento correcto —
+     * la prioridad puede bajar cuando el nuevo RequestType tiene
+     * minimumPriority y baseRisk más bajos.
+     */
     @Test
-    void correctClassificationNeverLowersAnAlreadyHigherPriority() {
+    void correctClassificationCanLowerPriorityWhenNewRequestTypeHasLowerMinimumAndBaseRisk() {
         Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.CRITICAL);
         RequestType newRequestType = requestType(20L, "FLOODING", "obras-hidraulicas",
-                Priority.LOW, new BigDecimal("0.1000"));
+                Priority.LOW, Risk.LOW, new BigDecimal("0.1000"));
 
         when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
         when(requestTypeRepository.findById(20L)).thenReturn(Optional.of(newRequestType));
@@ -189,7 +216,7 @@ class TicketServiceTest {
 
         ticketService.correctClassification(ticketId, 20L, actor);
 
-        assertThat(ticket.getCurrentPriority()).isEqualTo(Priority.CRITICAL);
+        assertThat(ticket.getCurrentPriority()).isEqualTo(Priority.LOW);
     }
 
     @Test
@@ -438,6 +465,18 @@ class TicketServiceTest {
 
     private RequestType requestType(Long id, String code, String responsibleAreaId,
                                      Priority minimumPriority, BigDecimal affectedPopulationFactor) {
+        return requestType(id, code, responsibleAreaId, minimumPriority, Risk.LOW, affectedPopulationFactor);
+    }
+
+    /**
+     * Revisión post-actualización de documentación: se agrega baseRisk acá
+     * porque correctClassification ahora lo usa para recalcular
+     * currentPriority (ver correctClassificationCanLowerPriorityWhen...).
+     * El overload de 5 argumentos delega acá con Risk.LOW por default para
+     * no tocar los tests que no les importa ese valor.
+     */
+    private RequestType requestType(Long id, String code, String responsibleAreaId,
+                                     Priority minimumPriority, Risk baseRisk, BigDecimal affectedPopulationFactor) {
         Category category = new Category();
         category.setId(1L);
         category.setName("Infraestructura");
@@ -455,6 +494,7 @@ class TicketServiceTest {
         requestType.setTicketType(TicketType.COMPLAINT);
         requestType.setResponsibleAreaId(responsibleAreaId);
         requestType.setMinimumPriority(minimumPriority);
+        requestType.setBaseRisk(baseRisk);
         requestType.setAffectedPopulationFactor(affectedPopulationFactor);
         requestType.setActive(true);
         return requestType;

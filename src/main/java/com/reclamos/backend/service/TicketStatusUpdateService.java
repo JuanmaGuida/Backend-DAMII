@@ -31,7 +31,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -77,7 +76,6 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class TicketStatusUpdateService {
 
-    private static final Set<String> KNOWN_ACTOR_TYPES = Set.of("CITIZEN", "AGENT", "AREA_USER", "SYSTEM");
     private static final String SUPPORTED_SPEC_VERSION = "1.0";
     private static final String SUPPORTED_EVENT_TYPE = "updateTicketStatus";
 
@@ -97,6 +95,15 @@ public class TicketStatusUpdateService {
         }
 
         UpdateTicketStatusRequest request = envelope.data();
+        // QA (BE - Implementar transiciones a partir del consumo de eventos):
+        // Eventos v1.6 §8.1 exige data.ticketId como campo propio (no alcanza con
+        // envelope.subject, que ya se valida en validateEnvelope). Antes no se
+        // validaba en absoluto.
+        if (!ticketId.equals(request.ticketId())) {
+            throw new InvalidTicketRequestException(
+                    "data.ticketId ('" + request.ticketId() + "') no coincide con el ticket de la URL ('"
+                            + ticketId + "')");
+        }
         Ticket ticket = ticketRepository.findByIdForUpdate(ticketId)
                 .orElseThrow(() -> new ResourceNotFoundException("El ticket solicitado no existe"));
 
@@ -160,11 +167,18 @@ public class TicketStatusUpdateService {
                 reasonCode = returnInfo.reasonCode();
             }
             case RESOLVED -> {
-                // Simplificación: el contrato admite RESOLVED también desde ROUTED cuando el
-                // RequestType permite resolución directa; esa excepción no está modelada
-                // todavía (no hay flag en RequestType para "resolución directa"), así que
-                // por ahora sólo se acepta desde IN_PROGRESS.
-                requireCurrentStatus(ticket, TicketStatus.IN_PROGRESS, "RESOLVED sólo es válido con el ticket en IN_PROGRESS");
+                // Revisión post-actualización de documentación: Eventos V1.69 §8.2
+                // aclara (tabla de transiciones + "RESOLUCIÓN DIRECTA") que RESOLVED
+                // se acepta de forma INCONDICIONAL tanto desde ROUTED como desde
+                // IN_PROGRESS — "M2 no mantiene una configuración por RequestType
+                // para habilitar o impedir la resolución directa". La versión
+                // anterior (Eventos v1.6) era ambigua sobre esto y se había modelado
+                // como un flag por RequestType (RequestType.allowsDirectResolution);
+                // ese campo se elimina (ver V9__drop_request_type_direct_resolution.sql)
+                // y la validación vuelve a ser incondicional, igual que RETURNED e
+                // INFORMATION_REQUIRED más arriba.
+                requireCurrentStatus(ticket, "RESOLVED sólo es válido con el ticket en ROUTED o IN_PROGRESS",
+                        TicketStatus.ROUTED, TicketStatus.IN_PROGRESS);
                 UpdateTicketStatusRequest.Resolution resolution = request.details() == null
                         ? null : request.details().resolution();
                 if (resolution == null || isBlank(resolution.type())) {
@@ -212,7 +226,8 @@ public class TicketStatusUpdateService {
 
         recordActivity(ticket, activityType, previousStatus, newStatus, actorType, request.updatedBy().id(),
                 sourceModuleId, reasonCode,
-                !isBlank(request.internalMessage()) ? request.internalMessage() : request.publicMessage());
+                !isBlank(request.internalMessage()) ? request.internalMessage() : request.publicMessage(),
+                envelope.eventId(), request.updateOccurredAt());
 
         // InboxEvent se inserta en la MISMA transacción que el resto: si esto
         // violara la unicidad de eventId (dos requests concurrentes con el
@@ -290,21 +305,22 @@ public class TicketStatusUpdateService {
         throw new TicketStateConflictException(message + " (estado actual: " + ticket.getCurrentStatus() + ")");
     }
 
+    /**
+     * Revisión post-actualización de documentación: antes se validaba
+     * contra un Set<String> hardcodeado (KNOWN_ACTOR_TYPES) con sólo 4 de
+     * los 6 valores de ActorType, duplicando — y desincronizándose de — el
+     * enum real. Se valida directamente contra ActorType.valueOf() para que
+     * la única fuente de verdad sea el enum (ver su javadoc para el
+     * significado de cada valor, incluido EXTERNAL_USER para actores que
+     * llegan desde otro módulo vía integración).
+     */
     private ActorType mapActorType(String contractType) {
-        if (contractType == null || !KNOWN_ACTOR_TYPES.contains(contractType)) {
+        try {
+            return ActorType.valueOf(contractType);
+        } catch (IllegalArgumentException | NullPointerException exception) {
             throw new InvalidTicketRequestException(
-                    "updatedBy.type inválido: debe ser CITIZEN, AGENT, AREA_USER o SYSTEM");
+                    "updatedBy.type inválido: debe ser uno de " + java.util.Arrays.toString(ActorType.values()));
         }
-        // El contrato de eventos v1.6 §5.2 todavía usa los nombres AREA_USER/SYSTEM
-        // (está pendiente actualizarlo tras el rename de ActorType a
-        // AREA_RESPONSIBLE/ADMIN). Se mapea acá hasta que ese documento se actualice.
-        return switch (contractType) {
-            case "CITIZEN" -> ActorType.CITIZEN;
-            case "AGENT" -> ActorType.AGENT;
-            case "AREA_USER" -> ActorType.AREA_RESPONSIBLE;
-            case "SYSTEM" -> ActorType.ADMIN;
-            default -> throw new InvalidTicketRequestException("updatedBy.type inválido: " + contractType);
-        };
     }
 
     private TicketMessage buildMessage(Ticket ticket, MessageVisibility visibility, String text,
@@ -321,7 +337,8 @@ public class TicketStatusUpdateService {
 
     private void recordActivity(Ticket ticket, ActivityType actionType, TicketStatus previousStatus,
                                  TicketStatus newStatus, ActorType actorType, String actorId,
-                                 String sourceModuleId, String reasonCode, String message) {
+                                 String sourceModuleId, String reasonCode, String message,
+                                 UUID externalEventId, Instant updateOccurredAt) {
         long nextSequence = activityRepository.countByTicket_Id(ticket.getId()) + 1;
 
         TicketActivity activity = new TicketActivity();
@@ -333,9 +350,16 @@ public class TicketStatusUpdateService {
         activity.setActorType(actorType);
         activity.setActorId(actorId);
         activity.setSourceModuleId(sourceModuleId);
+        // QA (BE - Implementar transiciones a partir del consumo de eventos):
+        // faltaba trazabilidad del evento origen. externalEventId ya existía como
+        // columna en TicketActivity (Entidades v1.3 §9) pero nunca se seteaba
+        // acá. occurredAt usaba Instant.now() (cuándo M2 procesó el evento) en vez
+        // de data.updateOccurredAt (Eventos v1.6 §10: "cuándo ocurrió realmente el
+        // hecho operativo en el productor"), que es lo que tiene sentido histórico.
+        activity.setExternalEventId(externalEventId);
         activity.setReasonCode(reasonCode);
         activity.setMessage(message);
-        activity.setOccurredAt(Instant.now());
+        activity.setOccurredAt(updateOccurredAt);
         activityRepository.save(activity);
     }
 

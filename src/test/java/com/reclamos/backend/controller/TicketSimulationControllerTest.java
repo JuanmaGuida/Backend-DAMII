@@ -2,6 +2,7 @@ package com.reclamos.backend.controller;
 
 import com.reclamos.backend.dto.TicketResponse;
 import com.reclamos.backend.entity.TicketStatus;
+import com.reclamos.backend.exception.InvalidTicketRequestException;
 import com.reclamos.backend.exception.TicketStateConflictException;
 import com.reclamos.backend.service.TicketStatusUpdateService;
 import org.junit.jupiter.api.Test;
@@ -57,7 +58,7 @@ class TicketSimulationControllerTest {
                 {
                   "updateType": "STARTED",
                   "publicMessage": "Comenzamos a trabajar en esto.",
-                  "updatedBy": {"type": "AREA_USER", "id": "USR-M6-77"},
+                  "updatedBy": {"type": "EXTERNAL_USER", "id": "USR-M6-77"},
                   "updateOccurredAt": "2026-09-02T12:00:00Z"
                 }
                 """);
@@ -75,7 +76,7 @@ class TicketSimulationControllerTest {
 
         String body = envelopeJson(ticketId, """
                 {
-                  "updatedBy": {"type": "AREA_USER", "id": "USR-M6-77"},
+                  "updatedBy": {"type": "EXTERNAL_USER", "id": "USR-M6-77"},
                   "updateOccurredAt": "2026-09-02T12:00:00Z"
                 }
                 """);
@@ -98,12 +99,13 @@ class TicketSimulationControllerTest {
                   "producer": {"moduleId": "M6", "service": "urban-services-api"},
                   "subject": "tickets/%s",
                   "data": {
+                    "ticketId": "%s",
                     "updateType": "STARTED",
-                    "updatedBy": {"type": "AREA_USER", "id": "USR-M6-77"},
+                    "updatedBy": {"type": "EXTERNAL_USER", "id": "USR-M6-77"},
                     "updateOccurredAt": "2026-09-02T12:00:00Z"
                   }
                 }
-                """.formatted(ticketId);
+                """.formatted(ticketId, ticketId);
 
         mockMvc.perform(post("/api/tickets/{ticketId}/simulate-status-update", ticketId)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -120,7 +122,7 @@ class TicketSimulationControllerTest {
         String body = envelopeJson(ticketId, """
                 {
                   "updateType": "STARTED",
-                  "updatedBy": {"type": "AREA_USER", "id": "USR-M6-77"},
+                  "updatedBy": {"type": "EXTERNAL_USER", "id": "USR-M6-77"},
                   "updateOccurredAt": "2026-09-02T12:00:00Z"
                 }
                 """);
@@ -132,7 +134,38 @@ class TicketSimulationControllerTest {
                 .andExpect(jsonPath("$.message").value("El ticket no está ROUTED"));
     }
 
+    /**
+     * QA (BE - Implementar transiciones a partir del consumo de eventos):
+     * el rechazo de data.ticketId inválido vive en el service (ver
+     * TicketStatusUpdateServiceTest.ticketIdMismatchInDataIsRejectedWithoutTouchingTheTicket);
+     * acá sólo se cubre que ese rechazo llega como 400 al cliente HTTP.
+     */
+    @Test
+    void simulateStatusUpdateWithMismatchedDataTicketIdReturnsBadRequest() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+        when(ticketStatusUpdateService.applyUpdate(eq(ticketId), any()))
+                .thenThrow(new InvalidTicketRequestException("data.ticketId no coincide con el ticket de la URL"));
+
+        String body = envelopeJson(ticketId, """
+                {
+                  "updateType": "STARTED",
+                  "updatedBy": {"type": "EXTERNAL_USER", "id": "USR-M6-77"},
+                  "updateOccurredAt": "2026-09-02T12:00:00Z"
+                }
+                """);
+
+        mockMvc.perform(post("/api/tickets/{ticketId}/simulate-status-update", ticketId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest());
+    }
+
     private String envelopeJson(UUID ticketId, String data) {
+        // QA (BE - Implementar transiciones a partir del consumo de eventos):
+        // data.ticketId es obligatorio (Eventos v1.6 §8.1) y antes no se
+        // validaba. Se inyecta acá para no tener que tocar cada bloque de
+        // "data" inline de los tests de abajo uno por uno.
+        String dataWithTicketId = data.replaceFirst("\\{", "{\n                  \"ticketId\": \"" + ticketId + "\",");
         return """
                 {
                   "specVersion": "1.0",
@@ -143,6 +176,6 @@ class TicketSimulationControllerTest {
                   "subject": "tickets/%s",
                   "data": %s
                 }
-                """.formatted(UUID.randomUUID(), ticketId, data);
+                """.formatted(UUID.randomUUID(), ticketId, dataWithTicketId);
     }
 }

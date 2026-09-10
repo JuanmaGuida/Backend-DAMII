@@ -99,6 +99,7 @@ public class TicketService {
             throw new InvalidTicketRequestException("El Request Type seleccionado está inactivo");
         }
         var fields = formValidationService.validateAndGetFields(requestType, request.formData());
+        FormTemplate formTemplate = formValidationService.resolveActiveTemplate(requestType);
         Risk risk = riskCalculationService.calculateRisk(requestType, request.formData(), fields);
         // TODO Attachment: evidence is only checked for presence in this US. Persist it when storage exists.
         boolean validEvidence = evidence != null && java.util.Arrays.stream(evidence)
@@ -132,6 +133,7 @@ public class TicketService {
         ticket.setSummary(request.summary());
         ticket.setDescription(request.description());
         ticket.setFormData(new HashMap<>(request.formData()));
+        ticket.setFormTemplate(formTemplate);
         ticket.setCurrentStatus(TicketStatus.REGISTERED);
         ticket.setCurrentPriority(max(requestType.getMinimumPriority(), risk));
         ticket.setEstimatedAffectedCount(0);
@@ -191,17 +193,28 @@ public class TicketService {
     /**
      * Story 3.2 (BE - Endpoint de corrección de clasificación). Sólo se permite
      * mientras el ticket está en su primera IN_REVIEW y todavía no se finalizó la
-     * clasificación (Entidades v1.3 §4.1 / Guía funcional §6).
+     * clasificación (Entidades V1.49 §4.1 / Guía funcional complementaria M2
+     * V1.09 §6).
      * <p>
-     * OJO: esto recalcula responsibleAreaId, estimatedAffectedCount y aplica el piso
-     * de minimumPriority sobre currentPriority, tal como pide Decisiones #2. NO
-     * recalcula el SLA inicial (Decisiones #2 también lo pide) porque el módulo de
-     * SLA todavía no existe en este backend (Epic 6, Sprint 4). Tampoco vuelve a
-     * correr el motor de riesgo completo (RiskCalculationService necesita formData
-     * y form fields del alta original, que esta operación no recibe) — sólo aplica
-     * el piso de minimumPriority sin bajar la prioridad vigente, que es la única
-     * parte de la fórmula de prioridad que se puede recalcular sin volver a pedir
-     * las respuestas del formulario.
+     * Recalcula responsibleAreaId, estimatedAffectedCount, formTemplate,
+     * formData y currentPriority. NO recalcula el SLA inicial (Decisiones #2
+     * también lo pide) porque el módulo de SLA todavía no existe en este
+     * backend (Epic 6, Sprint 4).
+     * <p>
+     * Revisión post-actualización de documentación — prioridad: la versión
+     * anterior de este método aplicaba sólo un piso de minimumPriority sobre
+     * la currentPriority VIGENTE (nunca la bajaba), asumiendo que sin
+     * formData no se podía recalcular el riesgo. La Guía funcional §3
+     * ("REGLA DE EVOLUCIÓN") aclara que ese piso de "nunca baja" es sólo para
+     * la recalculación periódica automática (por edad/SLA); "una corrección
+     * del RequestType durante la primera IN_REVIEW SÍ puede recalcularla".
+     * Como formData se resetea a {} más abajo, el riesgo recalculado con el
+     * motor existente (RiskCalculationService, formData vacío) da exactamente
+     * newRequestType.baseRisk sin incrementos — por eso se usa baseRisk
+     * directamente en lugar de volver a invocar RiskCalculationService con
+     * argumentos vacíos. La prioridad resultante se floorea únicamente contra
+     * newRequestType.minimumPriority (mismo patrón que create()), pudiendo
+     * quedar por debajo de la prioridad anterior.
      */
     @Transactional
     public TicketResponse correctClassification(UUID ticketId, Long newRequestTypeId, AuthenticatedIdentity actor) {
@@ -223,13 +236,24 @@ public class TicketService {
 
         TicketLocation location = locationRepository.findByTicket_Id(ticketId).orElse(null);
         int estimatedAffectedCount = estimateAffectedCount(newRequestType, location);
-        Priority newPriority = applyMinimumPriorityFloor(previousPriority, newRequestType.getMinimumPriority());
+        Priority newPriority = max(newRequestType.getMinimumPriority(), newRequestType.getBaseRisk());
+        FormTemplate newFormTemplate = formValidationService.resolveActiveTemplate(newRequestType);
 
         ticket.setRequestType(newRequestType);
         ticket.setTicketType(newRequestType.getTicketType());
         ticket.setResponsibleAreaId(newRequestType.getResponsibleAreaId());
         ticket.setEstimatedAffectedCount(estimatedAffectedCount);
         ticket.setCurrentPriority(newPriority);
+        ticket.setFormTemplate(newFormTemplate);
+        // QA (BE - Endpoint de corrección de clasificación): formData quedaba con
+        // las respuestas del RequestType anterior después de reclasificar. Esas
+        // respuestas están validadas contra el FormTemplate del RequestType viejo
+        // y no tienen por qué corresponder a los campos del nuevo (códigos de
+        // FormField distintos, tipos distintos, etc.), así que conservarlas es
+        // directamente incorrecto. Se resetea a {} para forzar una carga nueva
+        // acorde a la clasificación corregida (ver formTemplate más arriba, que
+        // sí queda registrado con la nueva plantilla desde ya).
+        ticket.setFormData(new HashMap<>());
         ticketRepository.save(ticket);
 
         String message = "RequestType corregido de '" + previousRequestType.getCode()
@@ -418,13 +442,6 @@ public class TicketService {
                 .intValue();
     }
 
-    private Priority applyMinimumPriorityFloor(Priority current, Priority floor) {
-        if (current == null) {
-            return floor;
-        }
-        return current.ordinal() >= floor.ordinal() ? current : floor;
-    }
-
     private void recordActivity(Ticket ticket, ActivityType actionType, TicketStatus previousStatus,
                                  TicketStatus newStatus, AuthenticatedIdentity actor,
                                  Priority previousPriority, Priority newPriority, String message) {
@@ -436,12 +453,16 @@ public class TicketService {
         activity.setActionType(actionType);
         activity.setPreviousStatus(previousStatus);
         activity.setNewStatus(newStatus);
-        // ActorType hoy sólo tiene CITIZEN/AGENT/AREA_RESPONSIBLE/ADMIN (aviso aparte:
-        // esto no matchea el contrato de Eventos v1.6 §5.2, que espera SYSTEM en vez de
-        // ADMIN para un actor no identificado). Se usa ADMIN acá como el más parecido a
-        // "actor no identificado", pero hay que revisarlo cuando se corrija el enum o el
-        // contrato de eventos.
-        activity.setActorType(actor != null ? ActorType.AGENT : ActorType.ADMIN);
+        // Revisión post-actualización de documentación: este fallback NO tiene
+        // que ver con un renombrado de ActorType (esa era una lectura errónea de
+        // un intento anterior — ver el javadoc de ActorType). ADMIN sigue siendo
+        // un valor válido y distinto de SYSTEM. Se mantiene AGENT/SYSTEM acá
+        // porque estas llamadas son siempre transiciones disparadas dentro de M2
+        // por un agente autenticado (startReview, correctClassification,
+        // routeToArea); SYSTEM sólo cubre el caso defensivo de actor == null, que
+        // según la Guía funcional es la semántica correcta para "sin actor
+        // identificado". Juicio propio, marcado para que el equipo lo confirme.
+        activity.setActorType(actor != null ? ActorType.AGENT : ActorType.SYSTEM);
         activity.setActorId(actor != null ? actor.subjectId() : null);
         activity.setPreviousPriority(previousPriority);
         activity.setNewPriority(newPriority);
