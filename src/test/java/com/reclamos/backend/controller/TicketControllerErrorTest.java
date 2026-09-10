@@ -26,6 +26,7 @@ import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
@@ -99,6 +100,48 @@ class TicketControllerErrorTest {
                 .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
         verifyNoInteractions(ticketResolutionService);
     }
+
+    @Test
+    void citizenResolutionActionsRouteToService() throws Exception {
+        mockMvc.perform(post("/api/tickets/10000000-0000-0000-0000-000000000001/resolution/confirm"))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/tickets/10000000-0000-0000-0000-000000000001/resolution/reopen")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reason\":\"El problema continúa\"}"))
+                .andExpect(status().isOk());
+
+        verify(ticketResolutionService).confirm(any(), nullable(AuthenticatedIdentity.class));
+        verify(ticketResolutionService).reopen(any(), any(), nullable(AuthenticatedIdentity.class));
+    }
+
+    @Test
+    void reopenRequiresNonBlankReason() throws Exception {
+        String endpoint = "/api/tickets/10000000-0000-0000-0000-000000000001/resolution/reopen";
+        mockMvc.perform(post(endpoint).contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"   \"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+        verifyNoInteractions(ticketResolutionService);
+    }
+
+    @Test
+    void citizenResolutionActionsUseCanonicalBusinessErrors() throws Exception {
+        when(ticketResolutionService.confirm(any(), nullable(AuthenticatedIdentity.class)))
+                .thenThrow(new TicketResolutionConflictException("Estado incompatible"));
+        mockMvc.perform(post("/api/tickets/10000000-0000-0000-0000-000000000001/resolution/confirm"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("TICKET_RESOLUTION_CONFLICT"))
+                .andExpect(jsonPath("$.message").value("Estado incompatible"))
+                .andExpect(jsonPath("$.length()").value(2));
+
+        when(ticketResolutionService.reopen(any(), any(), nullable(AuthenticatedIdentity.class)))
+                .thenThrow(new UnauthorizedTicketOperationException());
+        mockMvc.perform(post("/api/tickets/10000000-0000-0000-0000-000000000001/resolution/reopen")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"Motivo\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"))
+                .andExpect(jsonPath("$.length()").value(2));
+    }
+
 
     @Test
     void evidenceRequiredUsesCanonicalError() throws Exception {

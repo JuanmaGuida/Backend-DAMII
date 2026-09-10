@@ -1,9 +1,6 @@
 package com.reclamos.backend.security;
 
-import com.reclamos.backend.dto.response.CreateTicketResponse;
-import com.reclamos.backend.dto.response.FormDefinitionResponse;
-import com.reclamos.backend.dto.response.InformationRequestResponse;
-import com.reclamos.backend.dto.response.TrackingTicketResponse;
+import com.reclamos.backend.dto.response.*;
 import com.reclamos.backend.entity.InformationRequestStatus;
 import com.reclamos.backend.entity.TicketStatus;
 import com.reclamos.backend.identity.IdentityProvider;
@@ -13,7 +10,6 @@ import com.reclamos.backend.service.InformationRequestService;
 import com.reclamos.backend.service.TicketService;
 import com.reclamos.backend.service.TrackingService;
 import com.reclamos.backend.service.TicketResolutionService;
-import com.reclamos.backend.dto.response.TicketResolutionResponse;
 import com.reclamos.backend.entity.ResolutionType;
 import jakarta.servlet.DispatcherType;
 import org.junit.jupiter.api.BeforeEach;
@@ -112,6 +108,10 @@ class SecurityHardeningIntegrationTest {
         when(ticketResolutionService.resolveManually(any(), any(), any())).thenReturn(new TicketResolutionResponse(
                 UUID.randomUUID(), TICKET_ID, TicketStatus.RESOLVED, ResolutionType.ACTION_COMPLETED,
                 "Listo", null, Instant.parse("2026-09-01T10:00:00Z")));
+        TicketResolutionActionResponse actionResponse = new TicketResolutionActionResponse(
+                TICKET_ID, TicketStatus.CLOSED, Instant.parse("2026-09-01T10:00:00Z"), 0);
+        when(ticketResolutionService.confirm(any(), any())).thenReturn(actionResponse);
+        when(ticketResolutionService.reopen(any(), any(), any())).thenReturn(actionResponse);
     }
 
     @Test
@@ -196,7 +196,9 @@ class SecurityHardeningIntegrationTest {
                 informationRequest(),
                 informationResponse(),
                 informationResponse(),
-                resolutionRequest()
+                resolutionRequest(),
+                confirmResolutionRequest(),
+                reopenResolutionRequest()
         );
         for (RequestBuilder request : requests) {
             assertCanonicalUnauthorized(request);
@@ -210,7 +212,9 @@ class SecurityHardeningIntegrationTest {
                 informationRequest(),
                 informationResponse(),
                 informationResponse(),
-                resolutionRequest()
+                resolutionRequest(),
+                confirmResolutionRequest(),
+                reopenResolutionRequest()
         );
         for (MockHttpServletRequestBuilder request : invalidBearerRequests) {
             assertCanonicalUnauthorized(request.header("Authorization", "Bearer invalid"));
@@ -226,6 +230,8 @@ class SecurityHardeningIntegrationTest {
         mockMvc.perform(withBearer(informationRequest(), token)).andExpect(status().isCreated());
         mockMvc.perform(withBearer(informationResponse(), token)).andExpect(status().isOk());
         mockMvc.perform(withBearer(resolutionRequest(), token)).andExpect(status().isCreated());
+        mockMvc.perform(withBearer(confirmResolutionRequest(), token)).andExpect(status().isOk());
+        mockMvc.perform(withBearer(reopenResolutionRequest(), token)).andExpect(status().isOk());
     }
 
     @Test
@@ -326,6 +332,16 @@ class SecurityHardeningIntegrationTest {
         return post("/api/tickets/" + TICKET_ID + "/resolution")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"type\":\"ACTION_COMPLETED\",\"publicMessage\":\"Listo\"}");
+    }
+
+    private MockHttpServletRequestBuilder confirmResolutionRequest() {
+        return post("/api/tickets/" + TICKET_ID + "/resolution/confirm");
+    }
+
+    private MockHttpServletRequestBuilder reopenResolutionRequest() {
+        return post("/api/tickets/" + TICKET_ID + "/resolution/reopen")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"reason\":\"El problema continúa\"}");
     }
 
     private <B extends AbstractMockHttpServletRequestBuilder<B>> B withBearer(B request, String token) {
