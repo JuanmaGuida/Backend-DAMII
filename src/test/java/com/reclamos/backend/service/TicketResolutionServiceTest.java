@@ -15,6 +15,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Optional;
@@ -36,7 +37,7 @@ class TicketResolutionServiceTest {
     void setUp() {
         reset(tickets, resolutions, activities);
         service = new TicketResolutionService(tickets, resolutions, activities,
-                Clock.fixed(NOW, ZoneOffset.UTC));
+                Clock.fixed(NOW, ZoneOffset.UTC), Duration.ofHours(24));
         ticket = new Ticket();
         ticket.setId(UUID.randomUUID());
         ticket.setCitizenId(UUID.randomUUID());
@@ -164,6 +165,7 @@ class TicketResolutionServiceTest {
         assertEquals(TicketStatus.RESOLVED, response.getStatus());
         assertEquals(TicketStatus.RESOLVED, ticket.getCurrentStatus());
         assertEquals(NOW, ticket.getStatusChangedAt());
+        assertEquals(NOW.plus(Duration.ofHours(24)), ticket.getResolutionConfirmationDueAt());
         verify(resolutions).save(argThat(value -> value.getTicket() == ticket
                 && value.getType() == ResolutionType.ACTION_COMPLETED
                 && "Trabajo finalizado".equals(value.getPublicMessage())
