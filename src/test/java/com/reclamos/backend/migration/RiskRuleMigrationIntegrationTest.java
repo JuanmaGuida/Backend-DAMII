@@ -1,4 +1,4 @@
-package com.reclamos.backend;
+package com.reclamos.backend.migration;
 
 import com.reclamos.backend.entity.FormFieldType;
 import com.reclamos.backend.entity.RiskOperator;

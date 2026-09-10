@@ -54,11 +54,15 @@ public class SecurityConfiguration {
                         .requestMatchers(HttpMethod.GET,
                                 "/api/catalog/categories",
                                 "/api/catalog/categories/{categoryId}/subcategories",
+                                "/api/catalog/neighborhoods",
+                                "/api/catalog/neighborhoods/{neighborhoodId}",
                                 "/api/catalog/subcategories/{subcategoryId}/request-types",
                                 "/api/catalog/request-types/{requestTypeId}/form").permitAll()
                         .requestMatchers(HttpMethod.HEAD,
                                 "/api/catalog/categories",
                                 "/api/catalog/categories/{categoryId}/subcategories",
+                                "/api/catalog/neighborhoods",
+                                "/api/catalog/neighborhoods/{neighborhoodId}",
                                 "/api/catalog/subcategories/{subcategoryId}/request-types",
                                 "/api/catalog/request-types/{requestTypeId}/form").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/auth/me").authenticated()

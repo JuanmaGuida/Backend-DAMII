@@ -30,6 +30,8 @@ class OpenApiContractTest {
             "POST /api/auth/login",
             "GET /api/auth/me",
             "GET /api/catalog/categories",
+            "GET /api/catalog/neighborhoods",
+            "GET /api/catalog/neighborhoods/{neighborhoodId}",
             "GET /api/catalog/categories/{categoryId}/subcategories",
             "GET /api/catalog/subcategories/{subcategoryId}/request-types",
             "GET /api/catalog/request-types/{requestTypeId}/form",
@@ -55,6 +57,7 @@ class OpenApiContractTest {
             "LoginResponse",
             "IdentityResponse",
             "CategoryResponse",
+            "NeighborhoodResponse",
             "SubcategoryResponse",
             "RequestTypeResponse",
             "FormDefinitionResponse",
@@ -110,9 +113,12 @@ class OpenApiContractTest {
             Map<String, Object> operationNode = operation(operation);
             if (PROTECTED_OPERATIONS.contains(operation)) {
                 assertEquals("bearerAuth", firstSecurityScheme(operationNode), operation);
+            } else if (operation.startsWith("GET /api/catalog/neighborhoods")) {
+                assertEquals(java.util.List.of(), operationNode.get("security"), operation);
             } else {
-                assertFalse(operationNode.containsKey("security"), operation + " debe ser público");
-            }
+                assertTrue(!operationNode.containsKey("security")
+                                || java.util.List.of().equals(operationNode.get("security")),
+                        operation + " debe ser público");            }
         }
     }
 
@@ -150,6 +156,11 @@ class OpenApiContractTest {
         assertFalse(serialized.contains("riskIncrement"));
         assertFalse(serialized.contains("formTemplateId"));
         assertFalse(serialized.contains("storageKey"));
+        assertFalse(serialized.contains("trackingCodeHash"));
+        assertFalse(serialized.contains("trackingAccessCode"));
+
+        assertFalse(map(schemas, "TrackingTicketResponse", "properties").containsKey("ticketId"));
+        assertEquals(Set.of("name"), map(schemas, "TrackingRequestTypeSummary", "properties").keySet());
     }
 
     @Test
