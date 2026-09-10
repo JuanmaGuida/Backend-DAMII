@@ -13,17 +13,17 @@ import com.reclamos.backend.identity.ModuleRole;
 import com.reclamos.backend.repository.TicketActivityRepository;
 import com.reclamos.backend.repository.TicketRepository;
 import com.reclamos.backend.repository.TicketResolutionRepository;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
 
 @Service
-@RequiredArgsConstructor
 public class TicketResolutionService {
     private static final String MODULE_ID = "M2";
 
@@ -31,6 +31,19 @@ public class TicketResolutionService {
     private final TicketResolutionRepository resolutionRepository;
     private final TicketActivityRepository activityRepository;
     private final Clock clock;
+    private final Duration confirmationDuration;
+
+    public TicketResolutionService(TicketRepository ticketRepository,
+                                   TicketResolutionRepository resolutionRepository,
+                                   TicketActivityRepository activityRepository,
+                                   Clock clock,
+                                   @Value("${ticket.resolution.confirmation-duration}") Duration confirmationDuration) {
+        this.ticketRepository = ticketRepository;
+        this.resolutionRepository = resolutionRepository;
+        this.activityRepository = activityRepository;
+        this.clock = clock;
+        this.confirmationDuration = confirmationDuration;
+    }
 
     @Transactional
     public TicketResolutionResponse resolveManually(UUID ticketId, ResolveTicketRequest request,
@@ -66,6 +79,7 @@ public class TicketResolutionService {
 
         ticket.setCurrentStatus(TicketStatus.RESOLVED);
         ticket.setStatusChangedAt(now);
+        ticket.setResolutionConfirmationDueAt(now.plus(confirmationDuration));
         ticketRepository.save(ticket);
         saveActivity(ticket, request, actorType, actorId, now);
 
