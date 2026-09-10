@@ -1,5 +1,6 @@
 package com.reclamos.backend.service;
 
+import com.reclamos.backend.dto.request.ReopenTicketRequest;
 import com.reclamos.backend.dto.request.ResolveTicketRequest;
 import com.reclamos.backend.entity.*;
 import com.reclamos.backend.exception.ResourceNotFoundException;
@@ -47,6 +48,111 @@ class TicketResolutionServiceTest {
             value.setId(UUID.randomUUID());
             return value;
         });
+    }
+
+    @Test
+    void ownerConfirmsResolvedTicketAndCreatesClosedActivity() {
+        ticket.setCurrentStatus(TicketStatus.RESOLVED);
+        ticket.setResolutionConfirmationDueAt(NOW.plusSeconds(3600));
+        AuthenticatedIdentity identity = identity(ModuleRole.ADMIN, ticket.getCitizenId());
+
+        var response = service.confirm(ticket.getId(), identity);
+
+        assertEquals(TicketStatus.CLOSED, response.getStatus());
+        assertEquals(NOW, response.getStatusChangedAt());
+        assertEquals(TicketStatus.CLOSED, ticket.getCurrentStatus());
+        assertNull(ticket.getResolutionConfirmationDueAt());
+        verify(tickets).save(ticket);
+        verify(activities).save(argThat(value -> value.getActionType() == ActivityType.CLOSED
+                && value.getPreviousStatus() == TicketStatus.RESOLVED
+                && value.getNewStatus() == TicketStatus.CLOSED
+                && value.getActorType() == ActorType.CITIZEN
+                && identity.citizenId().toString().equals(value.getActorId())
+                && "M2".equals(value.getSourceModuleId())
+                && "CITIZEN_CONFIRMED".equals(value.getReasonCode())
+                && NOW.equals(value.getOccurredAt())));
+    }
+
+    @Test
+    void ownerReopensResolvedTicketAndCreatesReopenedActivity() {
+        ticket.setCurrentStatus(TicketStatus.RESOLVED);
+        ticket.setReopenCount(2);
+        ticket.setResolutionConfirmationDueAt(NOW.plusSeconds(3600));
+        AuthenticatedIdentity identity = identity(ModuleRole.AGENT, ticket.getCitizenId());
+
+        var response = service.reopen(ticket.getId(), new ReopenTicketRequest("El problema continúa"), identity);
+
+        assertEquals(TicketStatus.IN_PROGRESS, response.getStatus());
+        assertEquals(3, response.getReopenCount());
+        assertEquals(NOW, ticket.getStatusChangedAt());
+        assertNull(ticket.getResolutionConfirmationDueAt());
+        verify(tickets).save(ticket);
+        verify(activities).save(argThat(value -> value.getActionType() == ActivityType.REOPENED
+                && value.getPreviousStatus() == TicketStatus.RESOLVED
+                && value.getNewStatus() == TicketStatus.IN_PROGRESS
+                && value.getActorType() == ActorType.CITIZEN
+                && identity.citizenId().toString().equals(value.getActorId())
+                && value.getReasonCode() == null
+                && "El problema continúa".equals(value.getMessage())
+                && NOW.equals(value.getOccurredAt())));
+    }
+
+    @Test
+    void citizenActionsRejectMissingDifferentAndAnonymousOwners() {
+        ticket.setCurrentStatus(TicketStatus.RESOLVED);
+        assertThrows(UnauthorizedTicketOperationException.class,
+                () -> service.confirm(ticket.getId(), null));
+        assertThrows(UnauthorizedTicketOperationException.class,
+                () -> service.confirm(ticket.getId(), identity(ModuleRole.CITIZEN, UUID.randomUUID())));
+        ticket.setAnonymous(true);
+        ticket.setCitizenId(null);
+        assertThrows(UnauthorizedTicketOperationException.class,
+                () -> service.reopen(ticket.getId(), new ReopenTicketRequest("Motivo"), agent()));
+        verify(tickets, never()).save(any());
+        verify(activities, never()).save(any());
+    }
+
+    @Test
+    void citizenActionsReturnNotFoundWithoutPersistence() {
+        UUID missing = UUID.randomUUID();
+        when(tickets.findByIdForUpdate(missing)).thenReturn(Optional.empty());
+        assertThrows(ResourceNotFoundException.class, () -> service.confirm(missing, agent()));
+        assertThrows(ResourceNotFoundException.class,
+                () -> service.reopen(missing, new ReopenTicketRequest("Motivo"), agent()));
+        verify(tickets, never()).save(any());
+        verify(activities, never()).save(any());
+    }
+
+    @Test
+    void citizenActionsRejectEveryStatusExceptResolvedWithoutEffects() {
+        AuthenticatedIdentity owner = identity(ModuleRole.CITIZEN, ticket.getCitizenId());
+        for (TicketStatus status : TicketStatus.values()) {
+            if (status == TicketStatus.RESOLVED) continue;
+            clearInvocations(tickets, activities);
+            ticket.setCurrentStatus(status);
+            int reopenCount = ticket.getReopenCount();
+            assertThrows(TicketResolutionConflictException.class,
+                    () -> service.confirm(ticket.getId(), owner), status.name());
+            assertThrows(TicketResolutionConflictException.class,
+                    () -> service.reopen(ticket.getId(), new ReopenTicketRequest("Motivo"), owner), status.name());
+            assertEquals(reopenCount, ticket.getReopenCount());
+            verify(tickets, never()).save(any());
+            verify(activities, never()).save(any());
+        }
+    }
+
+    @Test
+    void secondCitizenActionIsRejectedAfterFirstTransition() {
+        ticket.setCurrentStatus(TicketStatus.RESOLVED);
+        AuthenticatedIdentity owner = identity(ModuleRole.CITIZEN, ticket.getCitizenId());
+        service.reopen(ticket.getId(), new ReopenTicketRequest("Motivo"), owner);
+        clearInvocations(tickets, activities);
+
+        assertThrows(TicketResolutionConflictException.class,
+                () -> service.reopen(ticket.getId(), new ReopenTicketRequest("Otro"), owner));
+        assertEquals(1, ticket.getReopenCount());
+        verify(tickets, never()).save(any());
+        verify(activities, never()).save(any());
     }
 
     @Test

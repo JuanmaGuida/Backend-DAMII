@@ -1,15 +1,13 @@
 package com.reclamos.backend.controller;
 
-import com.reclamos.backend.dto.request.AnswerInformationRequest;
-import com.reclamos.backend.dto.request.CreateInformationRequest;
+import com.reclamos.backend.dto.request.*;
 import com.reclamos.backend.dto.response.InformationRequestResponse;
+import com.reclamos.backend.dto.response.TicketResolutionActionResponse;
 import com.reclamos.backend.service.InformationRequestService;
 import com.reclamos.backend.service.TicketService;
-import com.reclamos.backend.dto.request.CreateTicketRequest;
 import com.reclamos.backend.dto.response.CreateTicketResponse;
 import com.reclamos.backend.identity.AuthenticatedIdentity;
 import com.reclamos.backend.service.TicketResolutionService;
-import com.reclamos.backend.dto.request.ResolveTicketRequest;
 import com.reclamos.backend.dto.response.TicketResolutionResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -70,5 +68,20 @@ public class TicketController {
             @Valid @RequestBody ResolveTicketRequest request,
             @AuthenticationPrincipal AuthenticatedIdentity identity) {
         return ticketResolutionService.resolveManually(ticketId, request, identity);
+    }
+
+    @PostMapping("/{ticketId}/resolution/confirm")
+    public TicketResolutionActionResponse confirmResolution(
+            @PathVariable UUID ticketId,
+            @AuthenticationPrincipal AuthenticatedIdentity identity) {
+        return ticketResolutionService.confirm(ticketId, identity);
+    }
+
+    @PostMapping(path = "/{ticketId}/resolution/reopen", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public TicketResolutionActionResponse reopenResolution(
+            @PathVariable UUID ticketId,
+            @Valid @RequestBody ReopenTicketRequest request,
+            @AuthenticationPrincipal AuthenticatedIdentity identity) {
+        return ticketResolutionService.reopen(ticketId, request, identity);
     }
 }

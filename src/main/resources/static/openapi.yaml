@@ -348,6 +348,68 @@ paths:
           $ref: '#/components/responses/TicketResolutionConflict'
         '415':
           $ref: '#/components/responses/UnsupportedMediaType'
+  /api/tickets/{ticketId}/resolution/confirm:
+    post:
+      tags: [ Tickets ]
+      summary: Confirmar la resolución de un ticket
+      description: Operación permitida al propietario de un ticket en estado RESOLVED.
+      operationId: confirmTicketResolution
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - $ref: '#/components/parameters/TicketId'
+      responses:
+        '200':
+          description: Resolución confirmada y ticket cerrado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketResolutionActionResponse'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/InvalidToken'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/TicketResolutionConflict'
+  /api/tickets/{ticketId}/resolution/reopen:
+    post:
+      tags: [ Tickets ]
+      summary: Reabrir un ticket por disconformidad
+      description: Operación permitida al propietario de un ticket en estado RESOLVED.
+      operationId: reopenTicketResolution
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - $ref: '#/components/parameters/TicketId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReopenTicketRequest'
+      responses:
+        '200':
+          description: Ticket reabierto para retomar su tratamiento.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketResolutionActionResponse'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/InvalidToken'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/TicketResolutionConflict'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
   /api/tracking/access:
     post:
       tags: [Tracking]
@@ -750,6 +812,29 @@ components:
         resolvedAt:
           type: string
           format: date-time
+    ReopenTicketRequest:
+      type: object
+      required: [ reason ]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+      additionalProperties: false
+    TicketResolutionActionResponse:
+      type: object
+      required: [ ticketId, status, statusChangedAt, reopenCount ]
+      properties:
+        ticketId:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/TicketStatus'
+        statusChangedAt:
+          type: string
+          format: date-time
+        reopenCount:
+          type: integer
+          format: int32
     TrackingAccessRequest:
       type: object
       required: [trackingCode]
