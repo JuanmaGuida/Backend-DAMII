@@ -31,16 +31,7 @@ public class FormValidationService {
     }
 
     public List<FormField> validateAndGetFields(RequestType requestType, Map<String, Object> formData) {
-        if (requestType == null || requestType.getId() == null) {
-            throw new FormValidationException("El Request Type es obligatorio");
-        }
-        if (!requestType.isActive()) {
-            throw new FormValidationException("El Request Type seleccionado está inactivo");
-        }
-        FormTemplate template = formTemplateRepository
-                .findFirstByRequestType_IdAndActiveTrueOrderByVersionDesc(requestType.getId())
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "No existe un formulario configurado para el Request Type seleccionado"));
+        FormTemplate template = resolveActiveTemplate(requestType);
         List<FormField> fields = formFieldRepository
                 .findAllByFormTemplate_IdOrderByDisplayOrderAsc(template.getId());
         Map<String, Object> data = formData == null ? Collections.emptyMap() : formData;
@@ -62,6 +53,30 @@ public class FormValidationService {
             }
         }
         return List.copyOf(fields);
+    }
+
+    /**
+     * Entidades V1.49 §4/§6: Ticket.formTemplateId necesita saber CON QUÉ
+     * FormTemplate se asoció un ticket (la plantilla activa resuelta en el
+     * momento de crearlo o reclasificarlo), no sólo los FormField para
+     * validar. Se extrae acá la misma resolución que ya hacía
+     * validateAndGetFields internamente, sin cambiar su firma/comportamiento
+     * (para no arriesgar otros llamadores que ya dependan de ella), a costa
+     * de una consulta extra a FormTemplateRepository cuando ambos métodos se
+     * usan sobre el mismo RequestType en la misma operación (ver
+     * TicketService.create/correctClassification).
+     */
+    public FormTemplate resolveActiveTemplate(RequestType requestType) {
+        if (requestType == null || requestType.getId() == null) {
+            throw new FormValidationException("El Request Type es obligatorio");
+        }
+        if (!requestType.isActive()) {
+            throw new FormValidationException("El Request Type seleccionado está inactivo");
+        }
+        return formTemplateRepository
+                .findFirstByRequestType_IdAndActiveTrueOrderByVersionDesc(requestType.getId())
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "No existe un formulario configurado para el Request Type seleccionado"));
     }
 
     private boolean isBlankText(FormField field, Object value) {

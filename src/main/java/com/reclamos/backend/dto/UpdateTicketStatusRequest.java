@@ -7,6 +7,7 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 
 import java.time.Instant;
+import java.util.UUID;
 
 /**
  * Payload de negocio ({@code data}) del evento updateTicketStatus (Eventos
@@ -17,11 +18,18 @@ import java.time.Instant;
  * subject) — por eso este record ya no tiene un campo producerModuleId
  * propio: el productor del hecho es {@code envelope.producer().moduleId()}.
  * <p>
+ * QA (BE - Implementar transiciones a partir del consumo de eventos):
+ * faltaba {@code ticketId}, que Eventos v1.6 §8.1 sí exige dentro de
+ * {@code data} ("Ticket de M2 sobre el que se informa el hecho") como campo
+ * separado de {@code envelope.subject}. {@code TicketStatusUpdateService}
+ * valida que coincida con el ticket de la URL antes de tocar nada.
+ * <p>
  * Simplificación consciente que sigue vigente: no incluye
  * {@code attachments} (el módulo todavía no persiste adjuntos, Sprint 5 /
  * Story 8.1).
  */
 public record UpdateTicketStatusRequest(
+        @NotNull(message = "ticketId es obligatorio") UUID ticketId,
         @NotNull(message = "updateType es obligatorio") UpdateTicketStatusType updateType,
         String publicMessage,
         String internalMessage,
@@ -52,9 +60,12 @@ public record UpdateTicketStatusRequest(
     }
 
     /**
-     * type es CITIZEN│AGENT│AREA_USER│SYSTEM per Eventos v1.6 §5.2 (todavía
-     * no renombrado en ese documento). Se mapea a nuestro ActorType interno
-     * en el service — ver el comentario ahí.
+     * type es CITIZEN│AGENT│AREA_RESPONSIBLE│ADMIN│EXTERNAL_USER│SYSTEM per
+     * Eventos V1.69 §5.2 — el mismo enum ActorType completo (ver su
+     * javadoc). Para updateTicketStatus, que siempre llega desde otro
+     * módulo vía integración, el valor esperado en la práctica es
+     * EXTERNAL_USER (ver ejemplos §8.2/§8.3 de Eventos V1.69). Se mapea a
+     * nuestro ActorType interno en el service — ver el comentario ahí.
      */
     public record Actor(@NotNull(message = "updatedBy.type es obligatorio") String type, String id) {
     }

@@ -99,6 +99,22 @@ public class Ticket {
     @Column(name = "form_data", nullable = false, columnDefinition = "jsonb")
     private Map<String, Object> formData = new HashMap<>();
 
+    /**
+     * Entidades V1.49 §4/§6: registra CON QUÉ FormTemplate/versión quedó
+     * asociado formData, ya que FormValidationService resuelve "la plantilla
+     * activa" en vivo a partir de requestTypeId y esa plantilla puede
+     * cambiar de versión con el tiempo. Se fija en create() y se recalcula
+     * en correctClassification() junto con requestType y formData; queda
+     * congelado en cuanto classificationFinalizedAt se setea. Nullable
+     * porque los tickets creados antes de esta columna no tienen valor.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(
+            name = "form_template_id",
+            foreignKey = @ForeignKey(name = "fk_ticket_form_template")
+    )
+    private FormTemplate formTemplate;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "current_status", nullable = false, length = 30)
     private TicketStatus currentStatus;
