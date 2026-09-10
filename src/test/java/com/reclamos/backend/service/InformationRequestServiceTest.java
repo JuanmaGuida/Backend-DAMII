@@ -21,16 +21,18 @@ class InformationRequestServiceTest {
     private static final Instant NOW = Instant.parse("2026-01-10T12:00:00Z");
     private final TicketRepository tickets = mock(TicketRepository.class);
     private final InformationRequestRepository requests = mock(InformationRequestRepository.class);
-    private final TicketCancellationRepository cancellations = mock(TicketCancellationRepository.class);
     private final TicketActivityRepository activities = mock(TicketActivityRepository.class);
+    private final InformationRequestExpirationService expirationService =
+            mock(InformationRequestExpirationService.class);
     private InformationRequestService service;
     private Ticket ticket;
 
     @BeforeEach
     void setUp() {
-        reset(tickets, requests, cancellations, activities);
-        service = new InformationRequestService(tickets, requests, cancellations, activities,
-                new InformationRequestDeadlineService(Clock.fixed(NOW, ZoneOffset.UTC), Duration.ofHours(72)));
+        reset(tickets, requests, activities, expirationService);
+        service = new InformationRequestService(tickets, requests, activities,
+                new InformationRequestDeadlineService(Clock.fixed(NOW, ZoneOffset.UTC), Duration.ofHours(72)),
+                expirationService);
         ticket = ticket(TicketStatus.IN_PROGRESS, false);
         when(tickets.findByIdForUpdate(ticket.getId())).thenReturn(Optional.of(ticket));
         when(requests.save(any())).thenAnswer(invocation -> {
@@ -114,7 +116,7 @@ class InformationRequestServiceTest {
     void citizenAnswersBeforeDeadlineAndResumeStatusIsRestored() {
         InformationRequest pending = pending(ticket, NOW.plusSeconds(1));
         ticket.setCurrentStatus(TicketStatus.PENDING_INFORMATION);
-        when(requests.findByTicketIdAndStatus(ticket.getId(), InformationRequestStatus.PENDING))
+        when(requests.findByTicketIdAndStatusForUpdate(ticket.getId(), InformationRequestStatus.PENDING))
                 .thenReturn(Optional.of(pending));
 
         AuthenticatedIdentity actor = citizen();
@@ -135,40 +137,30 @@ class InformationRequestServiceTest {
 
     @Test
     void answeredCannotBeAnsweredAgainAndDeadlineIsInclusive() {
-        when(requests.findByTicketIdAndStatus(ticket.getId(), InformationRequestStatus.PENDING))
+        when(requests.findByTicketIdAndStatusForUpdate(ticket.getId(), InformationRequestStatus.PENDING))
                 .thenReturn(Optional.empty());
         assertThrows(InformationRequestConflictException.class, () -> service.answerInformation(ticket.getId(),
                 new AnswerInformationRequest("Otra"), citizen()));
-        when(requests.findByTicketIdAndStatus(ticket.getId(), InformationRequestStatus.PENDING))
+        when(requests.findByTicketIdAndStatusForUpdate(ticket.getId(), InformationRequestStatus.PENDING))
                 .thenReturn(Optional.of(pending(ticket, NOW)));
         assertThrows(InformationRequestExpiredException.class, () -> service.answerInformation(ticket.getId(),
                 new AnswerInformationRequest("Tarde"), citizen()));
     }
 
     @Test
-    void expiredPendingIsCancelledOnceWithTimeoutReasonWhileAnsweredIsIgnored() {
-        InformationRequest expired = pending(ticket, NOW.minusSeconds(1));
-        InformationRequest answered = pending(ticket, NOW.minusSeconds(1));
-        answered.setStatus(InformationRequestStatus.ANSWERED);
-        ticket.setCurrentStatus(TicketStatus.PENDING_INFORMATION);
-        when(requests.findByStatusAndDueAtLessThanEqual(InformationRequestStatus.PENDING, NOW))
-                .thenReturn(List.of(expired), List.of());
+    void expirationScanDelegatesUnlockedCandidatesIndividually() {
+        UUID requestId = UUID.randomUUID();
+        UUID ticketId = UUID.randomUUID();
+        InformationRequestRepository.ExpirationCandidate candidate =
+                mock(InformationRequestRepository.ExpirationCandidate.class);
+        when(candidate.getRequestId()).thenReturn(requestId);
+        when(candidate.getTicketId()).thenReturn(ticketId);
+        when(requests.findExpirationCandidates(InformationRequestStatus.PENDING, NOW))
+                .thenReturn(List.of(candidate));
 
         service.expireDueRequests();
-        service.expireDueRequests();
 
-        assertEquals(InformationRequestStatus.EXPIRED, expired.getStatus());
-        assertEquals(TicketStatus.CANCELLED, ticket.getCurrentStatus());
-        verify(cancellations, times(1)).save(argThat(value -> value.getReasonCode() == CancellationReasonCode.INFO_TIMEOUT
-                && value.getCancelledByType() == ActorType.SYSTEM
-                && value.getCancelledById() == null
-                && "M2".equals(value.getCancelledByModuleId())));
-        verify(activities, times(1)).save(argThat(value -> value.getActionType() == ActivityType.CANCELLED
-                && "INFO_TIMEOUT".equals(value.getReasonCode())
-                && value.getActorType() == ActorType.SYSTEM
-                && value.getActorId() == null
-                && "M2".equals(value.getSourceModuleId())));
-        assertEquals(InformationRequestStatus.ANSWERED, answered.getStatus());
+        verify(expirationService).expireIfDue(requestId, ticketId, NOW);
     }
 
     @Test
@@ -176,7 +168,7 @@ class InformationRequestServiceTest {
         ticket = ticket(TicketStatus.PENDING_INFORMATION, true);
         InformationRequest pending = pending(ticket, NOW.plusSeconds(1));
         when(tickets.findByIdForUpdate(ticket.getId())).thenReturn(Optional.of(ticket));
-        when(requests.findByTicketIdAndStatus(ticket.getId(), InformationRequestStatus.PENDING))
+        when(requests.findByTicketIdAndStatusForUpdate(ticket.getId(), InformationRequestStatus.PENDING))
                 .thenReturn(Optional.of(pending));
 
         assertDoesNotThrow(() -> service.answerAnonymousFromTracking(ticket.getId(), "Respuesta", "tracking"));
