@@ -1,4 +1,4 @@
-package com.reclamos.backend;
+package com.reclamos.backend.migration;
 
 import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.FlywayException;

@@ -12,12 +12,10 @@ import java.time.Instant;
 @AllArgsConstructor
 public class TrackingTicketResponse {
     private String publicId;
-    private TicketStatus currentStatus;
+    private TicketStatus status;
     private String summary;
     private Instant createdAt;
     private Instant statusChangedAt;
-    private Instant firstResponseDueAt;
-    private Instant resolutionDueAt;
     private RequestTypeSummary requestType;
     private CategorySummary category;
     private SubcategorySummary subcategory;
@@ -26,8 +24,6 @@ public class TrackingTicketResponse {
     @NoArgsConstructor
     @AllArgsConstructor
     public static class RequestTypeSummary {
-        private Long id;
-        private String code;
         private String name;
     }
 
@@ -35,7 +31,6 @@ public class TrackingTicketResponse {
     @NoArgsConstructor
     @AllArgsConstructor
     public static class CategorySummary {
-        private Long id;
         private String name;
     }
 
@@ -43,7 +38,6 @@ public class TrackingTicketResponse {
     @NoArgsConstructor
     @AllArgsConstructor
     public static class SubcategorySummary {
-        private Long id;
         private String name;
     }
 }

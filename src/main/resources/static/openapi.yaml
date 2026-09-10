@@ -75,6 +75,47 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/CategoryResponse'
+  /api/catalog/neighborhoods:
+    get:
+      tags: [ Catalog ]
+      summary: Listar barrios disponibles
+      description: Devuelve el catálogo público de barrios ordenado alfabéticamente por nombre.
+      operationId: getNeighborhoods
+      security: [ ]
+      responses:
+        '200':
+          description: Barrios disponibles.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/NeighborhoodResponse'
+  /api/catalog/neighborhoods/{neighborhoodId}:
+    get:
+      tags: [ Catalog ]
+      summary: Obtener un barrio
+      description: Devuelve un barrio del catálogo público por su identificador.
+      operationId: getNeighborhood
+      security: [ ]
+      parameters:
+        - name: neighborhoodId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Barrio encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NeighborhoodResponse'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /api/catalog/categories/{categoryId}/subcategories:
     get:
       tags: [Catalog]
@@ -414,7 +455,9 @@ paths:
     post:
       tags: [Tracking]
       summary: Consultar un ticket por código de seguimiento
+      description: El código se envía en el body para evitar exponer esta capacidad de acceso en URLs y logs de acceso.
       operationId: accessTracking
+      security: []
       requestBody:
         required: true
         content:
@@ -431,7 +474,14 @@ paths:
         '400':
           $ref: '#/components/responses/InvalidRequest'
         '404':
-          $ref: '#/components/responses/NotFound'
+          description: El código es inválido, inexistente o no corresponde a una solicitud.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+              example:
+                code: TRACKING_TICKET_NOT_FOUND
+                message: No se encontró una solicitud para el código de seguimiento indicado.
         '415':
           $ref: '#/components/responses/UnsupportedMediaType'
 components:
@@ -595,6 +645,18 @@ components:
           type: string
         description:
           type: string
+    NeighborhoodResponse:
+      type: object
+      required: [ id, name, population ]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        population:
+          type: integer
+          format: int32
     SubcategoryResponse:
       type: object
       required: [id, name, description]
@@ -841,14 +903,15 @@ components:
       properties:
         trackingCode:
           type: string
+          description: Capacidad secreta entregada al crear la solicitud; nunca se incluye en la respuesta.
       additionalProperties: false
     TrackingTicketResponse:
       type: object
-      required: [publicId, currentStatus, summary, createdAt, statusChangedAt, requestType, category, subcategory]
+      required: [publicId, status, summary, createdAt, statusChangedAt, requestType, category, subcategory]
       properties:
         publicId:
           type: string
-        currentStatus:
+        status:
           $ref: '#/components/schemas/TicketStatus'
         summary:
           type: string
@@ -866,31 +929,20 @@ components:
           $ref: '#/components/schemas/TrackingSubcategorySummary'
     TrackingRequestTypeSummary:
       type: object
-      required: [id, code, name]
+      required: [name]
       properties:
-        id:
-          type: integer
-          format: int64
-        code:
-          type: string
         name:
           type: string
     TrackingCategorySummary:
       type: object
-      required: [id, name]
+      required: [name]
       properties:
-        id:
-          type: integer
-          format: int64
         name:
           type: string
     TrackingSubcategorySummary:
       type: object
-      required: [id, name]
+      required: [name]
       properties:
-        id:
-          type: integer
-          format: int64
         name:
           type: string
     ModuleId:

@@ -11,6 +11,7 @@ import java.util.Base64;
 @Service
 public class TrackingCodeService {
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+    private static final String TRACKING_CODE_PATTERN = "[A-Za-z0-9_-]{32}";
 
     public String generate() {
         byte[] random = new byte[24];
@@ -25,5 +26,8 @@ public class TrackingCodeService {
         } catch (NoSuchAlgorithmException impossible) {
             throw new IllegalStateException("SHA-256 no está disponible", impossible);
         }
+    }
+    public boolean isValid(String trackingCode) {
+        return trackingCode != null && trackingCode.matches(TRACKING_CODE_PATTERN);
     }
 }
