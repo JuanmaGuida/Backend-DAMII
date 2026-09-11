@@ -385,6 +385,8 @@ public class TicketStatusUpdateService {
         response.setAnonymous(ticket.isAnonymous());
         response.setEstimatedAffectedCount(ticket.getEstimatedAffectedCount());
         response.setEscalated(ticket.isEscalated());
+        response.setEscalationReasonCode(ticket.getEscalationReasonCode());
+        response.setEscalatedAt(ticket.getEscalatedAt());
         if (location != null && location.getNeighborhood() != null) {
             response.setNeighborhoodId(location.getNeighborhood().getId());
             response.setNeighborhoodName(location.getNeighborhood().getName());

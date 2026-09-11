@@ -222,6 +222,54 @@ class TicketServiceTest {
     }
 
     @Test
+    void criticalPriorityCreatesRegisteredEscalatedTicketAndOrderedActivities() {
+        MockMultipartFile evidence = new MockMultipartFile(
+                "evidence", "photo.jpg", "image/jpeg", new byte[]{1});
+        when(risks.calculateRisk(any(RequestType.class), any(ResolvedForm.class)))
+                .thenReturn(new RiskAssessment(100, Risk.CRITICAL));
+        when(activities.countByTicketId(any())).thenReturn(1);
+
+        CreateTicketResponse response = service.create(
+                request(), identity(), new MockMultipartFile[]{evidence});
+
+        assertThat(response.status()).isEqualTo(TicketStatus.REGISTERED);
+        ArgumentCaptor<Ticket> ticketCaptor = ArgumentCaptor.forClass(Ticket.class);
+        verify(tickets, times(2)).save(ticketCaptor.capture());
+        Ticket ticket = ticketCaptor.getValue();
+        assertThat(ticket.getCurrentStatus()).isEqualTo(TicketStatus.REGISTERED);
+        assertThat(ticket.isEscalated()).isTrue();
+        assertThat(ticket.getEscalationReasonCode()).isEqualTo(EscalationReasonCode.CRITICAL_PRIORITY);
+        assertThat(ticket.getEscalatedAt()).isEqualTo(NOW);
+
+        ArgumentCaptor<TicketActivity> activityCaptor = ArgumentCaptor.forClass(TicketActivity.class);
+        verify(activities, times(2)).save(activityCaptor.capture());
+        assertThat(activityCaptor.getAllValues()).extracting(TicketActivity::getActionType)
+                .containsExactly(ActivityType.TICKET_CREATED, ActivityType.ESCALATED);
+        TicketActivity escalation = activityCaptor.getAllValues().get(1);
+        assertThat(escalation.getSequence()).isEqualTo(2);
+        assertThat(escalation.getActorType()).isEqualTo(ActorType.SYSTEM);
+        assertThat(escalation.getActorId()).isNull();
+        assertThat(escalation.getReasonCode()).isEqualTo("CRITICAL_PRIORITY");
+        assertThat(escalation.getPreviousStatus()).isEqualTo(TicketStatus.REGISTERED);
+        assertThat(escalation.getNewStatus()).isEqualTo(TicketStatus.REGISTERED);
+    }
+
+    @Test
+    void highPriorityDoesNotActivateAutomaticEscalation() {
+        MockMultipartFile evidence = new MockMultipartFile(
+                "evidence", "photo.jpg", "image/jpeg", new byte[]{1});
+        when(risks.calculateRisk(any(RequestType.class), any(ResolvedForm.class)))
+                .thenReturn(new RiskAssessment(62, Risk.HIGH));
+
+        service.create(request(), identity(), new MockMultipartFile[]{evidence});
+
+        verify(tickets).save(argThat(ticket -> !ticket.isEscalated()
+                && ticket.getEscalationReasonCode() == null
+                && ticket.getEscalatedAt() == null));
+        verify(activities).save(argThat(activity -> activity.getActionType() == ActivityType.TICKET_CREATED));
+    }
+
+    @Test
     void highAndCriticalRiskWithoutEvidenceDoNotPersist() {
         when(risks.calculateRisk(any(RequestType.class), any(ResolvedForm.class)))
                 .thenReturn(new RiskAssessment(62, Risk.HIGH), new RiskAssessment(100, Risk.CRITICAL));
@@ -449,7 +497,7 @@ class TicketServiceTest {
 
         service.create(request(), identity(), new MockMultipartFile[]{evidence});
 
-        verify(tickets).save(argThat(ticket ->
+        verify(tickets, times(2)).save(argThat(ticket ->
                 ticket.getCurrentPriority() == Priority.CRITICAL && dueAt.equals(ticket.getResolutionDueAt())
         ));
     }
@@ -715,6 +763,28 @@ class TicketServiceTest {
     }
 
     @Test
+    void startReviewPreservesCriticalEscalation() {
+        Ticket ticket = ticket(TicketStatus.REGISTERED, Priority.CRITICAL);
+        Instant escalatedAt = NOW.minusSeconds(60);
+        ticket.setEscalated(true);
+        ticket.setEscalationReasonCode(EscalationReasonCode.CRITICAL_PRIORITY);
+        ticket.setEscalatedAt(escalatedAt);
+        ModuleUser agentUser = new ModuleUser();
+        agentUser.setId(42L);
+        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+        when(moduleUsers.findByCitizenId(actor.citizenId())).thenReturn(Optional.of(agentUser));
+
+        TicketResponse response = service.startReview(ticketId, actor);
+
+        assertThat(response.getCurrentStatus()).isEqualTo(TicketStatus.IN_REVIEW);
+        assertThat(response.isEscalated()).isTrue();
+        assertThat(response.getEscalationReasonCode()).isEqualTo(EscalationReasonCode.CRITICAL_PRIORITY);
+        assertThat(response.getEscalatedAt()).isEqualTo(escalatedAt);
+        assertThat(ticket.getEscalatedAt()).isEqualTo(escalatedAt);
+    }
+
+    @Test
     void startReviewDoesNotOverwriteAnAlreadyAssignedAgent() {
         Ticket ticket = ticket(TicketStatus.REGISTERED, Priority.MEDIUM);
         ModuleUser originalAgent = new ModuleUser();
@@ -801,6 +871,10 @@ class TicketServiceTest {
     @Test
     void correctClassificationCanLowerPriorityWhenNewRequestTypeHasLowerMinimumAndBaseRisk() {
         Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.CRITICAL);
+        Instant originalEscalatedAt = NOW.minusSeconds(1800);
+        ticket.setEscalated(true);
+        ticket.setEscalationReasonCode(EscalationReasonCode.CRITICAL_PRIORITY);
+        ticket.setEscalatedAt(originalEscalatedAt);
         RequestType newRequestType = requestTypeSprint2(20L, "FLOODING", "obras-hidraulicas",
                 Priority.LOW, Risk.LOW, new BigDecimal("0.1000"));
 
@@ -812,6 +886,55 @@ class TicketServiceTest {
         service.correctClassification(ticketId, 20L, actor);
 
         assertThat(ticket.getCurrentPriority()).isEqualTo(Priority.LOW);
+        assertThat(ticket.isEscalated()).isTrue();
+        assertThat(ticket.getEscalationReasonCode()).isEqualTo(EscalationReasonCode.CRITICAL_PRIORITY);
+        assertThat(ticket.getEscalatedAt()).isEqualTo(originalEscalatedAt);
+    }
+
+    @Test
+    void correctClassificationActivatesCriticalEscalationOnceWithoutChangingStatus() {
+        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.LOW);
+        RequestType newRequestType = requestTypeSprint2(20L, "CRITICAL_TYPE", "M6",
+                Priority.CRITICAL, Risk.CRITICAL, new BigDecimal("0.1000"));
+        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+        when(requestTypes.findById(20L)).thenReturn(Optional.of(newRequestType));
+        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+        when(activities.countByTicketId(ticketId)).thenReturn(3, 4);
+
+        TicketResponse response = service.correctClassification(ticketId, 20L, actor);
+
+        assertThat(response.getCurrentStatus()).isEqualTo(TicketStatus.IN_REVIEW);
+        assertThat(ticket.isEscalated()).isTrue();
+        assertThat(ticket.getEscalationReasonCode()).isEqualTo(EscalationReasonCode.CRITICAL_PRIORITY);
+        assertThat(ticket.getEscalatedAt()).isEqualTo(NOW);
+        ArgumentCaptor<TicketActivity> captor = ArgumentCaptor.forClass(TicketActivity.class);
+        verify(activities, times(2)).save(captor.capture());
+        assertThat(captor.getAllValues()).extracting(TicketActivity::getActionType)
+                .containsExactly(ActivityType.REQUEST_TYPE_CHANGED, ActivityType.ESCALATED);
+        assertThat(captor.getAllValues().get(1).getSequence()).isEqualTo(5);
+        assertThat(captor.getAllValues().get(1).getActorType()).isEqualTo(ActorType.SYSTEM);
+        assertThat(captor.getAllValues().get(1).getActorId()).isNull();
+    }
+
+    @Test
+    void correctClassificationDoesNotRestartExistingCriticalEscalation() {
+        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.CRITICAL);
+        Instant originalEscalatedAt = NOW.minusSeconds(3600);
+        ticket.setEscalated(true);
+        ticket.setEscalationReasonCode(EscalationReasonCode.CRITICAL_PRIORITY);
+        ticket.setEscalatedAt(originalEscalatedAt);
+        RequestType newRequestType = requestTypeSprint2(20L, "CRITICAL_TYPE", "M6",
+                Priority.CRITICAL, Risk.CRITICAL, new BigDecimal("0.1000"));
+        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+        when(requestTypes.findById(20L)).thenReturn(Optional.of(newRequestType));
+        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+
+        service.correctClassification(ticketId, 20L, actor);
+
+        assertThat(ticket.getEscalatedAt()).isEqualTo(originalEscalatedAt);
+        assertThat(ticket.getEscalationReasonCode()).isEqualTo(EscalationReasonCode.CRITICAL_PRIORITY);
+        verify(activities).save(argThat(activity -> activity.getActionType() == ActivityType.REQUEST_TYPE_CHANGED));
+        verify(activities, never()).save(argThat(activity -> activity.getActionType() == ActivityType.ESCALATED));
     }
 
     @Test
@@ -905,7 +1028,48 @@ class TicketServiceTest {
         assertThat(data.get("publicId")).isEqualTo(originalPublicId);
         assertThat(data.get("updateType")).isEqualTo("ROUTED");
         assertThat(data.get("responsibleAreaId")).isEqualTo("M6");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> details = (Map<String, Object>) data.get("details");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> routing = (Map<String, Object>) details.get("routing");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> escalation = (Map<String, Object>) routing.get("escalation");
+        assertThat(escalation).containsEntry("active", false);
+        assertThat(escalation).containsEntry("reasonCode", null);
+        assertThat(escalation).containsEntry("escalatedAt", null);
         assertThat(event.getPayload().get("subject")).isEqualTo("tickets/" + ticketId);
+    }
+
+    @Test
+    void routeToAreaPreservesEscalationAndIncludesItInOutboxSnapshot() {
+        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.CRITICAL);
+        Instant escalatedAt = NOW.minusSeconds(600);
+        ticket.setResponsibleAreaId("M6");
+        ticket.setEscalated(true);
+        ticket.setEscalationReasonCode(EscalationReasonCode.CRITICAL_PRIORITY);
+        ticket.setEscalatedAt(escalatedAt);
+        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+
+        TicketResponse response = service.routeToArea(ticketId, actor);
+
+        assertThat(response.getCurrentStatus()).isEqualTo(TicketStatus.ROUTED);
+        assertThat(response.isEscalated()).isTrue();
+        assertThat(response.getEscalatedAt()).isEqualTo(escalatedAt);
+        ArgumentCaptor<OutboxEvent> captor = ArgumentCaptor.forClass(OutboxEvent.class);
+        verify(outboxEventRepository).save(captor.capture());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> data = (Map<String, Object>) captor.getValue().getPayload().get("data");
+        assertThat(data.get("ticketId")).isEqualTo(ticketId);
+        assertThat(data.get("publicId")).isEqualTo(ticket.getPublicId());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> details = (Map<String, Object>) data.get("details");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> routing = (Map<String, Object>) details.get("routing");
+        assertThat(routing.get("escalation")).isEqualTo(Map.of(
+                "active", true,
+                "reasonCode", "CRITICAL_PRIORITY",
+                "escalatedAt", escalatedAt.toString()));
     }
 
     @Test

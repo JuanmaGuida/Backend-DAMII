@@ -959,7 +959,8 @@ components:
       required: [id, publicId, requestTypeCode, requestTypeName, categoryName, subcategoryName,
                  ticketType, summary, currentStatus, currentPriority, responsibleAreaId,
                  assignedAgentId, anonymous, estimatedAffectedCount, escalated, neighborhoodId,
-                 neighborhoodName, classificationFinalizedAt, statusChangedAt, createdAt, updatedAt]
+                 escalationReasonCode, escalatedAt, neighborhoodName, classificationFinalizedAt,
+                 statusChangedAt, createdAt, updatedAt]
       properties:
         id:
           type: string
@@ -995,6 +996,14 @@ components:
           format: int32
         escalated:
           type: boolean
+        escalationReasonCode:
+          allOf:
+            - $ref: '#/components/schemas/EscalationReasonCode'
+          nullable: true
+        escalatedAt:
+          type: string
+          format: date-time
+          nullable: true
         neighborhoodId:
           type: string
           format: uuid
@@ -1240,6 +1249,9 @@ components:
     Priority:
       type: string
       enum: [LOW, MEDIUM, HIGH, CRITICAL]
+    EscalationReasonCode:
+      type: string
+      enum: [CRITICAL_PRIORITY, SLA_NEAR_DUE, SLA_BREACHED, MANUAL]
     InformationRequestStatus:
       type: string
       enum: [PENDING, ANSWERED, EXPIRED]

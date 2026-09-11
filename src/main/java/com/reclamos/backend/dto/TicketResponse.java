@@ -1,6 +1,7 @@
 package com.reclamos.backend.dto;
 
 import com.reclamos.backend.entity.Priority;
+import com.reclamos.backend.entity.EscalationReasonCode;
 import com.reclamos.backend.entity.TicketStatus;
 import com.reclamos.backend.entity.TicketType;
 import lombok.Data;
@@ -27,6 +28,8 @@ public class TicketResponse {
     private boolean anonymous;
     private int estimatedAffectedCount;
     private boolean escalated;
+    private EscalationReasonCode escalationReasonCode;
+    private Instant escalatedAt;
     private UUID neighborhoodId;
     private String neighborhoodName;
     private Instant classificationFinalizedAt;
