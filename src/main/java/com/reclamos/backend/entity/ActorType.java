@@ -3,7 +3,7 @@ package com.reclamos.backend.entity;
 /**
  * ActorType (Entidades §21 / Eventos §5.2) tiene 6 valores. Los CHECK
  * constraints de la base se validan en
- * V8__fix_actor_type_check_constraints.sql.
+ * V10__align_actor_semantics.sql.
  * <p>
  * Semántica (Guía funcional complementaria M2): para acciones
  * realizadas directamente dentro de M2, el valor refleja la CAPACIDAD
