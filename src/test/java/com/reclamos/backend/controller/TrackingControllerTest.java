@@ -106,6 +106,6 @@ class TrackingControllerTest {
                 Instant.parse("2026-09-01T10:00:00Z"),
                 new TrackingTicketResponse.RequestTypeSummary("Tipo"),
                 new TrackingTicketResponse.CategorySummary("Categoría"),
-                new TrackingTicketResponse.SubcategorySummary("Subcategoría"));
-    }
+                new TrackingTicketResponse.SubcategorySummary("Subcategoría"),
+                new TrackingTicketResponse.SlaSummary(null, null));    }
 }

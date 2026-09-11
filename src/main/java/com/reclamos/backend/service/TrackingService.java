@@ -40,7 +40,10 @@ public class TrackingService {
                 ticket.getStatusChangedAt(),
                 new TrackingTicketResponse.RequestTypeSummary(requestType.getName()),
                 new TrackingTicketResponse.CategorySummary(category.getName()),
-                new TrackingTicketResponse.SubcategorySummary(subcategory.getName())
+                new TrackingTicketResponse.SubcategorySummary(subcategory.getName()),
+                new TrackingTicketResponse.SlaSummary(
+                        ticket.getEffectiveFirstResponseDueAt(),
+                        ticket.getEffectiveResolutionDueAt())
         );
     }
 }

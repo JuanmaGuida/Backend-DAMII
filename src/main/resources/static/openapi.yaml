@@ -1320,7 +1320,7 @@ components:
       additionalProperties: false
     TrackingTicketResponse:
       type: object
-      required: [publicId, status, summary, createdAt, statusChangedAt, requestType, category, subcategory]
+      required: [publicId, status, summary, createdAt, statusChangedAt, requestType, category, subcategory, sla]
       properties:
         publicId:
           $ref: '#/components/schemas/TicketPublicId'
@@ -1340,6 +1340,20 @@ components:
           $ref: '#/components/schemas/TrackingCategorySummary'
         subcategory:
           $ref: '#/components/schemas/TrackingSubcategorySummary'
+        sla:
+          $ref: '#/components/schemas/TrackingSlaSummary'
+    TrackingSlaSummary:
+      type: object
+      required: [ firstResponseDueAt, resolutionDueAt ]
+      properties:
+        firstResponseDueAt:
+          type: string
+          format: date-time
+          nullable: true
+        resolutionDueAt:
+          type: string
+          format: date-time
+          nullable: true
     TrackingRequestTypeSummary:
       type: object
       required: [name]
