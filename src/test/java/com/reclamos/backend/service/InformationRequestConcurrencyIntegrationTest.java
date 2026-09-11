@@ -52,7 +52,7 @@ import static org.junit.jupiter.api.Assertions.*;
 @Import(InformationRequestConcurrencyIntegrationTest.TestClockConfiguration.class)
 class InformationRequestConcurrencyIntegrationTest {
     private static final Instant DEADLINE = Instant.parse("2026-09-10T12:00:00Z");
-    private static final UUID CITIZEN_ID = UUID.fromString("30000000-0000-0000-0000-000000000001");
+    private static final UUID CITIZEN_ID = UUID.fromString("10000000-0000-0000-0000-000000000001");
 
     @Autowired
     private InformationRequestService informationRequestService;
