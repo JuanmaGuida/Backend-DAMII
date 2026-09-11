@@ -62,9 +62,11 @@ class ActorSemanticsMigrationIntegrationTest {
         try {
             flyway(schema, "9").migrate();
             UUID citizenId = UUID.randomUUID();
+            UUID timeoutCitizenId = UUID.randomUUID();
+            UUID unrelatedCitizenId = UUID.randomUUID();
             UUID identifiedTicket = insertTicket(database, schema, citizenId, "IDENTIFIED");
-            UUID timeoutTicket = insertTicket(database, schema, UUID.randomUUID(), "TIMEOUT");
-            UUID unrelatedTicket = insertTicket(database, schema, UUID.randomUUID(), "UNRELATED");
+            UUID timeoutTicket = insertTicket(database, schema, timeoutCitizenId, "TIMEOUT");
+            UUID unrelatedTicket = insertTicket(database, schema, unrelatedCitizenId, "UNRELATED");
             UUID anonymousTicket = insertTicket(database, schema, null, "ANONYMOUS");
 
             insertActivity(database, schema, identifiedTicket, 1, "TICKET_CREATED", "CITIZEN",
@@ -86,6 +88,10 @@ class ActorSemanticsMigrationIntegrationTest {
             insertActivity(database, schema, anonymousTicket, 1, "INFORMATION_PROVIDED", "CITIZEN",
                     "tracking-actor", "M2", null);
 
+            flyway(schema, "18").migrate();
+            insertModuleUser(database, schema, citizenId);
+            insertModuleUser(database, schema, timeoutCitizenId);
+            insertModuleUser(database, schema, unrelatedCitizenId);
             flyway(schema, null).migrate();
 
             assertEquals(citizenId.toString(), activityActorId(database, schema, identifiedTicket, 1));
@@ -210,6 +216,14 @@ class ActorSemanticsMigrationIntegrationTest {
                         + "CURRENT_TIMESTAMP - INTERVAL '2 hours', CURRENT_TIMESTAMP + INTERVAL '1 hour', "
                         + "'Respuesta', 'CITIZEN', ?, CURRENT_TIMESTAMP)",
                 UUID.randomUUID(), ticketId, answeredById);
+    }
+
+    private void insertModuleUser(JdbcTemplate database, String schema, UUID citizenId) {
+        database.update("INSERT INTO " + schema + ".module_users "
+                        + "(citizen_id, first_name, last_name, role, active, last_synced_at, created_at, updated_at) "
+                        + "VALUES (?, 'Ciudadano', 'Histórico', 'CITIZEN', TRUE, CURRENT_TIMESTAMP, "
+                        + "CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+                citizenId);
     }
 
     private void insertMessage(JdbcTemplate database, String schema, UUID ticketId, String actorType,
