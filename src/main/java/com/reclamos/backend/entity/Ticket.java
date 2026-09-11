@@ -79,6 +79,20 @@ public class Ticket {
     )
     private RequestType requestType;
 
+    /**
+     * Entidades V1.49 §4/§6: registra CON QUÉ FormTemplate/versión quedó
+     * asociado formData, ya que FormValidationService resuelve "la plantilla
+     * activa" en vivo a partir de requestTypeId y esa plantilla puede
+     * cambiar de versión con el tiempo. Se fija en create() y se recalcula
+     * en correctClassification() junto con requestType y formData; queda
+     * congelado en cuanto classificationFinalizedAt se setea. Nullable
+     * porque un RequestType puede no tener formulario configurado (formData
+     * vacío) y porque los tickets creados antes de esta columna no tienen
+     * valor.
+     */
+    @Column(name = "form_template_id")
+    private Long formTemplateId;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "ticket_type", nullable = false, length = 30)
     private TicketType ticketType;
@@ -86,8 +100,10 @@ public class Ticket {
     @Column(name = "responsible_area_id", nullable = false, length = 100)
     private String responsibleAreaId;
 
-    @Column(name = "assigned_agent_id", length = 100)
-    private String assignedAgentId;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "assigned_agent_id",
+            foreignKey = @ForeignKey(name = "fk_ticket_assigned_agent"))
+    private ModuleUser assignedAgent;
 
     @Column(nullable = false, length = 200)
     private String summary;
@@ -98,22 +114,6 @@ public class Ticket {
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "form_data", nullable = false, columnDefinition = "jsonb")
     private Map<String, Object> formData = new HashMap<>();
-
-    /**
-     * Entidades V1.49 §4/§6: registra CON QUÉ FormTemplate/versión quedó
-     * asociado formData, ya que FormValidationService resuelve "la plantilla
-     * activa" en vivo a partir de requestTypeId y esa plantilla puede
-     * cambiar de versión con el tiempo. Se fija en create() y se recalcula
-     * en correctClassification() junto con requestType y formData; queda
-     * congelado en cuanto classificationFinalizedAt se setea. Nullable
-     * porque los tickets creados antes de esta columna no tienen valor.
-     */
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(
-            name = "form_template_id",
-            foreignKey = @ForeignKey(name = "fk_ticket_form_template")
-    )
-    private FormTemplate formTemplate;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "current_status", nullable = false, length = 30)
@@ -148,6 +148,22 @@ public class Ticket {
 
     @Column(name = "status_changed_at", nullable = false)
     private Instant statusChangedAt;
+
+    @Column(name = "resolution_due_at")
+    private Instant resolutionDueAt;
+
+    @Column(name = "first_response_due_at")
+    private Instant firstResponseDueAt;
+
+    @Transient
+    public Instant getEffectiveFirstResponseDueAt() {
+        return mainTicket == null ? firstResponseDueAt : mainTicket.getEffectiveFirstResponseDueAt();
+    }
+
+    @Transient
+    public Instant getEffectiveResolutionDueAt() {
+        return mainTicket == null ? resolutionDueAt : mainTicket.getEffectiveResolutionDueAt();
+    }
 
     @Column(name = "resolution_confirmation_due_at")
     private Instant resolutionConfirmationDueAt;

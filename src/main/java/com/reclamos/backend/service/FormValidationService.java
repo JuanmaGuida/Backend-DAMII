@@ -4,7 +4,6 @@ import com.reclamos.backend.entity.FormField;
 import com.reclamos.backend.entity.FormTemplate;
 import com.reclamos.backend.entity.RequestType;
 import com.reclamos.backend.exception.FormValidationException;
-import com.reclamos.backend.exception.ResourceNotFoundException;
 import com.reclamos.backend.repository.FormFieldRepository;
 import com.reclamos.backend.repository.FormTemplateRepository;
 import lombok.RequiredArgsConstructor;
@@ -27,14 +26,29 @@ public class FormValidationService {
     private final FormFieldRepository formFieldRepository;
 
     public void validate(RequestType requestType, Map<String, Object> formData) {
-        validateAndGetFields(requestType, formData);
+        resolveAndValidate(requestType, formData);
     }
 
-    public List<FormField> validateAndGetFields(RequestType requestType, Map<String, Object> formData) {
-        FormTemplate template = resolveActiveTemplate(requestType);
+    public ResolvedForm resolveAndValidate(RequestType requestType, Map<String, Object> formData) {
+        if (requestType == null || requestType.getId() == null) {
+            throw new FormValidationException("El Request Type es obligatorio");
+        }
+        if (!requestType.isActive()) {
+            throw new FormValidationException("El Request Type seleccionado está inactivo");
+        }
+        Map<String, Object> data = formData == null ? Collections.emptyMap() : formData;
+        FormTemplate template = formTemplateRepository
+                .findFirstByRequestType_IdAndActiveTrueOrderByVersionDesc(requestType.getId())
+                .orElse(null);
+        if (template == null) {
+            if (!data.isEmpty()) {
+                throw new FormValidationException(
+                        "El Request Type seleccionado no posee un formulario para las respuestas informadas");
+            }
+            return new ResolvedForm(null, List.of(), data);
+        }
         List<FormField> fields = formFieldRepository
                 .findAllByFormTemplate_IdOrderByDisplayOrderAsc(template.getId());
-        Map<String, Object> data = formData == null ? Collections.emptyMap() : formData;
         Set<String> allowedCodes = fields.stream().map(FormField::getCode).collect(Collectors.toSet());
 
         data.keySet().stream().filter(code -> !allowedCodes.contains(code)).findFirst()
@@ -44,27 +58,39 @@ public class FormValidationService {
                 });
 
         for (FormField field : fields) {
+            boolean present = data.containsKey(field.getCode());
+            if (!present) {
+                if (field.isRequired()) {
+                    throw new FormValidationException(
+                            "El campo '" + field.getCode() + "' es obligatorio");
+                }
+                continue;
+            }
             Object value = data.get(field.getCode());
-            if (Boolean.TRUE.equals(field.getRequired()) && (value == null || isBlankText(field, value))) {
-                throw new FormValidationException("El campo '" + field.getLabel() + "' es obligatorio");
+            if (value == null) {
+                if (!field.isAllowUnknown()) {
+                    throw new FormValidationException(
+                            "El campo '" + field.getCode() + "' no admite un valor desconocido");
+                }
+                continue;
             }
-            if (value != null) {
-                validateValue(field, value);
-            }
+            validateValue(field, value);
         }
-        return List.copyOf(fields);
+        return new ResolvedForm(template, fields, data);
     }
 
     /**
-     * Entidades V1.49 §4/§6: Ticket.formTemplateId necesita saber CON QUÉ
-     * FormTemplate se asoció un ticket (la plantilla activa resuelta en el
-     * momento de crearlo o reclasificarlo), no sólo los FormField para
-     * validar. Se extrae acá la misma resolución que ya hacía
-     * validateAndGetFields internamente, sin cambiar su firma/comportamiento
-     * (para no arriesgar otros llamadores que ya dependan de ella), a costa
-     * de una consulta extra a FormTemplateRepository cuando ambos métodos se
-     * usan sobre el mismo RequestType en la misma operación (ver
-     * TicketService.create/correctClassification).
+     * Entidades V1.49 §4/§6: TicketService.correctClassification necesita
+     * resolver la FormTemplate activa del nuevo RequestType para actualizar
+     * Ticket.formTemplateId, pero sin validar formData contra ella — en esa
+     * operación formData se resetea a {} (las respuestas viejas no
+     * corresponden necesariamente a los campos del nuevo RequestType), así
+     * que no corresponde correrlo por resolveAndValidate (fallaría por
+     * cualquier campo requerido del nuevo formulario). Devuelve null cuando
+     * el RequestType no tiene formulario configurado, igual que la rama
+     * correspondiente de resolveAndValidate, en vez de lanzar una excepción:
+     * un RequestType sin formulario es una configuración válida (formData
+     * vacío), no un error.
      */
     public FormTemplate resolveActiveTemplate(RequestType requestType) {
         if (requestType == null || requestType.getId() == null) {
@@ -75,14 +101,7 @@ public class FormValidationService {
         }
         return formTemplateRepository
                 .findFirstByRequestType_IdAndActiveTrueOrderByVersionDesc(requestType.getId())
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "No existe un formulario configurado para el Request Type seleccionado"));
-    }
-
-    private boolean isBlankText(FormField field, Object value) {
-        return (field.getType() == com.reclamos.backend.entity.FormFieldType.TEXT
-                || field.getType() == com.reclamos.backend.entity.FormFieldType.TEXTAREA)
-                && value instanceof String text && text.isBlank();
+                .orElse(null);
     }
 
     private void validateValue(FormField field, Object value) {

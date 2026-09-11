@@ -6,6 +6,5 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import java.util.UUID;
 
 public interface TicketActivityRepository extends JpaRepository<TicketActivity, Long> {
-
-    long countByTicket_Id(UUID ticketId);
+    int countByTicketId(java.util.UUID ticketId);
 }

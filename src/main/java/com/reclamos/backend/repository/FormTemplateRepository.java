@@ -7,4 +7,6 @@ import java.util.Optional;
 
 public interface FormTemplateRepository extends JpaRepository<FormTemplate, Long> {
     Optional<FormTemplate> findFirstByRequestType_IdAndActiveTrueOrderByVersionDesc(Long requestTypeId);
+
+    boolean existsByIdAndRequestType_Id(Long id, Long requestTypeId);
 }
