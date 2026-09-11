@@ -10,7 +10,8 @@ public class FormFieldResponse {
     private String code;
     private String label;
     private FormFieldType type;
-    private Boolean required;
+    private boolean required;
+    private boolean allowUnknown;
     private Integer displayOrder;
     private Map<String, Object> config;
 }

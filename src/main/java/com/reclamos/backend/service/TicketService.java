@@ -23,12 +23,9 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
+import java.time.Clock;
 import java.time.Instant;
-import java.util.Base64;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -61,7 +58,7 @@ public class TicketService {
      * que hay que tocar.
      */
     private static final Set<String> SORTABLE_TICKET_PROPERTIES = Set.of(
-            "id", "publicId", "ticketType", "responsibleAreaId", "assignedAgentId",
+            "id", "publicId", "ticketType", "responsibleAreaId", "assignedAgent.id",
             "summary", "currentStatus", "currentPriority", "estimatedAffectedCount",
             "escalated", "escalationReasonCode", "escalatedAt", "reopenCount",
             "statusChangedAt", "resolutionConfirmationDueAt", "classificationFinalizedAt",
@@ -73,9 +70,14 @@ public class TicketService {
     private final TicketActivityRepository activityRepository;
     private final TicketLocationRepository locationRepository;
     private final NeighborhoodRepository neighborhoodRepository;
+    private final SlaCalculationService slaCalculationService;
     private final FormValidationService formValidationService;
     private final RiskCalculationService riskCalculationService;
     private final OutboxEventRepository outboxEventRepository;
+    private final TrackingCodeService trackingCodeService;
+    private final AttachmentService attachmentService;
+    private final ModuleUserRepository moduleUserRepository;
+    private final Clock clock;
 
     @Value("${app.events.producer.module-id:M2}")
     private String producerModuleId;
@@ -94,13 +96,11 @@ public class TicketService {
         if (!requestType.isActive()) {
             throw new InvalidTicketRequestException("El Request Type seleccionado está inactivo");
         }
-        var fields = formValidationService.validateAndGetFields(requestType, request.formData());
-        FormTemplate formTemplate = formValidationService.resolveActiveTemplate(requestType);
-        Risk risk = riskCalculationService.calculateRisk(requestType, request.formData(), fields);
-        // TODO Attachment: evidence is only checked for presence in this US. Persist it when storage exists.
-        boolean validEvidence = evidence != null && java.util.Arrays.stream(evidence)
-                .anyMatch(file -> file != null && !file.isEmpty() && file.getSize() > 0);
-        if ((risk == Risk.HIGH || risk == Risk.CRITICAL) && !validEvidence) {
+        ResolvedForm resolvedForm = formValidationService.resolveAndValidate(requestType, request.formData());
+        RiskAssessment assessment = riskCalculationService.calculateRisk(requestType, resolvedForm);
+        Risk risk = assessment.calculatedRisk();
+        List<AttachmentService.ValidatedAttachment> validatedAttachments = attachmentService.validate(evidence);
+        if ((risk == Risk.HIGH || risk == Risk.CRITICAL) && validatedAttachments.isEmpty()) {
             throw new EvidenceRequiredException();
         }
         validateLocation(requestType, request.location());
@@ -108,8 +108,8 @@ public class TicketService {
         String trackingCode;
         String trackingHash;
         do {
-            trackingCode = generateTrackingCode();
-            trackingHash = hash(trackingCode);
+            trackingCode = trackingCodeService.generate();
+            trackingHash = trackingCodeService.hash(trackingCode);
         } while (ticketRepository.existsByTrackingCodeHash(trackingHash));
 
         String publicId;
@@ -117,27 +117,37 @@ public class TicketService {
             publicId = generatePublicId();
         } while (ticketRepository.existsByPublicId(publicId));
 
-        Instant now = Instant.now();
+        Instant now = clock.instant();
         Ticket ticket = new Ticket();
         ticket.setPublicId(publicId);
         ticket.setTrackingCodeHash(trackingHash);
         ticket.setCitizenId(identity.citizenId());
         ticket.setAnonymous(false);
         ticket.setRequestType(requestType);
+        ticket.setFormTemplateId(resolvedForm.formTemplateId());
         ticket.setTicketType(requestType.getTicketType());
         ticket.setResponsibleAreaId(requestType.getResponsibleAreaId());
         ticket.setSummary(request.summary());
         ticket.setDescription(request.description());
-        ticket.setFormData(new HashMap<>(request.formData()));
-        ticket.setFormTemplate(formTemplate);
+        ticket.setFormData(new HashMap<>(resolvedForm.formData()));
         ticket.setCurrentStatus(TicketStatus.REGISTERED);
         ticket.setCurrentPriority(max(requestType.getMinimumPriority(), risk));
+        ticket.setCreatedAt(now);
+        ticket.setFirstResponseDueAt(slaCalculationService
+                .calculateDueAt(now, ticket.getCurrentPriority(), SlaType.FIRST_RESPONSE).orElse(null));
+        ticket.setResolutionDueAt(slaCalculationService
+                .calculateResolutionDueAt(now, ticket.getCurrentPriority(), ticket.getTicketType()).orElse(null));
         ticket.setEstimatedAffectedCount(0);
         ticket.setReopenCount(0);
         ticket.setEscalated(false);
         ticket.setPublic(false);
         ticket.setStatusChangedAt(now);
         ticket = ticketRepository.save(ticket);
+        ticketRepository.flush();
+
+        if (!validatedAttachments.isEmpty()) {
+            attachmentService.storeForTicket(ticket, identity, validatedAttachments, now);
+        }
 
         if (request.location() != null) {
             locationRepository.save(toLocation(ticket, request.location()));
@@ -149,9 +159,10 @@ public class TicketService {
         activity.setPreviousStatus(null);
         activity.setNewStatus(TicketStatus.REGISTERED);
         activity.setActorType(ActorType.CITIZEN);
-        activity.setActorId(identity.subjectId());
+        activity.setActorId(identity.citizenId().toString());
         activity.setOccurredAt(now);
         activityRepository.save(activity);
+        ticketRepository.flush();
         return new CreateTicketResponse(ticket.getId(), ticket.getPublicId(), trackingCode,
                 TicketStatus.REGISTERED);
     }
@@ -174,9 +185,22 @@ public class TicketService {
 
         TicketStatus previousStatus = ticket.getCurrentStatus();
         ticket.setCurrentStatus(TicketStatus.IN_REVIEW);
-        ticket.setStatusChangedAt(Instant.now());
-        if (actor != null && ticket.getAssignedAgentId() == null) {
-            ticket.setAssignedAgentId(actor.subjectId());
+        ticket.setStatusChangedAt(clock.instant());
+        // Entidades V1.49 §"CONVENCIÓN DE IDENTIFICADORES DE ACTOR": a diferencia
+        // de la mayoría de los actorId (que guardan citizenId), Ticket.assignedAgentId
+        // es una FK real a ModuleUser.id, reservada para relaciones puramente
+        // internas de M2. Por eso acá se resuelve el ModuleUser del agente
+        // autenticado (por su citizenId) en lugar de guardar actor.subjectId()
+        // directamente. Decisión (a confirmar con el equipo): si el agente
+        // autenticado no tiene un ModuleUser registrado, se corta con 404 en
+        // lugar de dejar el ticket sin asignar silenciosamente — un agente
+        // autenticado que no existe como ModuleUser es un estado inconsistente
+        // que conviene visibilizar, no absorber.
+        if (actor != null && ticket.getAssignedAgent() == null) {
+            ModuleUser agent = moduleUserRepository.findByCitizenId(actor.citizenId())
+                    .orElseThrow(() -> new ResourceNotFoundException(
+                            "El agente autenticado no está registrado como ModuleUser"));
+            ticket.setAssignedAgent(agent);
         }
         ticketRepository.save(ticket);
 
@@ -192,20 +216,21 @@ public class TicketService {
      * clasificación (Entidades V1.49 §4.1 / Guía funcional complementaria M2
      * V1.09 §6).
      * <p>
-     * Recalcula responsibleAreaId, estimatedAffectedCount, formTemplate,
-     * formData y currentPriority. Pendiente: el SLA inicial (Guía funcional
-     * §5 / Decisiones #2) todavía no se recalcula acá porque el módulo de
-     * SLA (Epic 6) no está integrado en esta rama.
+     * Recalcula responsibleAreaId, estimatedAffectedCount, formTemplateId,
+     * formData, currentPriority y el SLA inicial (Guía funcional §5 /
+     * Decisiones #2: "si RequestType se corrige durante la primera IN_REVIEW,
+     * se recalcula el SLA inicial desde createdAt con la nueva
+     * clasificación").
      * <p>
-     * Prioridad: a diferencia del recálculo periódico automático (donde,
-     * por la "REGLA DE EVOLUCIÓN" de la Guía funcional §3, currentPriority
-     * nunca baja), una corrección de RequestType durante la primera
-     * IN_REVIEW todavía forma parte de la clasificación inicial y sí puede
-     * recalcularla libremente. Como formData se resetea a {} más abajo, el
-     * riesgo recalculado da exactamente newRequestType.baseRisk sin
-     * incrementos, así que se usa baseRisk directamente. La prioridad
-     * resultante se floorea únicamente contra newRequestType.minimumPriority
-     * (mismo patrón que create()), pudiendo quedar por debajo de la anterior.
+     * Prioridad: a diferencia del recálculo periódico automático (donde, por
+     * la "REGLA DE EVOLUCIÓN" de la Guía funcional §3, currentPriority nunca
+     * baja), una corrección de RequestType durante la primera IN_REVIEW
+     * todavía forma parte de la clasificación inicial y sí puede recalcularla
+     * libremente. Como formData se resetea a {} más abajo, el riesgo
+     * recalculado da exactamente newRequestType.baseRisk sin incrementos, así
+     * que se usa baseRisk directamente. La prioridad resultante se floorea
+     * únicamente contra newRequestType.minimumPriority (mismo patrón que
+     * create()), pudiendo quedar por debajo de la anterior.
      */
     @Transactional
     public TicketResponse correctClassification(UUID ticketId, Long newRequestTypeId, AuthenticatedIdentity actor) {
@@ -235,12 +260,19 @@ public class TicketService {
         ticket.setResponsibleAreaId(newRequestType.getResponsibleAreaId());
         ticket.setEstimatedAffectedCount(estimatedAffectedCount);
         ticket.setCurrentPriority(newPriority);
-        ticket.setFormTemplate(newFormTemplate);
+        ticket.setFormTemplateId(newFormTemplate == null ? null : newFormTemplate.getId());
         // Las respuestas del formData anterior están validadas contra el
         // FormTemplate del RequestType viejo y no corresponden necesariamente
-        // a los campos del nuevo, así que se resetea a {} (formTemplate ya
+        // a los campos del nuevo, así que se resetea a {} (formTemplateId ya
         // queda registrado con la nueva plantilla más arriba).
         ticket.setFormData(new HashMap<>());
+        // Guía funcional §5 / Decisiones #2: la corrección de clasificación
+        // durante la primera IN_REVIEW recalcula el SLA inicial desde
+        // createdAt (no desde "ahora") con la nueva prioridad.
+        ticket.setFirstResponseDueAt(slaCalculationService
+                .calculateDueAt(ticket.getCreatedAt(), newPriority, SlaType.FIRST_RESPONSE).orElse(null));
+        ticket.setResolutionDueAt(slaCalculationService
+                .calculateResolutionDueAt(ticket.getCreatedAt(), newPriority, ticket.getTicketType()).orElse(null));
         ticketRepository.save(ticket);
 
         String message = "RequestType corregido de '" + previousRequestType.getCode()
@@ -262,6 +294,10 @@ public class TicketService {
      * asignada, no como un input nuevo del agente. Si el equipo necesita que el
      * agente pueda cambiar el área en el momento de derivar, este método hay
      * que extenderlo para recibir un areaId explícito.
+     * <p>
+     * No recalcula el SLA: ya quedó fijado en create() o en
+     * correctClassification() y nada cambia entre la primera IN_REVIEW y esta
+     * derivación que lo afecte.
      */
     @Transactional
     public TicketResponse routeToArea(UUID ticketId, AuthenticatedIdentity actor) {
@@ -278,14 +314,15 @@ public class TicketService {
         }
 
         TicketStatus previousStatus = ticket.getCurrentStatus();
+        Instant now = clock.instant();
         ticket.setCurrentStatus(TicketStatus.ROUTED);
-        ticket.setStatusChangedAt(Instant.now());
+        ticket.setStatusChangedAt(now);
         // classificationFinalizedAt se fija sólo la primera vez que el ticket
         // sale de IN_REVIEW hacia gestión (Entidades §4.1): a partir de acá,
         // correctClassification() ya no acepta correcciones ni siquiera después
         // de un ROUTED -> RETURNED -> IN_REVIEW posterior.
         if (ticket.getClassificationFinalizedAt() == null) {
-            ticket.setClassificationFinalizedAt(Instant.now());
+            ticket.setClassificationFinalizedAt(now);
         }
         ticketRepository.save(ticket);
 
@@ -314,7 +351,7 @@ public class TicketService {
     private void writeOutboxEvent(Ticket ticket, TicketLocation location) {
         RequestType requestType = ticket.getRequestType();
         UUID eventId = UUID.randomUUID();
-        Instant now = Instant.now();
+        Instant now = clock.instant();
 
         Map<String, Object> routing = new LinkedHashMap<>();
         routing.put("requestType", requestType.getName());
@@ -323,7 +360,8 @@ public class TicketService {
         routing.put("description", ticket.getDescription());
         routing.put("formData", ticket.getFormData());
         routing.put("location", toEventLocation(location));
-        routing.put("resolutionDueAt", null); // SLA no implementado todavía (Sprint 4)
+        routing.put("resolutionDueAt", ticket.getResolutionDueAt() != null
+                ? ticket.getResolutionDueAt().toString() : null);
         routing.put("escalation", null); // Escalamiento no implementado todavía (Sprint 4)
 
         Map<String, Object> details = new LinkedHashMap<>();
@@ -428,7 +466,7 @@ public class TicketService {
     private void recordActivity(Ticket ticket, ActivityType actionType, TicketStatus previousStatus,
                                  TicketStatus newStatus, AuthenticatedIdentity actor,
                                  Priority previousPriority, Priority newPriority, String message) {
-        long nextSequence = activityRepository.countByTicket_Id(ticket.getId()) + 1;
+        long nextSequence = activityRepository.countByTicketId(ticket.getId()) + 1;
 
         TicketActivity activity = new TicketActivity();
         activity.setTicket(ticket);
@@ -446,7 +484,7 @@ public class TicketService {
         activity.setPreviousPriority(previousPriority);
         activity.setNewPriority(newPriority);
         activity.setMessage(message);
-        activity.setOccurredAt(Instant.now());
+        activity.setOccurredAt(clock.instant());
         activityRepository.save(activity);
     }
 
@@ -467,7 +505,8 @@ public class TicketService {
         response.setCurrentStatus(ticket.getCurrentStatus());
         response.setCurrentPriority(ticket.getCurrentPriority());
         response.setResponsibleAreaId(ticket.getResponsibleAreaId());
-        response.setAssignedAgentId(ticket.getAssignedAgentId());
+        response.setAssignedAgentId(ticket.getAssignedAgent() != null
+                ? String.valueOf(ticket.getAssignedAgent().getId()) : null);
         response.setAnonymous(ticket.isAnonymous());
         response.setEstimatedAffectedCount(ticket.getEstimatedAffectedCount());
         response.setEscalated(ticket.isEscalated());
@@ -480,6 +519,29 @@ public class TicketService {
         response.setCreatedAt(ticket.getCreatedAt());
         response.setUpdatedAt(ticket.getUpdatedAt());
         return response;
+    }
+
+    /**
+     * Re-derivación / recálculo de SLA de derivación (independiente de
+     * routeToArea, que cubre sólo la primera derivación IN_REVIEW -&gt; ROUTED
+     * de Story 3.3). Recalcula resolutionDueAt desde createdAt cada vez que
+     * se invoca. Nota (a confirmar con el equipo dev): no encontramos ningún
+     * llamador todavía en esta rama — puede ser un método pensado para una
+     * integración o story que no está visible en este merge; no lo
+     * eliminamos porque tiene su propia batería de tests ya aprobada en dev.
+     */
+    @Transactional
+    public Ticket route(UUID ticketId, String responsibleAreaId, Instant routedAt) {
+        Ticket ticket = ticketRepository.findByIdForUpdate(ticketId)
+                .orElseThrow(() -> new ResourceNotFoundException("Ticket no encontrado"));
+        if (ticket.getCurrentStatus() == TicketStatus.DUPLICATE)
+            throw new InvalidTicketRequestException("Un ticket duplicado hereda el SLA del ticket principal");
+        ticket.setResolutionDueAt(slaCalculationService.calculateResolutionDueAt(
+                ticket.getCreatedAt(), ticket.getCurrentPriority(), ticket.getTicketType()).orElse(null));
+        ticket.setResponsibleAreaId(responsibleAreaId);
+        ticket.setCurrentStatus(TicketStatus.ROUTED);
+        ticket.setStatusChangedAt(routedAt);
+        return ticketRepository.save(ticket);
     }
 
     private void validateLocation(RequestType type, CreateTicketRequest.LocationData location) {
@@ -524,13 +586,16 @@ public class TicketService {
 
     private Priority max(Priority minimum, Risk risk) {
         Priority fromRisk = Priority.valueOf(risk.name());
-        return minimum.ordinal() >= fromRisk.ordinal() ? minimum : fromRisk;
+        return priorityRank(minimum) >= priorityRank(fromRisk) ? minimum : fromRisk;
     }
 
-    private String generateTrackingCode() {
-        byte[] random = new byte[24];
-        SECURE_RANDOM.nextBytes(random);
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(random);
+    private int priorityRank(Priority priority) {
+        return switch (priority) {
+            case LOW -> 0;
+            case MEDIUM -> 1;
+            case HIGH -> 2;
+            case CRITICAL -> 3;
+        };
     }
 
     private String generatePublicId() {
@@ -539,14 +604,5 @@ public class TicketService {
             value.append(SECURE_RANDOM.nextInt(10));
         }
         return value.toString();
-    }
-
-    private String hash(String code) {
-        try {
-            return Base64.getEncoder().encodeToString(MessageDigest.getInstance("SHA-256")
-                    .digest(code.getBytes(StandardCharsets.UTF_8)));
-        } catch (NoSuchAlgorithmException impossible) {
-            throw new IllegalStateException("SHA-256 no está disponible", impossible);
-        }
     }
 }

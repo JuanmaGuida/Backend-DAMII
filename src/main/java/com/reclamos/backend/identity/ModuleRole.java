@@ -1,9 +1,8 @@
 package com.reclamos.backend.identity;
 
 public enum ModuleRole {
+    CITIZEN,
     AGENT,
     AREA_RESPONSIBLE,
-    SUPERVISOR,
-    AUDITOR,
-    MODULE_ADMIN
+    ADMIN
 }

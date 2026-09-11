@@ -11,6 +11,9 @@ FROM eclipse-temurin:21-jre AS runtime
 WORKDIR /app
 COPY --from=build --chown=10001:10001 /workspace/target/*.jar app.jar
 
+RUN mkdir -p /var/lib/m2/attachments \
+    && chown -R 10001:10001 /var/lib/m2/attachments
+
 EXPOSE 8080
 
 USER 10001:10001

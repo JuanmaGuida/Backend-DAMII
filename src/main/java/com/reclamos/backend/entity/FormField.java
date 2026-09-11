@@ -51,7 +51,10 @@ public class FormField {
     private FormFieldType type;
 
     @Column(nullable = false)
-    private Boolean required = false;
+    private boolean required;
+
+    @Column(name = "allow_unknown", nullable = false)
+    private boolean allowUnknown;
 
     @Column(name = "display_order", nullable = false)
     private Integer displayOrder;

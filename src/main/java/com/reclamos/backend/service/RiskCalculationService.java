@@ -1,37 +1,126 @@
 package com.reclamos.backend.service;
 
-import com.reclamos.backend.entity.FormField;
 import com.reclamos.backend.entity.FormFieldType;
 import com.reclamos.backend.entity.RequestType;
-import com.reclamos.backend.entity.Risk;
+import com.reclamos.backend.entity.RiskRule;
+import com.reclamos.backend.entity.Ticket;
+import com.reclamos.backend.repository.FormTemplateRepository;
+import com.reclamos.backend.repository.RiskRuleRepository;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 @Service
+@RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class RiskCalculationService {
-    public Risk calculateRisk(RequestType requestType, Map<String, Object> formData, List<FormField> fields) {
-        double score = Math.min(5, fields.stream()
-                .mapToDouble(field -> scoreFor(field, formData.get(field.getCode())))
-                .sum());
-        Risk calculated = score < 2 ? Risk.LOW : score < 3 ? Risk.MEDIUM
-                : score < 4 ? Risk.HIGH : Risk.CRITICAL;
-        return calculated.ordinal() < requestType.getBaseRisk().ordinal()
-                ? requestType.getBaseRisk() : calculated;
+    private final RiskRuleRepository riskRuleRepository;
+    private final FormTemplateRepository formTemplateRepository;
+    private final RiskScalePolicy riskScalePolicy;
+
+    public RiskAssessment calculateRisk(RequestType requestType, ResolvedForm resolvedForm) {
+        return calculateRisk(requestType, resolvedForm.formTemplateId(), resolvedForm.formData());
     }
 
-    private double scoreFor(FormField field, Object answer) {
-        if (answer == null || field.getConfig() == null) {
-            return 0;
+    public RiskAssessment calculateRisk(Ticket ticket) {
+        Long formTemplateId = ticket.getFormTemplateId();
+        RequestType requestType = ticket.getRequestType();
+        if (formTemplateId != null
+                && !formTemplateRepository.existsByIdAndRequestType_Id(formTemplateId, requestType.getId())) {
+            throw new IllegalStateException("El formulario histórico no pertenece al Request Type del ticket");
         }
-        Object configured = field.getConfig().get("riskScore");
-        if (field.getType() == FormFieldType.SELECT && field.getConfig().get("options") instanceof List<?> options) {
-            configured = options.stream().filter(Map.class::isInstance).map(Map.class::cast)
-                    .filter(option -> answer.equals(option.get("value")))
-                    .findFirst().map(option -> option.get("riskScore")).orElse(null);
+        return calculateRisk(requestType, formTemplateId, ticket.getFormData());
+    }
+
+    private RiskAssessment calculateRisk(RequestType requestType, Long formTemplateId,
+                                         Map<String, Object> formData) {
+        int baseScore = riskScalePolicy.baseScore(requestType.getBaseRisk());
+        Map<String, Object> data = formData == null ? Collections.emptyMap() : formData;
+        List<RiskRule> rules = formTemplateId == null
+                ? List.of()
+                : riskRuleRepository.findAllByFormField_FormTemplate_IdAndActiveTrue(formTemplateId);
+
+        Map<String, RiskRule> matchingRules = new HashMap<>();
+        for (RiskRule rule : rules) {
+            if (!rule.isActive()
+                    || !Objects.equals(rule.getFormField().getFormTemplate().getId(), formTemplateId)) {
+                continue;
+            }
+            requireRiskCompatibleType(rule);
+            String fieldCode = rule.getFormField().getCode();
+            if (!data.containsKey(fieldCode)) {
+                continue;
+            }
+            Object answer = data.get(fieldCode);
+            if (answer != null && matches(rule, answer)) {
+                RiskRule previous = matchingRules.putIfAbsent(fieldCode, rule);
+                if (previous != null) {
+                    throw new IllegalStateException(
+                            "Configuración de riesgo inválida: más de una regla coincide con el campo '"
+                                    + fieldCode + "'");
+                }
+            }
         }
-        return configured instanceof Number number
-                ? Math.max(0, Math.min(5, number.doubleValue())) : 0;
+        int incrementSum = matchingRules.values().stream()
+                .mapToInt(RiskRule::getRiskIncrement)
+                .sum();
+        int score = riskScalePolicy.cap(baseScore + incrementSum);
+        return new RiskAssessment(score, riskScalePolicy.classify(score));
+    }
+
+    private void requireRiskCompatibleType(RiskRule rule) {
+        switch (rule.getFormField().getType()) {
+            case BOOLEAN, SELECT, NUMBER -> {
+                return;
+            }
+            case TEXT, TEXTAREA, DATE -> throw new IllegalStateException(
+                    "Configuración de riesgo inválida: el campo '" + rule.getFormField().getCode()
+                            + "' es de tipo contextual " + rule.getFormField().getType());
+        }
+    }
+
+    private boolean matches(RiskRule rule, Object answer) {
+        return switch (rule.getOperator()) {
+            case EQUALS -> equalsTyped(rule.getFormField().getType(), answer, rule.getExpectedValue());
+            case BETWEEN -> compareNumber(answer, rule.getValueFrom(), comparison -> comparison >= 0)
+                    && compareNumber(answer, rule.getValueTo(), comparison -> comparison <= 0);
+            case GREATER_THAN -> compareNumber(answer, rule.getValueFrom(), comparison -> comparison > 0);
+            case LESS_THAN -> compareNumber(answer, rule.getValueTo(), comparison -> comparison < 0);
+            case IN -> rule.getExpectedValue() instanceof Collection<?> values
+                    && values.stream().anyMatch(value ->
+                    equalsTyped(rule.getFormField().getType(), answer, value));
+        };
+    }
+
+    private boolean equalsTyped(FormFieldType type, Object answer, Object expected) {
+        if (expected == null) {
+            return false;
+        }
+        return switch (type) {
+            case NUMBER -> answer instanceof Number && expected instanceof Number
+                    && toBigDecimal((Number) answer).compareTo(toBigDecimal((Number) expected)) == 0;
+            case BOOLEAN -> answer instanceof Boolean && expected instanceof Boolean
+                    && answer.equals(expected);
+            case TEXT, TEXTAREA, SELECT, DATE -> answer instanceof String && expected instanceof String
+                    && answer.equals(expected);
+        };
+    }
+
+    private boolean compareNumber(Object answer, BigDecimal limit,
+                                  java.util.function.IntPredicate predicate) {
+        return answer instanceof Number number && limit != null
+                && predicate.test(toBigDecimal(number).compareTo(limit));
+    }
+
+    private BigDecimal toBigDecimal(Number value) {
+        return value instanceof BigDecimal decimal ? decimal : new BigDecimal(value.toString());
     }
 }

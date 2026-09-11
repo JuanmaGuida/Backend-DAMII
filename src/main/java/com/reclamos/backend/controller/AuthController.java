@@ -5,7 +5,7 @@ import com.reclamos.backend.dto.auth.LoginRequest;
 import com.reclamos.backend.dto.auth.LoginResponse;
 import com.reclamos.backend.dto.error.ApiErrorResponse;
 import com.reclamos.backend.identity.AuthenticatedIdentity;
-import com.reclamos.backend.identity.IdentityProvider;
+import com.reclamos.backend.service.AuthService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -26,10 +26,10 @@ public class AuthController {
             "Usuario o contraseña inválidos"
     );
 
-    private final IdentityProvider identityProvider;
+    private final AuthService authService;
 
-    public AuthController(IdentityProvider identityProvider) {
-        this.identityProvider = identityProvider;
+    public AuthController(AuthService authService) {
+        this.authService = authService;
     }
 
     @PostMapping("/login")
@@ -38,7 +38,7 @@ public class AuthController {
             return ResponseEntity.badRequest().body(INVALID_REQUEST);
         }
 
-        return identityProvider.authenticate(request.username(), request.password())
+        return authService.authenticate(request.username(), request.password())
                 .<ResponseEntity<?>>map(session -> ResponseEntity.ok(LoginResponse.from(session)))
                 .orElseGet(() -> ResponseEntity.status(401).body(INVALID_CREDENTIALS));
     }
