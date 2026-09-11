@@ -1,13 +1,17 @@
 package com.reclamos.backend.controller;
 
+import com.reclamos.backend.config.SecurityConfiguration;
 import com.reclamos.backend.dto.TicketResponse;
 import com.reclamos.backend.entity.TicketStatus;
 import com.reclamos.backend.exception.InvalidTicketRequestException;
 import com.reclamos.backend.exception.TicketStateConflictException;
+import com.reclamos.backend.security.BearerTokenAuthenticationFilter;
+import com.reclamos.backend.service.AuthService;
 import com.reclamos.backend.service.TicketStatusUpdateService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -38,6 +42,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 @WebMvcTest(TicketSimulationController.class)
 @TestPropertySource(properties = "app.simulator.enabled=true")
+@Import({SecurityConfiguration.class, BearerTokenAuthenticationFilter.class})
 class TicketSimulationControllerTest {
 
     @Autowired
@@ -45,6 +50,9 @@ class TicketSimulationControllerTest {
 
     @MockitoBean
     private TicketStatusUpdateService ticketStatusUpdateService;
+
+    @MockitoBean
+    private AuthService authService;
 
     @Test
     void simulateStatusUpdateDelegatesToServiceAndReturnsOk() throws Exception {
