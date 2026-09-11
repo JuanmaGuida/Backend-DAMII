@@ -3,26 +3,32 @@ package com.reclamos.backend.service;
 import com.reclamos.backend.dto.TicketResponse;
 import com.reclamos.backend.dto.UpdateTicketStatusEnvelope;
 import com.reclamos.backend.dto.UpdateTicketStatusRequest;
+import com.reclamos.backend.dto.request.ReopenTicketRequest;
 import com.reclamos.backend.entity.ActivityType;
 import com.reclamos.backend.entity.Category;
 import com.reclamos.backend.entity.InboxEvent;
 import com.reclamos.backend.entity.InboxStatus;
 import com.reclamos.backend.entity.Priority;
 import com.reclamos.backend.entity.RequestType;
+import com.reclamos.backend.entity.ResolutionType;
 import com.reclamos.backend.entity.Subcategory;
 import com.reclamos.backend.entity.Ticket;
 import com.reclamos.backend.entity.TicketActivity;
 import com.reclamos.backend.entity.TicketStatus;
+import com.reclamos.backend.entity.TicketResolution;
 import com.reclamos.backend.entity.TicketType;
 import com.reclamos.backend.entity.UpdateTicketStatusType;
 import com.reclamos.backend.exception.InvalidTicketRequestException;
 import com.reclamos.backend.exception.ResourceNotFoundException;
 import com.reclamos.backend.exception.TicketStateConflictException;
+import com.reclamos.backend.identity.AuthenticatedIdentity;
+import com.reclamos.backend.identity.ModuleRole;
 import com.reclamos.backend.repository.InboxEventRepository;
 import com.reclamos.backend.repository.TicketActivityRepository;
 import com.reclamos.backend.repository.TicketLocationRepository;
 import com.reclamos.backend.repository.TicketMessageRepository;
 import com.reclamos.backend.repository.TicketRepository;
+import com.reclamos.backend.repository.TicketResolutionRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -32,12 +38,16 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.ZoneOffset;
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -67,8 +77,11 @@ class TicketStatusUpdateServiceTest {
     private TicketMessageRepository messageRepository;
     @Mock
     private InboxEventRepository inboxEventRepository;
+    @Mock
+    private TicketResolutionRepository resolutionRepository;
 
     private TicketStatusUpdateService service;
+    private TicketResolutionService resolutionService;
 
     private final UUID ticketId = UUID.randomUUID();
     private final UpdateTicketStatusRequest.Actor externalActor =
@@ -76,11 +89,19 @@ class TicketStatusUpdateServiceTest {
 
     @BeforeEach
     void setUp() {
+        resolutionService = new TicketResolutionService(
+                ticketRepository, resolutionRepository, activityRepository,
+                Clock.fixed(Instant.parse("2026-09-08T12:00:00Z"), ZoneOffset.UTC), Duration.ofHours(72));
         service = new TicketStatusUpdateService(ticketRepository, activityRepository, locationRepository,
-                messageRepository, inboxEventRepository);
+                messageRepository, inboxEventRepository, resolutionService);
         // Default para los tests que no ejercitan dedupe en sí: "eventId nunca visto".
         // Los tests de dedupe pisan este stub explícitamente.
         lenient().when(inboxEventRepository.findById(any())).thenReturn(Optional.empty());
+        lenient().when(resolutionRepository.save(any())).thenAnswer(invocation -> {
+            TicketResolution resolution = invocation.getArgument(0);
+            resolution.setId(UUID.randomUUID());
+            return resolution;
+        });
     }
 
     @Test
@@ -212,7 +233,7 @@ class TicketStatusUpdateServiceTest {
         when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
 
         UpdateTicketStatusRequest.Details details = new UpdateTicketStatusRequest.Details(
-                null, null, new UpdateTicketStatusRequest.Resolution("ACTION_COMPLETED"), null);
+                null, null, new UpdateTicketStatusRequest.Resolution(ResolutionType.ACTION_COMPLETED), null);
         UpdateTicketStatusRequest data = new UpdateTicketStatusRequest(
                 ticketId, UpdateTicketStatusType.RESOLVED, null, "Se cambió la lámpara.", null, details,
                 externalActor, Instant.now());
@@ -222,21 +243,42 @@ class TicketStatusUpdateServiceTest {
     }
 
     @Test
-    void resolvedMovesTicketToResolved() {
+    void resolvedFromInProgressPersistsResolutionActivityAndConfirmationDeadline() {
         Ticket ticket = ticket(TicketStatus.IN_PROGRESS);
         when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
         when(activityRepository.countByTicketId(ticketId)).thenReturn(2);
         when(locationRepository.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
 
         UpdateTicketStatusRequest.Details details = new UpdateTicketStatusRequest.Details(
-                null, null, new UpdateTicketStatusRequest.Resolution("ACTION_COMPLETED"), null);
+                null, null, new UpdateTicketStatusRequest.Resolution(ResolutionType.ACTION_COMPLETED), null);
+        Instant resolvedAt = Instant.parse("2026-09-08T09:30:00Z");
         UpdateTicketStatusRequest data = new UpdateTicketStatusRequest(
                 ticketId, UpdateTicketStatusType.RESOLVED, "La luminaria fue reparada.", "Se reemplazó el artefacto.",
-                null, details, externalActor, Instant.now());
+                null, details, externalActor, resolvedAt);
+        UpdateTicketStatusEnvelope envelope = envelope(data);
 
-        TicketResponse response = service.applyUpdate(ticketId, envelope(data));
+        TicketResponse response = service.applyUpdate(ticketId, envelope);
 
         assertThat(response.getCurrentStatus()).isEqualTo(TicketStatus.RESOLVED);
+        assertThat(ticket.getStatusChangedAt()).isEqualTo(resolvedAt);
+        assertThat(ticket.getResolutionConfirmationDueAt()).isEqualTo(resolvedAt.plus(Duration.ofHours(72)));
+        verify(resolutionRepository).save(argThat(resolution ->
+                resolution.getTicket() == ticket
+                        && resolution.getType() == ResolutionType.ACTION_COMPLETED
+                        && "La luminaria fue reparada.".equals(resolution.getPublicMessage())
+                        && "Se reemplazó el artefacto.".equals(resolution.getInternalMessage())
+                        && resolution.getResolvedByType() == com.reclamos.backend.entity.ActorType.EXTERNAL_USER
+                        && "USR-M6-77".equals(resolution.getResolvedById())
+                        && "M6".equals(resolution.getResolvedByModuleId())
+                        && resolvedAt.equals(resolution.getResolvedAt())));
+        verify(activityRepository).save(argThat(activity ->
+                activity.getActionType() == ActivityType.RESOLVED
+                        && activity.getPreviousStatus() == TicketStatus.IN_PROGRESS
+                        && activity.getNewStatus() == TicketStatus.RESOLVED
+                        && activity.getActorType() == com.reclamos.backend.entity.ActorType.EXTERNAL_USER
+                        && "USR-M6-77".equals(activity.getActorId())
+                        && envelope.eventId().equals(activity.getExternalEventId())
+                        && resolvedAt.equals(activity.getOccurredAt())));
     }
 
     /**
@@ -252,13 +294,136 @@ class TicketStatusUpdateServiceTest {
         when(locationRepository.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
 
         UpdateTicketStatusRequest.Details details = new UpdateTicketStatusRequest.Details(
-                null, null, new UpdateTicketStatusRequest.Resolution("ACTION_COMPLETED"), null);
+                null, null, new UpdateTicketStatusRequest.Resolution(ResolutionType.ACTION_COMPLETED), null);
         UpdateTicketStatusRequest data = new UpdateTicketStatusRequest(
                 ticketId, UpdateTicketStatusType.RESOLVED, "Listo.", null, null, details, externalActor, Instant.now());
 
         TicketResponse response = service.applyUpdate(ticketId, envelope(data));
 
         assertThat(response.getCurrentStatus()).isEqualTo(TicketStatus.RESOLVED);
+        verify(resolutionRepository).save(any());
+        verify(activityRepository).save(argThat(activity ->
+                activity.getPreviousStatus() == TicketStatus.ROUTED));
+    }
+
+    @Test
+    void systemResolutionAllowsNullActorId() {
+        Ticket ticket = ticket(TicketStatus.ROUTED);
+        when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+        when(activityRepository.countByTicketId(ticketId)).thenReturn(0);
+        when(locationRepository.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+        UpdateTicketStatusRequest.Details details = new UpdateTicketStatusRequest.Details(
+                null, null, new UpdateTicketStatusRequest.Resolution(ResolutionType.ACKNOWLEDGED), null);
+        UpdateTicketStatusRequest data = new UpdateTicketStatusRequest(
+                ticketId, UpdateTicketStatusType.RESOLVED, "Procesado automáticamente.", null, null, details,
+                new UpdateTicketStatusRequest.Actor("SYSTEM", null), Instant.parse("2026-09-08T10:00:00Z"));
+
+        service.applyUpdate(ticketId, envelope(data));
+
+        verify(resolutionRepository).save(argThat(resolution ->
+                resolution.getResolvedByType() == com.reclamos.backend.entity.ActorType.SYSTEM
+                        && resolution.getResolvedById() == null));
+        verify(activityRepository).save(argThat(activity ->
+                activity.getActorType() == com.reclamos.backend.entity.ActorType.SYSTEM
+                        && activity.getActorId() == null));
+    }
+
+    @Test
+    void localM2TicketCannotUseExternalUpdateFlow() {
+        Ticket ticket = ticket(TicketStatus.IN_PROGRESS);
+        ticket.setResponsibleAreaId("M2");
+        when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+        UpdateTicketStatusRequest.Details details = new UpdateTicketStatusRequest.Details(
+                null, null, new UpdateTicketStatusRequest.Resolution(ResolutionType.ACTION_COMPLETED), null);
+        UpdateTicketStatusRequest data = new UpdateTicketStatusRequest(
+                ticketId, UpdateTicketStatusType.RESOLVED, "Resuelto.", null, null, details,
+                externalActor, Instant.now());
+        UpdateTicketStatusEnvelope envelope = new UpdateTicketStatusEnvelope(
+                "1.0", UUID.randomUUID(), "updateTicketStatus", Instant.now(),
+                new UpdateTicketStatusEnvelope.Producer("M2", "help-center-api"),
+                "tickets/" + ticketId, data);
+
+        assertThatThrownBy(() -> service.applyUpdate(ticketId, envelope))
+                .isInstanceOf(InvalidTicketRequestException.class);
+        verify(resolutionRepository, never()).save(any());
+        verify(ticketRepository, never()).save(any());
+        verify(activityRepository, never()).save(any());
+    }
+
+    @Test
+    void duplicateResolvedEventDoesNotRepeatResolutionActivityOrDeadline() {
+        Ticket ticket = ticket(TicketStatus.ROUTED);
+        when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+        when(activityRepository.countByTicketId(ticketId)).thenReturn(0);
+        when(locationRepository.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+        Instant resolvedAt = Instant.parse("2026-09-08T11:00:00Z");
+        UpdateTicketStatusRequest.Details details = new UpdateTicketStatusRequest.Details(
+                null, null, new UpdateTicketStatusRequest.Resolution(ResolutionType.REQUEST_FULFILLED), null);
+        UpdateTicketStatusRequest data = new UpdateTicketStatusRequest(
+                ticketId, UpdateTicketStatusType.RESOLVED, "Solicitud completada.", null, null, details,
+                externalActor, resolvedAt);
+        UpdateTicketStatusEnvelope envelope = envelope(data);
+        InboxEvent processed = new InboxEvent();
+        processed.setEventId(envelope.eventId());
+        processed.setStatus(InboxStatus.PROCESSED);
+        when(inboxEventRepository.findById(envelope.eventId()))
+                .thenReturn(Optional.empty(), Optional.of(processed));
+
+        service.applyUpdate(ticketId, envelope);
+        Instant originalDeadline = ticket.getResolutionConfirmationDueAt();
+        service.applyUpdate(ticketId, envelope);
+
+        assertThat(ticket.getResolutionConfirmationDueAt()).isEqualTo(originalDeadline);
+        verify(resolutionRepository, times(1)).save(any());
+        verify(activityRepository, times(1)).save(any());
+        verify(ticketRepository, times(1)).save(any());
+        verify(inboxEventRepository, times(1)).save(any());
+    }
+
+    @Test
+    void resolvedOnIncompatibleStateDoesNotPersistAnyEffect() {
+        Ticket ticket = ticket(TicketStatus.IN_REVIEW);
+        when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+        UpdateTicketStatusRequest.Details details = new UpdateTicketStatusRequest.Details(
+                null, null, new UpdateTicketStatusRequest.Resolution(ResolutionType.ACTION_COMPLETED), null);
+        UpdateTicketStatusRequest data = new UpdateTicketStatusRequest(
+                ticketId, UpdateTicketStatusType.RESOLVED, "Resuelto.", null, null, details,
+                externalActor, Instant.now());
+
+        assertThatThrownBy(() -> service.applyUpdate(ticketId, envelope(data)))
+                .isInstanceOf(TicketStateConflictException.class);
+
+        assertThat(ticket.getCurrentStatus()).isEqualTo(TicketStatus.IN_REVIEW);
+        verify(resolutionRepository, never()).save(any());
+        verify(ticketRepository, never()).save(any());
+        verify(activityRepository, never()).save(any());
+        verify(inboxEventRepository, never()).save(any());
+    }
+
+    @Test
+    void externallyResolvedTicketRemainsCompatibleWithExistingReopenFlow() {
+        Ticket ticket = ticket(TicketStatus.ROUTED);
+        UUID ownerId = UUID.randomUUID();
+        ticket.setCitizenId(ownerId);
+        when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+        when(activityRepository.countByTicketId(ticketId)).thenReturn(0, 1);
+        when(locationRepository.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+        UpdateTicketStatusRequest.Details details = new UpdateTicketStatusRequest.Details(
+                null, null, new UpdateTicketStatusRequest.Resolution(ResolutionType.ACTION_COMPLETED), null);
+        UpdateTicketStatusRequest data = new UpdateTicketStatusRequest(
+                ticketId, UpdateTicketStatusType.RESOLVED, "Trabajo terminado.", null, null, details,
+                externalActor, Instant.parse("2026-09-08T10:00:00Z"));
+
+        service.applyUpdate(ticketId, envelope(data));
+        resolutionService.reopen(ticketId, new ReopenTicketRequest("El problema continúa"),
+                new AuthenticatedIdentity("citizen-subject", ownerId, "CITIZEN", null, ModuleRole.CITIZEN));
+
+        assertThat(ticket.getCurrentStatus()).isEqualTo(TicketStatus.IN_PROGRESS);
+        assertThat(ticket.getResolutionConfirmationDueAt()).isNull();
+        assertThat(ticket.getReopenCount()).isEqualTo(1);
+        verify(resolutionRepository).save(any());
+        verify(activityRepository, times(2)).save(any());
     }
 
     @Test

@@ -52,7 +52,7 @@ class TrackingControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(header().string(HttpHeaders.CACHE_CONTROL, containsString("no-store")))
-                .andExpect(jsonPath("$.publicId").value("OP-123"))
+                .andExpect(jsonPath("$.publicId").value("TK-2026-000123"))
                 .andExpect(jsonPath("$.status").value("REGISTERED"))
                 .andExpect(jsonPath("$.summary").value("Resumen"))
                 .andExpect(jsonPath("$.createdAt").value("2026-09-01T10:00:00Z"))
@@ -102,7 +102,7 @@ class TrackingControllerTest {
 
     private TrackingTicketResponse response() {
         return new TrackingTicketResponse(
-                "OP-123", TicketStatus.REGISTERED, "Resumen", Instant.parse("2026-09-01T10:00:00Z"),
+                "TK-2026-000123", TicketStatus.REGISTERED, "Resumen", Instant.parse("2026-09-01T10:00:00Z"),
                 Instant.parse("2026-09-01T10:00:00Z"),
                 new TrackingTicketResponse.RequestTypeSummary("Tipo"),
                 new TrackingTicketResponse.CategorySummary("Categoría"),

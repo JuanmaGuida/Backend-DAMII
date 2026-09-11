@@ -96,7 +96,7 @@ class SecurityHardeningIntegrationTest {
         when(formService.getFormForRequestType(1L)).thenReturn(form);
 
         when(trackingService.findByTrackingCode("tracking-code")).thenReturn(new TrackingTicketResponse(
-                "OP-123",
+                "TK-2026-000123",
                 TicketStatus.REGISTERED,
                 "Resumen",
                 Instant.parse("2026-09-01T10:00:00Z"),
@@ -107,7 +107,7 @@ class SecurityHardeningIntegrationTest {
         ));
 
         when(ticketService.create(any(), any(), any())).thenReturn(new CreateTicketResponse(
-                TICKET_ID, "OP-123", "tracking-code", TicketStatus.REGISTERED));
+                TICKET_ID, "TK-2026-000123", "tracking-code", TicketStatus.REGISTERED));
         InformationRequestResponse informationResponse = new InformationRequestResponse(
                 INFORMATION_REQUEST_ID, TICKET_ID, InformationRequestStatus.PENDING, "Dato requerido",
                 Instant.parse("2026-09-01T10:00:00Z"), Instant.parse("2026-09-04T10:00:00Z"),
