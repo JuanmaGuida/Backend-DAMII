@@ -45,19 +45,14 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Post-QA: estos tests ya no llaman a applyUpdate con el payload plano —
- * ahora reciben el {@link UpdateTicketStatusEnvelope} completo, y se agregan
- * casos específicos para lo que QA encontró roto: envelope inválido aceptado
- * sin cambiar nada, el mismo eventId reenviado duplicando efectos,
- * data.ticketId sin validar, RESOLVED desde ROUTED rechazado sin motivo, y
- * trazabilidad (externalEventId/updateOccurredAt) sin persistirse en
- * TicketActivity.
+ * applyUpdate recibe el {@link UpdateTicketStatusEnvelope} completo, no el
+ * payload plano de {@code data}: cubre validación de envelope, dedupe por
+ * eventId, validación de data.ticketId, y trazabilidad
+ * (externalEventId/updateOccurredAt) persistida en TicketActivity.
  * <p>
- * Revisión post-actualización de documentación: el actor de estos eventos
- * llega desde otro módulo (M6) vía integración, así que su
- * updatedBy.type correcto es EXTERNAL_USER (Eventos V1.69 §5.2, ejemplos de
- * §8.2/§8.3) — no AREA_USER, que además nunca fue un valor válido de
- * ActorType (ver su javadoc).
+ * El actor de estos eventos llega desde otro módulo (M6) vía integración,
+ * así que su updatedBy.type es EXTERNAL_USER (Eventos §5.2, ejemplos de
+ * §8.2/§8.3).
  */
 @ExtendWith(MockitoExtension.class)
 class TicketStatusUpdateServiceTest {
@@ -106,8 +101,7 @@ class TicketStatusUpdateServiceTest {
         assertThat(response.getCurrentStatus()).isEqualTo(TicketStatus.IN_PROGRESS);
         verify(messageRepository).save(any());
 
-        // QA (BE - Implementar transiciones a partir del consumo de eventos):
-        // externalEventId y occurredAt no se persistían en TicketActivity.
+        // Verifica que externalEventId y occurredAt queden persistidos en TicketActivity.
         ArgumentCaptor<TicketActivity> captor = ArgumentCaptor.forClass(TicketActivity.class);
         verify(activityRepository).save(captor.capture());
         assertThat(captor.getValue().getActionType()).isEqualTo(ActivityType.STATE_CHANGED);
@@ -246,15 +240,9 @@ class TicketStatusUpdateServiceTest {
     }
 
     /**
-     * Revisión post-actualización de documentación: la versión anterior de
-     * este test ("...WhenRequestTypeDoesNotAllowDirectResolution") esperaba
-     * que RESOLVED se RECHAZARA desde ROUTED por default, modelando una
-     * lectura de Eventos v1.6 que resultó ambigua. Eventos V1.69 §8.2 aclara
-     * que RESOLVED se acepta de forma incondicional tanto desde ROUTED como
-     * desde IN_PROGRESS ("M2 no mantiene una configuración por RequestType
-     * para habilitar o impedir la resolución directa"), así que el
-     * comportamiento correcto es el opuesto al que este test verificaba
-     * antes.
+     * Eventos §8.2: RESOLVED se acepta de forma incondicional tanto desde
+     * ROUTED como desde IN_PROGRESS — no existe configuración por
+     * RequestType que lo habilite o impida.
      */
     @Test
     void resolvedIsAcceptedDirectlyFromRoutedWithoutAnyRequestTypeConfiguration() {
@@ -317,7 +305,7 @@ class TicketStatusUpdateServiceTest {
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 
-    // ---- Regresión QA: validación de envelope, data.ticketId y deduplicación por eventId ----
+    // ---- Validación de envelope, data.ticketId y deduplicación por eventId ----
 
     @Test
     void wrongEventTypeIsRejectedWithoutTouchingTheTicket() {
@@ -367,11 +355,9 @@ class TicketStatusUpdateServiceTest {
     }
 
     /**
-     * QA (BE - Implementar transiciones a partir del consumo de eventos):
-     * Eventos v1.6 §8.1 exige data.ticketId como campo propio de la variante
-     * de negocio, distinto de envelope.subject (ya cubierto arriba por
-     * mismatchedSubjectIsRejectedWithoutTouchingTheTicket). Antes no se
-     * validaba en absoluto.
+     * Eventos §8.1: data.ticketId es un campo propio de la variante de
+     * negocio, distinto de envelope.subject (ya cubierto arriba por
+     * mismatchedSubjectIsRejectedWithoutTouchingTheTicket).
      */
     @Test
     void ticketIdMismatchInDataIsRejectedWithoutTouchingTheTicket() {

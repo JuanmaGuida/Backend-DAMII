@@ -34,21 +34,15 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * DDA2-62 (BE - Implementar transiciones a partir del consumo de eventos):
- * aplica la MISMA lógica de transición canónica que va a usar la
- * integración real de updateTicketStatus (Eventos v1.6 §8), a partir de un
- * envelope ya deserializado. Hoy la única forma de llegar a este service es
- * el simulador interno (DDA2-61 / {@code TicketSimulationController});
+ * Story 3.4 / DDA2-62: aplica la MISMA lógica de transición canónica que va
+ * a usar la integración real de updateTicketStatus (Eventos §8), a partir
+ * de un envelope ya deserializado. Hoy la única forma de llegar a este
+ * service es el simulador interno ({@code TicketSimulationController});
  * cuando exista un consumidor real de bus de eventos, va a llamar a este
  * mismo método sin tener que tocar la lógica de negocio.
  * <p>
- * REVISIÓN POST-QA: la primera versión recibía sólo el payload plano de
- * {@code data} y no el envelope común, así que no validaba eventId,
- * eventType ni subject, y no deduplicaba por eventId — un mismo evento
- * reenviado producía Activity/TicketMessage duplicados, y un envelope
- * inválido llegaba a cambiar el estado del ticket. Ahora {@code applyUpdate}
- * recibe el {@link UpdateTicketStatusEnvelope} completo, valida el envelope
- * ANTES de tocar el Ticket (§23.3 paso 1), deduplica contra
+ * {@code applyUpdate} valida el {@link UpdateTicketStatusEnvelope} completo
+ * ANTES de tocar el Ticket (§23.3 paso 1), deduplica por eventId contra
  * {@link InboxEventRepository} (§19.1) y valida producer.moduleId contra
  * responsibleAreaId (§23.3 paso 2) antes de aplicar cualquier transición.
  * <p>
@@ -95,10 +89,8 @@ public class TicketStatusUpdateService {
         }
 
         UpdateTicketStatusRequest request = envelope.data();
-        // QA (BE - Implementar transiciones a partir del consumo de eventos):
-        // Eventos v1.6 §8.1 exige data.ticketId como campo propio (no alcanza con
-        // envelope.subject, que ya se valida en validateEnvelope). Antes no se
-        // validaba en absoluto.
+        // Eventos §8.1 exige data.ticketId como campo propio, no alcanza con
+        // envelope.subject (que ya se valida en validateEnvelope).
         if (!ticketId.equals(request.ticketId())) {
             throw new InvalidTicketRequestException(
                     "data.ticketId ('" + request.ticketId() + "') no coincide con el ticket de la URL ('"
@@ -167,16 +159,10 @@ public class TicketStatusUpdateService {
                 reasonCode = returnInfo.reasonCode();
             }
             case RESOLVED -> {
-                // Revisión post-actualización de documentación: Eventos V1.69 §8.2
-                // aclara (tabla de transiciones + "RESOLUCIÓN DIRECTA") que RESOLVED
-                // se acepta de forma INCONDICIONAL tanto desde ROUTED como desde
-                // IN_PROGRESS — "M2 no mantiene una configuración por RequestType
-                // para habilitar o impedir la resolución directa". La versión
-                // anterior (Eventos v1.6) era ambigua sobre esto y se había modelado
-                // como un flag por RequestType (RequestType.allowsDirectResolution);
-                // ese campo se elimina (ver V9__drop_request_type_direct_resolution.sql)
-                // y la validación vuelve a ser incondicional, igual que RETURNED e
-                // INFORMATION_REQUIRED más arriba.
+                // Eventos §8.2: RESOLVED se acepta de forma incondicional tanto desde
+                // ROUTED como desde IN_PROGRESS. M2 no mantiene una configuración por
+                // RequestType para habilitar o impedir la resolución directa (ver
+                // V9__drop_request_type_direct_resolution.sql).
                 requireCurrentStatus(ticket, "RESOLVED sólo es válido con el ticket en ROUTED o IN_PROGRESS",
                         TicketStatus.ROUTED, TicketStatus.IN_PROGRESS);
                 UpdateTicketStatusRequest.Resolution resolution = request.details() == null
@@ -240,10 +226,9 @@ public class TicketStatusUpdateService {
     }
 
     /**
-     * Eventos v1.6 §23.3 paso 1: valida el envelope común ANTES de tocar el
+     * Eventos §23.3 paso 1: valida el envelope común ANTES de tocar el
      * Ticket. specVersion/eventType/subject inválidos son rechazo puro de
-     * request (400), sin ningún efecto de negocio — así se corrige el bug
-     * que QA encontró (un envelope inválido llegaba a cambiar el estado).
+     * request (400), sin ningún efecto de negocio.
      */
     private void validateEnvelope(UUID ticketId, UpdateTicketStatusEnvelope envelope) {
         if (!SUPPORTED_SPEC_VERSION.equals(envelope.specVersion())) {
@@ -306,13 +291,10 @@ public class TicketStatusUpdateService {
     }
 
     /**
-     * Revisión post-actualización de documentación: antes se validaba
-     * contra un Set<String> hardcodeado (KNOWN_ACTOR_TYPES) con sólo 4 de
-     * los 6 valores de ActorType, duplicando — y desincronizándose de — el
-     * enum real. Se valida directamente contra ActorType.valueOf() para que
-     * la única fuente de verdad sea el enum (ver su javadoc para el
-     * significado de cada valor, incluido EXTERNAL_USER para actores que
-     * llegan desde otro módulo vía integración).
+     * Valida directamente contra ActorType.valueOf() para que la única
+     * fuente de verdad sea el enum (ver su javadoc para el significado de
+     * cada valor, incluido EXTERNAL_USER para actores que llegan desde otro
+     * módulo vía integración).
      */
     private ActorType mapActorType(String contractType) {
         try {
@@ -350,12 +332,8 @@ public class TicketStatusUpdateService {
         activity.setActorType(actorType);
         activity.setActorId(actorId);
         activity.setSourceModuleId(sourceModuleId);
-        // QA (BE - Implementar transiciones a partir del consumo de eventos):
-        // faltaba trazabilidad del evento origen. externalEventId ya existía como
-        // columna en TicketActivity (Entidades v1.3 §9) pero nunca se seteaba
-        // acá. occurredAt usaba Instant.now() (cuándo M2 procesó el evento) en vez
-        // de data.updateOccurredAt (Eventos v1.6 §10: "cuándo ocurrió realmente el
-        // hecho operativo en el productor"), que es lo que tiene sentido histórico.
+        // occurredAt registra data.updateOccurredAt (cuándo ocurrió el hecho en
+        // el productor), no el momento en que M2 lo procesó.
         activity.setExternalEventId(externalEventId);
         activity.setReasonCode(reasonCode);
         activity.setMessage(message);

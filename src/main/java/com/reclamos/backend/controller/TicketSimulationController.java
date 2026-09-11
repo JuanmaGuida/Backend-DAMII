@@ -28,9 +28,9 @@ import java.util.UUID;
  * enforcement de permisos), es un apagado a nivel de entorno, que es lo que
  * pide el AC ("no debe estar disponible para usuarios finales").
  * <p>
- * Post-QA: el body ahora es el envelope común completo (Eventos v1.6 §4),
- * no sólo el payload de {@code data} — ver {@link UpdateTicketStatusEnvelope}
- * y el javadoc de {@link TicketStatusUpdateService}.
+ * El body es el envelope común completo (Eventos §4), no sólo el payload de
+ * {@code data} — ver {@link UpdateTicketStatusEnvelope} y el javadoc de
+ * {@link TicketStatusUpdateService}.
  */
 @RestController
 @RequestMapping("/api/tickets")

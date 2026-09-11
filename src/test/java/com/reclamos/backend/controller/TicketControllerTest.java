@@ -55,12 +55,11 @@ class TicketControllerTest {
     }
 
     /**
-     * QA (BE - Endpoint de listado): ?sort=notAField,desc devolvía 500 en vez
-     * de 400. La corrección no vive en este controller ni en
-     * GlobalExceptionHandler: TicketService.listTickets ahora valida el Sort
-     * contra una whitelist propia de propiedades de Ticket ANTES de llegar al
-     * repository, y tira InvalidTicketRequestException (400) si el campo no
-     * es válido. Este slice test sólo verifica que ese 400 llega bien al
+     * ?sort=notAField,desc: la validación no vive en este controller ni en
+     * GlobalExceptionHandler — TicketService.listTickets valida el Sort
+     * contra una whitelist propia de propiedades de Ticket ANTES de llegar
+     * al repository, y tira InvalidTicketRequestException (400) si el campo
+     * no es válido. Este slice test sólo verifica que ese 400 llega bien al
      * cliente HTTP; la whitelist en sí está cubierta en TicketServiceTest.
      */
     @Test

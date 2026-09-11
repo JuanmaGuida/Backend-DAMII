@@ -51,15 +51,11 @@ public class TicketService {
     private static final String SELF_MANAGED_AREA_ID = "M2";
 
     /**
-     * QA (BE - Endpoint de listado): "?sort=notAField,desc" devolvía 500 en
-     * vez de 400, porque Spring Data traduce el Sort contra las propiedades
-     * de la entidad Ticket recién al ejecutar la query, y esa traducción
-     * lanza una excepción interna del framework que no estaba manejada. En
-     * vez de mapear esa excepción interna (su paquete/firma exacta depende
-     * de la versión de Spring Data que baja Spring Boot y no es algo que
-     * convenga acoplar), se valida acá mismo, antes de tocar el repository,
-     * contra una whitelist explícita de propiedades de Ticket que tiene
-     * sentido exponer para ordenar. Quedan afuera relaciones (requestType,
+     * Whitelist de propiedades de Ticket habilitadas para {@code ?sort=}.
+     * Se valida acá, antes de tocar el repository, en lugar de dejar que
+     * Spring Data traduzca el Sort contra la entidad recién al ejecutar la
+     * query (lo que devolvería un error interno del framework sin manejar
+     * para un campo inexistente). Quedan afuera relaciones (requestType,
      * mainTicket), el mapa formData y trackingCodeHash (dato sensible). Si
      * el equipo quiere habilitar más/menos campos, este es el único lugar
      * que hay que tocar.
@@ -197,24 +193,19 @@ public class TicketService {
      * V1.09 §6).
      * <p>
      * Recalcula responsibleAreaId, estimatedAffectedCount, formTemplate,
-     * formData y currentPriority. NO recalcula el SLA inicial (Decisiones #2
-     * también lo pide) porque el módulo de SLA todavía no existe en este
-     * backend (Epic 6, Sprint 4).
+     * formData y currentPriority. Pendiente: el SLA inicial (Guía funcional
+     * §5 / Decisiones #2) todavía no se recalcula acá porque el módulo de
+     * SLA (Epic 6) no está integrado en esta rama.
      * <p>
-     * Revisión post-actualización de documentación — prioridad: la versión
-     * anterior de este método aplicaba sólo un piso de minimumPriority sobre
-     * la currentPriority VIGENTE (nunca la bajaba), asumiendo que sin
-     * formData no se podía recalcular el riesgo. La Guía funcional §3
-     * ("REGLA DE EVOLUCIÓN") aclara que ese piso de "nunca baja" es sólo para
-     * la recalculación periódica automática (por edad/SLA); "una corrección
-     * del RequestType durante la primera IN_REVIEW SÍ puede recalcularla".
-     * Como formData se resetea a {} más abajo, el riesgo recalculado con el
-     * motor existente (RiskCalculationService, formData vacío) da exactamente
-     * newRequestType.baseRisk sin incrementos — por eso se usa baseRisk
-     * directamente en lugar de volver a invocar RiskCalculationService con
-     * argumentos vacíos. La prioridad resultante se floorea únicamente contra
-     * newRequestType.minimumPriority (mismo patrón que create()), pudiendo
-     * quedar por debajo de la prioridad anterior.
+     * Prioridad: a diferencia del recálculo periódico automático (donde,
+     * por la "REGLA DE EVOLUCIÓN" de la Guía funcional §3, currentPriority
+     * nunca baja), una corrección de RequestType durante la primera
+     * IN_REVIEW todavía forma parte de la clasificación inicial y sí puede
+     * recalcularla libremente. Como formData se resetea a {} más abajo, el
+     * riesgo recalculado da exactamente newRequestType.baseRisk sin
+     * incrementos, así que se usa baseRisk directamente. La prioridad
+     * resultante se floorea únicamente contra newRequestType.minimumPriority
+     * (mismo patrón que create()), pudiendo quedar por debajo de la anterior.
      */
     @Transactional
     public TicketResponse correctClassification(UUID ticketId, Long newRequestTypeId, AuthenticatedIdentity actor) {
@@ -245,14 +236,10 @@ public class TicketService {
         ticket.setEstimatedAffectedCount(estimatedAffectedCount);
         ticket.setCurrentPriority(newPriority);
         ticket.setFormTemplate(newFormTemplate);
-        // QA (BE - Endpoint de corrección de clasificación): formData quedaba con
-        // las respuestas del RequestType anterior después de reclasificar. Esas
-        // respuestas están validadas contra el FormTemplate del RequestType viejo
-        // y no tienen por qué corresponder a los campos del nuevo (códigos de
-        // FormField distintos, tipos distintos, etc.), así que conservarlas es
-        // directamente incorrecto. Se resetea a {} para forzar una carga nueva
-        // acorde a la clasificación corregida (ver formTemplate más arriba, que
-        // sí queda registrado con la nueva plantilla desde ya).
+        // Las respuestas del formData anterior están validadas contra el
+        // FormTemplate del RequestType viejo y no corresponden necesariamente
+        // a los campos del nuevo, así que se resetea a {} (formTemplate ya
+        // queda registrado con la nueva plantilla más arriba).
         ticket.setFormData(new HashMap<>());
         ticketRepository.save(ticket);
 
@@ -293,14 +280,10 @@ public class TicketService {
         TicketStatus previousStatus = ticket.getCurrentStatus();
         ticket.setCurrentStatus(TicketStatus.ROUTED);
         ticket.setStatusChangedAt(Instant.now());
-        // BUG post-QA: esto nunca se seteaba, así que classificationFinalizedAt
-        // quedaba siempre null y correctClassification() aceptaba correcciones
-        // después de un ROUTED -> RETURNED -> IN_REVIEW, cuando la clasificación
-        // ya debería estar bloqueada para siempre (Entidades v1.3 §6 / §4.1: "Al
-        // salir por primera vez de IN_REVIEW hacia gestión ... se fija"). Sólo se
-        // fija la primera vez: una vuelta posterior a ROUTED no debe correr esto
-        // de nuevo (aunque en la práctica ya sería no-op porque no puede volver a
-        // IN_REVIEW -> ROUTED sin pasar por acá con el valor ya seteado).
+        // classificationFinalizedAt se fija sólo la primera vez que el ticket
+        // sale de IN_REVIEW hacia gestión (Entidades §4.1): a partir de acá,
+        // correctClassification() ya no acepta correcciones ni siquiera después
+        // de un ROUTED -> RETURNED -> IN_REVIEW posterior.
         if (ticket.getClassificationFinalizedAt() == null) {
             ticket.setClassificationFinalizedAt(Instant.now());
         }
@@ -453,15 +436,11 @@ public class TicketService {
         activity.setActionType(actionType);
         activity.setPreviousStatus(previousStatus);
         activity.setNewStatus(newStatus);
-        // Revisión post-actualización de documentación: este fallback NO tiene
-        // que ver con un renombrado de ActorType (esa era una lectura errónea de
-        // un intento anterior — ver el javadoc de ActorType). ADMIN sigue siendo
-        // un valor válido y distinto de SYSTEM. Se mantiene AGENT/SYSTEM acá
-        // porque estas llamadas son siempre transiciones disparadas dentro de M2
-        // por un agente autenticado (startReview, correctClassification,
-        // routeToArea); SYSTEM sólo cubre el caso defensivo de actor == null, que
-        // según la Guía funcional es la semántica correcta para "sin actor
-        // identificado". Juicio propio, marcado para que el equipo lo confirme.
+        // TODO (a confirmar con el equipo): AGENT/SYSTEM cubre las transiciones
+        // internas de M2 (startReview, correctClassification, routeToArea), que
+        // siempre corren con un agente autenticado; SYSTEM sólo queda para el
+        // caso defensivo de actor == null ("sin actor identificado" según la
+        // Guía funcional). Evaluar si ADMIN debería usarse en algún caso acá.
         activity.setActorType(actor != null ? ActorType.AGENT : ActorType.SYSTEM);
         activity.setActorId(actor != null ? actor.subjectId() : null);
         activity.setPreviousPriority(previousPriority);
