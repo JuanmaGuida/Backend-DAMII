@@ -23,7 +23,6 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.HashMap;
@@ -38,8 +37,6 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class TicketService {
-    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
-
     /**
      * "M2" identifica gestión propia de Atención Ciudadana (Eventos v1.6 §2.1):
      * un ticket derivado a esa "área" no tiene consumidor externo y no debe
@@ -75,6 +72,7 @@ public class TicketService {
     private final RiskCalculationService riskCalculationService;
     private final OutboxEventRepository outboxEventRepository;
     private final TrackingCodeService trackingCodeService;
+    private final TicketPublicIdGenerator publicIdGenerator;
     private final AttachmentService attachmentService;
     private final ModuleUserRepository moduleUserRepository;
     private final Clock clock;
@@ -112,12 +110,8 @@ public class TicketService {
             trackingHash = trackingCodeService.hash(trackingCode);
         } while (ticketRepository.existsByTrackingCodeHash(trackingHash));
 
-        String publicId;
-        do {
-            publicId = generatePublicId();
-        } while (ticketRepository.existsByPublicId(publicId));
-
         Instant now = clock.instant();
+        String publicId = publicIdGenerator.generate(now);
         Ticket ticket = new Ticket();
         ticket.setPublicId(publicId);
         ticket.setTrackingCodeHash(trackingHash);
@@ -369,6 +363,7 @@ public class TicketService {
 
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("ticketId", ticket.getId());
+        data.put("publicId", ticket.getPublicId());
         data.put("citizenId", ticket.getCitizenId());
         data.put("isAnonymous", ticket.isAnonymous());
         data.put("responsibleAreaId", ticket.getResponsibleAreaId());
@@ -598,11 +593,4 @@ public class TicketService {
         };
     }
 
-    private String generatePublicId() {
-        StringBuilder value = new StringBuilder("OP-");
-        for (int index = 0; index < 10; index++) {
-            value.append(SECURE_RANDOM.nextInt(10));
-        }
-        return value.toString();
-    }
 }

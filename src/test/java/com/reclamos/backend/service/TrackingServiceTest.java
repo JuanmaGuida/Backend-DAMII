@@ -43,7 +43,7 @@ class TrackingServiceTest {
 
         TrackingTicketResponse response = service.findByTrackingCode(CODE);
 
-        assertEquals("OP-1234567890", response.getPublicId());
+        assertEquals("TK-2026-000123", response.getPublicId());
         assertEquals(TicketStatus.IN_PROGRESS, response.getStatus());
         assertEquals("Resumen público", response.getSummary());
         assertEquals(Instant.parse("2026-09-01T10:00:00Z"), response.getCreatedAt());
@@ -125,7 +125,7 @@ class TrackingServiceTest {
         requestType.setSubcategory(subcategory);
         Ticket ticket = new Ticket();
         ticket.setId(UUID.fromString("20000000-0000-0000-0000-000000000001"));
-        ticket.setPublicId("OP-1234567890");
+        ticket.setPublicId("TK-2026-000123");
         ticket.setTrackingCodeHash("never-public");
         ticket.setCitizenId(UUID.randomUUID());
         ticket.setResponsibleAreaId("internal-area");

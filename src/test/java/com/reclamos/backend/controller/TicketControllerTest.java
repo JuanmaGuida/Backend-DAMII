@@ -3,6 +3,7 @@ package com.reclamos.backend.controller;
 import com.reclamos.backend.config.SecurityConfiguration;
 import com.reclamos.backend.dto.TicketFilter;
 import com.reclamos.backend.dto.TicketResponse;
+import com.reclamos.backend.dto.response.CreateTicketResponse;
 import com.reclamos.backend.entity.TicketStatus;
 import com.reclamos.backend.exception.InvalidTicketRequestException;
 import com.reclamos.backend.exception.ResourceNotFoundException;
@@ -64,6 +65,29 @@ class TicketControllerTest {
 
     @MockitoBean
     private AuthService authService;
+
+    @Test
+    void createReturnsServerGeneratedPublicId() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+        when(ticketService.create(any(), eq(AGENT), any()))
+                .thenReturn(new CreateTicketResponse(
+                        ticketId, "TK-2026-000123", "tracking-secret", TicketStatus.REGISTERED));
+
+        mockMvc.perform(post("/api/tickets")
+                        .with(authentication(AGENT_AUTHENTICATION))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "requestTypeId": 1,
+                                  "summary": "Resumen",
+                                  "description": "Descripción",
+                                  "formData": {}
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.ticketId").value(ticketId.toString()))
+                .andExpect(jsonPath("$.publicId").value("TK-2026-000123"));
+    }
 
     @Test
     void listPassesFiltersAndPagingToServiceAndReturnsPagedBody() throws Exception {
