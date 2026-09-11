@@ -172,6 +172,19 @@ class OpenApiContractTest {
     }
 
     @Test
+    void publicIdUsesTheCanonicalReusableContractInEveryExistingResponse() {
+        Map<String, Object> schemas = map(spec, "components", "schemas");
+        Map<String, Object> publicId = map(schemas, "TicketPublicId");
+
+        assertEquals("^TK-[0-9]{4}-[0-9]{6,}$", publicId.get("pattern"));
+        assertEquals("TK-2026-000123", publicId.get("example"));
+        for (String responseSchema : Set.of("TicketResponse", "CreateTicketResponse", "TrackingTicketResponse")) {
+            assertEquals("#/components/schemas/TicketPublicId",
+                    map(schemas, responseSchema, "properties", "publicId").get("$ref"), responseSchema);
+        }
+    }
+
+    @Test
     void requiredAndNullableMatchTheCurrentJacksonContracts() {
         Map<String, Object> schemas = map(spec, "components", "schemas");
         for (String schemaName : RESPONSE_SCHEMAS_WITH_STABLE_PRESENCE) {
