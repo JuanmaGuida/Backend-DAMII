@@ -1,22 +1,26 @@
 package com.reclamos.backend.service;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.ActiveProfiles;
+import org.springframework.boot.context.properties.bind.Binder;
+import org.springframework.boot.test.context.ConfigDataApplicationContextInitializer;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
 import java.time.Duration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-@SpringBootTest
-@ActiveProfiles("dev")
 class ResolutionConfirmationConfigurationTest {
-    @Value("${ticket.resolution.confirmation-duration}")
-    private Duration confirmationDuration;
+    private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
+            .withInitializer(new ConfigDataApplicationContextInitializer());
 
     @Test
     void defaultConfirmationDurationIsThreeDays() {
-        assertEquals(Duration.ofDays(3), confirmationDuration);
+        contextRunner.run(context -> {
+            Duration confirmationDuration = Binder.get(context.getEnvironment())
+                    .bind("ticket.resolution.confirmation-duration", Duration.class)
+                    .orElseThrow(() -> new AssertionError("Falta la configuración de confirmación"));
+
+            assertEquals(Duration.ofDays(3), confirmationDuration);
+        });
     }
 }

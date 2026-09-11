@@ -1,19 +1,6 @@
--- Renumerada de V10 a V25 tras detectar la colisión de versiones Flyway
--- post-merge feature-nico -> dev (DDA2-160). Ver V21 para el detalle.
---
--- Entidades V1.49 §4/§6: Ticket.formTemplateId (BIGINT FK FormTemplate,
--- null) no existía en el esquema. Es obligatorio cuando el RequestType
--- vigente posee formulario (hoy, en este backend, todos lo tienen — ver
--- FormValidationService.resolveActiveTemplate) y queda fijo junto con
--- RequestType y formData en cuanto classificationFinalizedAt se setea.
--- Nullable porque los tickets creados antes de esta columna no tienen
--- valor y porque la documentación contempla RequestTypes sin formulario.
-ALTER TABLE tickets
-    ADD COLUMN form_template_id BIGINT;
-
-ALTER TABLE tickets
-    ADD CONSTRAINT fk_ticket_form_template
-        FOREIGN KEY (form_template_id) REFERENCES form_templates (id);
+-- Renumerada de V10 a V25 tras el merge feature-nico -> dev. La columna y
+-- una FK compuesta más estricta ya existen desde V7 en la secuencia unificada;
+-- sólo faltaba conservar el índice que aportaba la migración original.
 
 CREATE INDEX idx_ticket_form_template
     ON tickets (form_template_id);
