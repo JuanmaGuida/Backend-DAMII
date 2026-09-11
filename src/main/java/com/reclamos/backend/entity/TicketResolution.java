@@ -37,7 +37,7 @@ public class TicketResolution {
     @Column(name = "resolved_by_type", nullable = false, length = 30)
     private ActorType resolvedByType;
 
-    @Column(name = "resolved_by_id", nullable = false, length = 100)
+    @Column(name = "resolved_by_id", length = 100)
     private String resolvedById;
 
     @Column(name = "resolved_by_module_id", nullable = false, length = 20)

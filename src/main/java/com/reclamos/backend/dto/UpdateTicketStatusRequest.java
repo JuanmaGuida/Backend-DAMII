@@ -1,6 +1,7 @@
 package com.reclamos.backend.dto;
 
 import com.reclamos.backend.entity.UpdateTicketStatusType;
+import com.reclamos.backend.entity.ResolutionType;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -52,7 +53,7 @@ public record UpdateTicketStatusRequest(
     public record ReturnInfo(String reasonCode) {
     }
 
-    public record Resolution(String type) {
+    public record Resolution(ResolutionType type) {
     }
 
     public record Cancellation(String reasonCode) {

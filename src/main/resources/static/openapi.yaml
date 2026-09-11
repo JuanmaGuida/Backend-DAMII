@@ -750,6 +750,11 @@ components:
             code: UNSUPPORTED_MEDIA_TYPE
             message: Tipo de contenido no soportado
   schemas:
+    TicketPublicId:
+      type: string
+      description: Identificador humano estable del ticket; no reemplaza al UUID ni al código secreto de tracking.
+      pattern: '^TK-[0-9]{4}-[0-9]{6,}$'
+      example: TK-2026-000123
     ApiError:
       type: object
       required: [code, message]
@@ -960,7 +965,7 @@ components:
           type: string
           format: uuid
         publicId:
-          type: string
+          $ref: '#/components/schemas/TicketPublicId'
         requestTypeCode:
           type: string
         requestTypeName:
@@ -1061,7 +1066,7 @@ components:
           type: string
           format: uuid
         publicId:
-          type: string
+          $ref: '#/components/schemas/TicketPublicId'
         trackingCode:
           type: string
           description: Código que permite consultar el ticket mediante el endpoint público de tracking.
@@ -1184,7 +1189,7 @@ components:
       required: [publicId, status, summary, createdAt, statusChangedAt, requestType, category, subcategory]
       properties:
         publicId:
-          type: string
+          $ref: '#/components/schemas/TicketPublicId'
         status:
           $ref: '#/components/schemas/TicketStatus'
         summary:

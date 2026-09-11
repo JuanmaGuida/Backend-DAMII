@@ -9,6 +9,7 @@ import com.reclamos.backend.entity.Category;
 import com.reclamos.backend.entity.InboxEvent;
 import com.reclamos.backend.entity.InboxStatus;
 import com.reclamos.backend.entity.RequestType;
+import com.reclamos.backend.entity.ResolutionType;
 import com.reclamos.backend.entity.Subcategory;
 import com.reclamos.backend.entity.Ticket;
 import com.reclamos.backend.entity.TicketActivity;
@@ -46,14 +47,9 @@ import java.util.UUID;
  * {@link InboxEventRepository} (§19.1) y valida producer.moduleId contra
  * responsibleAreaId (§23.3 paso 2) antes de aplicar cualquier transición.
  * <p>
- * ALCANCE REDUCIDO A PROPÓSITO que sigue vigente (documentado updateType por
- * updateType más abajo): no existen todavía las entidades InformationRequest,
- * TicketResolution ni TicketCancellation (Sprint 4/5), así que esos hechos
- * se registran con los campos genéricos que ya tiene TicketActivity
- * (reasonCode, message) en lugar de un modelo dedicado. Tampoco se
- * implementa la republicación de ticketUpdated después de consumir un
- * updateTicketStatus (Eventos v1.6 §10) — el AC de la Story 3.4 pide
- * reproducir la transición, no el eco de vuelta al bus.
+ * La resolución delega sus efectos de dominio en {@link TicketResolutionService}
+ * para que el simulador y un futuro consumer real compartan exactamente el
+ * mismo caso de uso. La republicación de ticketUpdated sigue fuera de alcance.
  * <p>
  * NO IMPLEMENTADO A PROPÓSITO: si el envelope es válido pero el payload de
  * negocio no lo es para ese updateType (ej. falta details.returnInfo), la
@@ -72,12 +68,14 @@ public class TicketStatusUpdateService {
 
     private static final String SUPPORTED_SPEC_VERSION = "1.0";
     private static final String SUPPORTED_EVENT_TYPE = "updateTicketStatus";
+    private static final String LOCAL_MODULE_ID = "M2";
 
     private final TicketRepository ticketRepository;
     private final TicketActivityRepository activityRepository;
     private final TicketLocationRepository locationRepository;
     private final TicketMessageRepository messageRepository;
     private final InboxEventRepository inboxEventRepository;
+    private final TicketResolutionService ticketResolutionService;
 
     @Transactional
     public TicketResponse applyUpdate(UUID ticketId, UpdateTicketStatusEnvelope envelope) {
@@ -105,9 +103,15 @@ public class TicketStatusUpdateService {
                             + "') no coincide con el área responsable del ticket ('"
                             + ticket.getResponsibleAreaId() + "')");
         }
+        if (LOCAL_MODULE_ID.equalsIgnoreCase(ticket.getResponsibleAreaId())) {
+            throw new InvalidTicketRequestException(
+                    "Los tickets gestionados por M2 deben utilizar el flujo de resolución manual");
+        }
 
         ActorType actorType = mapActorType(request.updatedBy().type());
+        requireExternalActorType(actorType);
         String reasonCode = null;
+        ResolutionType resolutionType = null;
         ActivityType activityType;
         TicketStatus previousStatus = ticket.getCurrentStatus();
         TicketStatus newStatus;
@@ -167,7 +171,7 @@ public class TicketStatusUpdateService {
                         TicketStatus.ROUTED, TicketStatus.IN_PROGRESS);
                 UpdateTicketStatusRequest.Resolution resolution = request.details() == null
                         ? null : request.details().resolution();
-                if (resolution == null || isBlank(resolution.type())) {
+                if (resolution == null || resolution.type() == null) {
                     throw new InvalidTicketRequestException("RESOLVED requiere details.resolution.type");
                 }
                 if (isBlank(request.publicMessage())) {
@@ -175,7 +179,8 @@ public class TicketStatusUpdateService {
                 }
                 newStatus = TicketStatus.RESOLVED;
                 activityType = ActivityType.RESOLVED;
-                reasonCode = resolution.type();
+                resolutionType = resolution.type();
+                reasonCode = resolution.type().name();
             }
             case REJECTED -> {
                 requireCurrentStatus(ticket, "REJECTED sólo es válido con el ticket en ROUTED o IN_PROGRESS",
@@ -196,9 +201,17 @@ public class TicketStatusUpdateService {
             default -> throw new InvalidTicketRequestException("updateType no soportado: " + request.updateType());
         }
 
-        ticket.setCurrentStatus(newStatus);
-        ticket.setStatusChangedAt(Instant.now());
-        ticketRepository.save(ticket);
+        if (request.updateType() == UpdateTicketStatusType.RESOLVED) {
+            ticketResolutionService.applyValidatedResolution(ticket,
+                    new TicketResolutionService.ResolutionApplication(
+                            resolutionType, request.publicMessage(), request.internalMessage(),
+                            actorType, request.updatedBy().id(), envelope.producer().moduleId(),
+                            request.updateOccurredAt(), envelope.eventId()));
+        } else {
+            ticket.setCurrentStatus(newStatus);
+            ticket.setStatusChangedAt(Instant.now());
+            ticketRepository.save(ticket);
+        }
 
         String sourceModuleId = envelope.producer().moduleId();
         if (!isBlank(request.publicMessage())) {
@@ -210,10 +223,12 @@ public class TicketStatusUpdateService {
                     actorType, request.updatedBy().id(), sourceModuleId));
         }
 
-        recordActivity(ticket, activityType, previousStatus, newStatus, actorType, request.updatedBy().id(),
-                sourceModuleId, reasonCode,
-                !isBlank(request.internalMessage()) ? request.internalMessage() : request.publicMessage(),
-                envelope.eventId(), request.updateOccurredAt());
+        if (request.updateType() != UpdateTicketStatusType.RESOLVED) {
+            recordActivity(ticket, activityType, previousStatus, newStatus, actorType, request.updatedBy().id(),
+                    sourceModuleId, reasonCode,
+                    !isBlank(request.internalMessage()) ? request.internalMessage() : request.publicMessage(),
+                    envelope.eventId(), request.updateOccurredAt());
+        }
 
         // InboxEvent se inserta en la MISMA transacción que el resto: si esto
         // violara la unicidad de eventId (dos requests concurrentes con el
@@ -302,6 +317,13 @@ public class TicketStatusUpdateService {
         } catch (IllegalArgumentException | NullPointerException exception) {
             throw new InvalidTicketRequestException(
                     "updatedBy.type inválido: debe ser uno de " + java.util.Arrays.toString(ActorType.values()));
+        }
+    }
+
+    private void requireExternalActorType(ActorType actorType) {
+        if (actorType != ActorType.EXTERNAL_USER && actorType != ActorType.SYSTEM) {
+            throw new InvalidTicketRequestException(
+                    "updatedBy.type debe ser EXTERNAL_USER o SYSTEM para hechos de un módulo externo");
         }
     }
 

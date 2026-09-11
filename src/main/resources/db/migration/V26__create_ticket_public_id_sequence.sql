@@ -1,0 +1,7 @@
+CREATE SEQUENCE ticket_public_id_seq
+    AS BIGINT
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    NO CYCLE;

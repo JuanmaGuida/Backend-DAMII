@@ -69,25 +69,42 @@ public class TicketResolutionService {
         Instant now = clock.instant();
         ActorType actorType = identity.role() == ModuleRole.ADMIN ? ActorType.ADMIN : ActorType.AGENT;
         String actorId = identity.citizenId().toString();
-        TicketResolution resolution = new TicketResolution();
-        resolution.setTicket(ticket);
-        resolution.setType(request.getType());
-        resolution.setPublicMessage(request.getPublicMessage());
-        resolution.setInternalMessage(request.getInternalMessage());
-        resolution.setResolvedByType(actorType);
-        resolution.setResolvedById(actorId);
-        resolution.setResolvedByModuleId(MODULE_ID);
-        resolution.setResolvedAt(now);
-        resolution = resolutionRepository.save(resolution);
-
-        ticket.setCurrentStatus(TicketStatus.RESOLVED);
-        ticket.setStatusChangedAt(now);
-        ticket.setResolutionConfirmationDueAt(now.plus(confirmationDuration));
-        ticketRepository.save(ticket);
-        saveActivity(ticket, request, actorType, actorId, now);
+        TicketResolution resolution = applyValidatedResolution(ticket, new ResolutionApplication(
+                request.getType(), request.getPublicMessage(), request.getInternalMessage(),
+                actorType, actorId, MODULE_ID, now, null));
 
         return new TicketResolutionResponse(resolution.getId(), ticket.getId(), TicketStatus.RESOLVED,
                 resolution.getType(), resolution.getPublicMessage(), resolution.getInternalMessage(), now);
+    }
+
+    /**
+     * Aplica los efectos de dominio comunes a una resolución cuyo origen,
+     * estado y payload ya fueron validados por el flujo que la invoca.
+     * El Ticket debe llegar bloqueado por {@code findByIdForUpdate}.
+     */
+    TicketResolution applyValidatedResolution(Ticket ticket, ResolutionApplication application) {
+        Objects.requireNonNull(ticket, "ticket es obligatorio");
+        Objects.requireNonNull(application, "application es obligatoria");
+
+        TicketStatus previousStatus = ticket.getCurrentStatus();
+        TicketResolution resolution = new TicketResolution();
+        resolution.setTicket(ticket);
+        resolution.setType(application.type());
+        resolution.setPublicMessage(application.publicMessage());
+        resolution.setInternalMessage(application.internalMessage());
+        resolution.setResolvedByType(application.actorType());
+        resolution.setResolvedById(application.actorId());
+        resolution.setResolvedByModuleId(application.sourceModuleId());
+        resolution.setResolvedAt(application.resolvedAt());
+        resolution = resolutionRepository.save(resolution);
+
+        ticket.setCurrentStatus(TicketStatus.RESOLVED);
+        ticket.setStatusChangedAt(application.resolvedAt());
+        ticket.setResolutionConfirmationDueAt(application.resolvedAt().plus(confirmationDuration));
+        ticketRepository.save(ticket);
+        saveResolutionActivity(ticket, previousStatus, application);
+
+        return resolution;
     }
 
     @Transactional
@@ -171,20 +188,42 @@ public class TicketResolutionService {
                 ticket.getStatusChangedAt(), ticket.getReopenCount());
     }
 
-    private void saveActivity(Ticket ticket, ResolveTicketRequest request, ActorType actorType,
-                              String actorId, Instant occurredAt) {
+    private void saveResolutionActivity(Ticket ticket, TicketStatus previousStatus,
+                                        ResolutionApplication application) {
         TicketActivity activity = new TicketActivity();
         activity.setTicket(ticket);
         activity.setSequence(activityRepository.countByTicketId(ticket.getId()) + 1);
         activity.setActionType(ActivityType.RESOLVED);
-        activity.setPreviousStatus(TicketStatus.IN_PROGRESS);
+        activity.setPreviousStatus(previousStatus);
         activity.setNewStatus(TicketStatus.RESOLVED);
-        activity.setActorType(actorType);
-        activity.setActorId(actorId);
-        activity.setSourceModuleId(MODULE_ID);
-        activity.setReasonCode(request.getType().name());
-        activity.setMessage(request.getPublicMessage());
-        activity.setOccurredAt(occurredAt);
+        activity.setActorType(application.actorType());
+        activity.setActorId(application.actorId());
+        activity.setSourceModuleId(application.sourceModuleId());
+        activity.setExternalEventId(application.externalEventId());
+        activity.setReasonCode(application.type().name());
+        activity.setMessage(application.publicMessage());
+        activity.setOccurredAt(application.resolvedAt());
         activityRepository.save(activity);
+    }
+
+    record ResolutionApplication(
+            ResolutionType type,
+            String publicMessage,
+            String internalMessage,
+            ActorType actorType,
+            String actorId,
+            String sourceModuleId,
+            Instant resolvedAt,
+            UUID externalEventId
+    ) {
+        public ResolutionApplication {
+            Objects.requireNonNull(type, "type es obligatorio");
+            if (publicMessage == null || publicMessage.isBlank()) {
+                throw new IllegalArgumentException("publicMessage es obligatorio");
+            }
+            Objects.requireNonNull(actorType, "actorType es obligatorio");
+            Objects.requireNonNull(sourceModuleId, "sourceModuleId es obligatorio");
+            Objects.requireNonNull(resolvedAt, "resolvedAt es obligatorio");
+        }
     }
 }

@@ -89,6 +89,8 @@ class TicketServiceTest {
     @Spy
     private TrackingCodeService trackingCodes = new TrackingCodeService();
     @Mock
+    private TicketPublicIdGenerator publicIds;
+    @Mock
     private SlaCalculationService sla;
     private final AttachmentService attachments = mock(AttachmentService.class);
     @Mock
@@ -109,6 +111,7 @@ class TicketServiceTest {
         ReflectionTestUtils.setField(service, "producerService", "help-center-api");
 
         lenient().when(clock.instant()).thenReturn(NOW);
+        lenient().when(publicIds.generate(NOW)).thenReturn("TK-2026-000123");
 
         lenient().when(
                 sla.calculateDueAt(any(), any(Priority.class), eq(SlaType.FIRST_RESPONSE))
@@ -171,11 +174,13 @@ class TicketServiceTest {
 
         assertEquals(TicketStatus.REGISTERED, response.status());
         assertNotNull(response.trackingCode());
-        assertTrue(response.publicId().matches("OP-[0-9]{10}"));
+        assertEquals("TK-2026-000123", response.publicId());
         assertThrows(IllegalArgumentException.class, () -> UUID.fromString(response.publicId()));
 
         verify(tickets).save(argThat(ticket ->
                 ticket.getCurrentStatus() == TicketStatus.REGISTERED
+                        && ticket.getPublicId().equals(response.publicId())
+                        && ticket.getCreatedAt().equals(NOW)
                         && ticket.getTicketType() == requestType.getTicketType()
                         && ticket.getResponsibleAreaId().equals("M6")
                         && ticket.getResponsibleAreaId().equals(requestType.getResponsibleAreaId())
@@ -751,6 +756,7 @@ class TicketServiceTest {
     @Test
     void correctClassificationRecalculatesAreaAffectedCountFormTemplateAndPriorityFromNewRequestType() {
         Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.LOW);
+        String originalPublicId = ticket.getPublicId();
         // formData del RequestType viejo no debe sobrevivir a la reclasificación
         // — ver assertion de formData al final del test.
         ticket.setFormData(new HashMap<>(Map.of("waterHeight", 35)));
@@ -778,6 +784,7 @@ class TicketServiceTest {
         TicketResponse response = service.correctClassification(ticketId, 20L, actor);
 
         assertThat(ticket.getResponsibleAreaId()).isEqualTo("obras-hidraulicas");
+        assertThat(ticket.getPublicId()).isEqualTo(originalPublicId);
         assertThat(ticket.getEstimatedAffectedCount()).isEqualTo(20_000);
         assertThat(ticket.getCurrentPriority()).isEqualTo(Priority.HIGH);
         assertThat(ticket.getFormTemplateId()).isEqualTo(99L);
@@ -870,6 +877,7 @@ class TicketServiceTest {
     void routeToAreaMovesInReviewTicketToRoutedAndWritesOutboxEvent() {
         Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.HIGH);
         ticket.setResponsibleAreaId("M6");
+        String originalPublicId = ticket.getPublicId();
 
         when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
         when(activities.countByTicketId(ticketId)).thenReturn(0);
@@ -879,6 +887,7 @@ class TicketServiceTest {
 
         assertThat(response.getCurrentStatus()).isEqualTo(TicketStatus.ROUTED);
         assertThat(ticket.getCurrentStatus()).isEqualTo(TicketStatus.ROUTED);
+        assertThat(ticket.getPublicId()).isEqualTo(originalPublicId);
         assertThat(ticket.getClassificationFinalizedAt()).isNotNull();
 
         ArgumentCaptor<TicketActivity> activityCaptor = ArgumentCaptor.forClass(TicketActivity.class);
@@ -892,8 +901,11 @@ class TicketServiceTest {
         assertThat(event.getTicket()).isSameAs(ticket);
         @SuppressWarnings("unchecked")
         Map<String, Object> data = (Map<String, Object>) event.getPayload().get("data");
+        assertThat(data.get("ticketId")).isEqualTo(ticketId);
+        assertThat(data.get("publicId")).isEqualTo(originalPublicId);
         assertThat(data.get("updateType")).isEqualTo("ROUTED");
         assertThat(data.get("responsibleAreaId")).isEqualTo("M6");
+        assertThat(event.getPayload().get("subject")).isEqualTo("tickets/" + ticketId);
     }
 
     @Test
@@ -1034,7 +1046,7 @@ class TicketServiceTest {
 
         Ticket ticket = new Ticket();
         ticket.setId(ticketId);
-        ticket.setPublicId("OP-0000000001");
+        ticket.setPublicId("TK-2026-000001");
         ticket.setRequestType(type);
         ticket.setTicketType(TicketType.COMPLAINT);
         ticket.setResponsibleAreaId("obras-viales");
