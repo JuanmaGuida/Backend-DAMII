@@ -103,7 +103,8 @@ class SecurityHardeningIntegrationTest {
                 Instant.parse("2026-09-01T10:00:00Z"),
                 new TrackingTicketResponse.RequestTypeSummary("Tipo"),
                 new TrackingTicketResponse.CategorySummary("Categoría"),
-                new TrackingTicketResponse.SubcategorySummary("Subcategoría")
+                new TrackingTicketResponse.SubcategorySummary("Subcategoría"),
+                new TrackingTicketResponse.SlaSummary(null, null)
         ));
 
         when(ticketService.create(any(), any(), any())).thenReturn(new CreateTicketResponse(
