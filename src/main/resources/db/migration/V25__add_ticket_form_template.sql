@@ -1,3 +1,6 @@
+-- Renumerada de V10 a V25 tras detectar la colisión de versiones Flyway
+-- post-merge feature-nico -> dev (DDA2-160). Ver V21 para el detalle.
+--
 -- Entidades V1.49 §4/§6: Ticket.formTemplateId (BIGINT FK FormTemplate,
 -- null) no existía en el esquema. Es obligatorio cuando el RequestType
 -- vigente posee formulario (hoy, en este backend, todos lo tienen — ver

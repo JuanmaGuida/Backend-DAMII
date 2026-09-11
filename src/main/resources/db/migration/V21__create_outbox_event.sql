@@ -1,3 +1,8 @@
+-- Renumerada de V5 a V21 tras detectar la colisión de versiones Flyway
+-- post-merge feature-nico -> dev (DDA2-160): V5-V10 ya estaban ocupadas de
+-- forma independiente en dev con contenido distinto. Se reubica después de
+-- V20, que era la última versión de dev al momento del merge. Contenido sin
+-- cambios respecto al V5 original.
 CREATE TABLE outbox_events (
     id BIGSERIAL PRIMARY KEY,
     event_id UUID NOT NULL,
