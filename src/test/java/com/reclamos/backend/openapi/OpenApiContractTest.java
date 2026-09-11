@@ -35,7 +35,11 @@ class OpenApiContractTest {
             "GET /api/catalog/categories/{categoryId}/subcategories",
             "GET /api/catalog/subcategories/{subcategoryId}/request-types",
             "GET /api/catalog/request-types/{requestTypeId}/form",
+            "GET /api/tickets",
             "POST /api/tickets",
+            "POST /api/tickets/{ticketId}/review",
+            "PATCH /api/tickets/{ticketId}/classification",
+            "POST /api/tickets/{ticketId}/route",
             "POST /api/tickets/{ticketId}/information-request",
             "POST /api/tickets/{ticketId}/information-response",
             "POST /api/tickets/{ticketId}/resolution",
@@ -45,7 +49,11 @@ class OpenApiContractTest {
     );
     private static final Set<String> PROTECTED_OPERATIONS = Set.of(
             "GET /api/auth/me",
+            "GET /api/tickets",
             "POST /api/tickets",
+            "POST /api/tickets/{ticketId}/review",
+            "PATCH /api/tickets/{ticketId}/classification",
+            "POST /api/tickets/{ticketId}/route",
             "POST /api/tickets/{ticketId}/information-request",
             "POST /api/tickets/{ticketId}/information-response",
             "POST /api/tickets/{ticketId}/resolution",
@@ -90,7 +98,7 @@ class OpenApiContractTest {
     void versionedFileIsAValidOpenApi3DocumentWithExactlyTheCurrentBusinessOperations() {
         assertTrue(string(spec.get("openapi")).startsWith("3."));
         assertEquals("3.0.3", parsedOpenApi.getOpenapi());
-        assertEquals(15, parsedOpenApi.getPaths().size());
+        assertEquals(18, parsedOpenApi.getPaths().size());
         assertNotNull(map(spec, "info").get("title"));
         assertNotNull(map(spec, "components").get("schemas"));
         assertEquals(EXPECTED_OPERATIONS, documentedOperations());

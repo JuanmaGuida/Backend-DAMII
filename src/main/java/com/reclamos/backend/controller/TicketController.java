@@ -1,16 +1,22 @@
 package com.reclamos.backend.controller;
 
+import com.reclamos.backend.dto.ClassificationCorrectionRequest;
+import com.reclamos.backend.dto.TicketFilter;
+import com.reclamos.backend.dto.TicketResponse;
 import com.reclamos.backend.dto.request.*;
-import com.reclamos.backend.dto.response.InformationRequestResponse;
-import com.reclamos.backend.dto.response.TicketResolutionActionResponse;
-import com.reclamos.backend.service.InformationRequestService;
-import com.reclamos.backend.service.TicketService;
-import com.reclamos.backend.dto.response.CreateTicketResponse;
+import com.reclamos.backend.dto.response.*;
+import com.reclamos.backend.entity.Priority;
+import com.reclamos.backend.entity.TicketStatus;
 import com.reclamos.backend.identity.AuthenticatedIdentity;
+import com.reclamos.backend.service.InformationRequestService;
 import com.reclamos.backend.service.TicketResolutionService;
-import com.reclamos.backend.dto.response.TicketResolutionResponse;
+import com.reclamos.backend.service.TicketService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -42,6 +48,60 @@ public class TicketController {
             @RequestPart(value = "evidence", required = false) MultipartFile[] evidence,
             @AuthenticationPrincipal AuthenticatedIdentity identity) {
         return ticketService.create(request, identity, evidence);
+    }
+
+    /**
+     * Story 3.1 - BE: Endpoint de listado con filtros por categoría, prioridad,
+     * barrio/rol y estado. "Rol" se interpretó como responsibleAreaId — ver el
+     * javadoc de TicketFilter.
+     */
+    @GetMapping
+    public Page<TicketResponse> list(
+            @RequestParam(required = false) Long categoryId,
+            @RequestParam(required = false) Priority priority,
+            @RequestParam(required = false) UUID neighborhoodId,
+            @RequestParam(required = false) String responsibleAreaId,
+            @RequestParam(required = false) TicketStatus status,
+            @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable
+    ) {
+        TicketFilter filter = new TicketFilter(categoryId, priority, neighborhoodId, responsibleAreaId, status);
+        return ticketService.listTickets(filter, pageable);
+    }
+
+    /**
+     * Story 3.2 - BE: Endpoint de transición REGISTERED -&gt; IN_REVIEW (toma de
+     * ticket por un agente).
+     */
+    @PostMapping("/{ticketId}/review")
+    public TicketResponse startReview(
+            @PathVariable UUID ticketId,
+            @AuthenticationPrincipal AuthenticatedIdentity actor
+    ) {
+        return ticketService.startReview(ticketId, actor);
+    }
+
+    /**
+     * Story 3.2 - BE: Endpoint de corrección de clasificación.
+     */
+    @PatchMapping("/{ticketId}/classification")
+    public TicketResponse correctClassification(
+            @PathVariable UUID ticketId,
+            @Valid @RequestBody ClassificationCorrectionRequest request,
+            @AuthenticationPrincipal AuthenticatedIdentity actor
+    ) {
+        return ticketService.correctClassification(ticketId, request.requestTypeId(), actor);
+    }
+
+    /**
+     * Story 3.3 - BE: Endpoint de derivación (IN_REVIEW -&gt; ROUTED) +
+     * publicación del evento ticketUpdated al outbox (DDA2-59).
+     */
+    @PostMapping("/{ticketId}/route")
+    public TicketResponse routeToArea(
+            @PathVariable UUID ticketId,
+            @AuthenticationPrincipal AuthenticatedIdentity actor
+    ) {
+        return ticketService.routeToArea(ticketId, actor);
     }
 
     @PostMapping(path = "/{ticketId}/information-request", consumes = MediaType.APPLICATION_JSON_VALUE)

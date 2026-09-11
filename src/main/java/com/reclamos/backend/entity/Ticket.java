@@ -79,6 +79,17 @@ public class Ticket {
     )
     private RequestType requestType;
 
+    /**
+     * Entidades V1.49 §4/§6: registra CON QUÉ FormTemplate/versión quedó
+     * asociado formData, ya que FormValidationService resuelve "la plantilla
+     * activa" en vivo a partir de requestTypeId y esa plantilla puede
+     * cambiar de versión con el tiempo. Se fija en create() y se recalcula
+     * en correctClassification() junto con requestType y formData; queda
+     * congelado en cuanto classificationFinalizedAt se setea. Nullable
+     * porque un RequestType puede no tener formulario configurado (formData
+     * vacío) y porque los tickets creados antes de esta columna no tienen
+     * valor.
+     */
     @Column(name = "form_template_id")
     private Long formTemplateId;
 

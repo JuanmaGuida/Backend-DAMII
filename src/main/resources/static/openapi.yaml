@@ -175,6 +175,77 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
   /api/tickets:
+    get:
+      tags: [ Tickets ]
+      summary: Listar tickets con filtros
+      description: |
+        Bandeja de tickets para agentes/administradores, con filtros combinables
+        por categoría, prioridad, barrio, área responsable y estado (Story 3.1).
+      operationId: listTickets
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - name: categoryId
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+        - name: priority
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/Priority'
+        - name: neighborhoodId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: responsibleAreaId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/TicketStatus'
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 0
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 20
+        - name: sort
+          in: query
+          required: false
+          description: Propiedades ordenables de Ticket (whitelist propia del backend); formato `campo,direccion`.
+          schema:
+            type: array
+            items:
+              type: string
+          example: [ "createdAt,desc" ]
+      responses:
+        '200':
+          description: Página de tickets que cumplen los filtros.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedTicketResponse'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/InvalidToken'
     post:
       tags: [Tickets]
       summary: Crear un ticket
@@ -275,6 +346,92 @@ paths:
               example:
                 code: ATTACHMENT_STORAGE_UNAVAILABLE
                 message: No fue posible almacenar la evidencia. Intentá nuevamente más tarde.
+  /api/tickets/{ticketId}/review:
+    post:
+      tags: [ Tickets ]
+      summary: Tomar un ticket a revisión
+      description: |
+        Transición REGISTERED -> IN_REVIEW; asigna el agente autenticado como
+        assignedAgent si el ticket todavía no tiene uno asignado (Story 3.2).
+      operationId: startTicketReview
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - $ref: '#/components/parameters/TicketId'
+      responses:
+        '200':
+          description: Ticket en revisión.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketResponse'
+        '401':
+          $ref: '#/components/responses/InvalidToken'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/TicketStateConflict'
+  /api/tickets/{ticketId}/classification:
+    patch:
+      tags: [ Tickets ]
+      summary: Corregir la clasificación de un ticket
+      description: |
+        Permite reclasificar el RequestType durante la primera revisión del
+        ticket (antes de derivarlo a un área), recalculando área responsable,
+        cantidad estimada de afectados, plantilla de formulario, prioridad y
+        el SLA inicial (Story 3.2).
+      operationId: correctTicketClassification
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - $ref: '#/components/parameters/TicketId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClassificationCorrectionRequest'
+      responses:
+        '200':
+          description: Clasificación corregida.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketResponse'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/InvalidToken'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/TicketStateConflict'
+  /api/tickets/{ticketId}/route:
+    post:
+      tags: [ Tickets ]
+      summary: Derivar un ticket al área responsable
+      description: |
+        Transición IN_REVIEW -> ROUTED; publica el evento ticketUpdated al
+        outbox salvo que el área responsable sea la propia gestión interna de
+        M2 (Story 3.3 / DDA2-59).
+      operationId: routeTicketToArea
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - $ref: '#/components/parameters/TicketId'
+      responses:
+        '200':
+          description: Ticket derivado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketResponse'
+        '401':
+          $ref: '#/components/responses/InvalidToken'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/TicketStateConflict'
   /api/tickets/{ticketId}/information-request:
     post:
       tags: [Information Requests]
@@ -574,6 +731,15 @@ components:
           example:
             code: TICKET_RESOLUTION_CONFLICT
             message: El estado actual del ticket no permite su resolución manual
+    TicketStateConflict:
+      description: El estado actual del ticket no permite la transición solicitada.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          example:
+            code: TICKET_STATE_CONFLICT
+            message: El ticket está en un estado que no permite esta operación
     UnsupportedMediaType:
       description: Tipo de contenido no soportado.
       content:
@@ -779,6 +945,114 @@ components:
           type: string
           maxLength: 500
           nullable: true
+    TicketResponse:
+      type: object
+      description: |
+        Vista interna de un ticket para agentes/administradores (listado y
+        transiciones de Sprint 2/3). No confundir con TrackingTicketResponse,
+        que es la vista pública reducida.
+      required: [id, publicId, requestTypeCode, requestTypeName, categoryName, subcategoryName,
+                 ticketType, summary, currentStatus, currentPriority, responsibleAreaId,
+                 assignedAgentId, anonymous, estimatedAffectedCount, escalated, neighborhoodId,
+                 neighborhoodName, classificationFinalizedAt, statusChangedAt, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        publicId:
+          type: string
+        requestTypeCode:
+          type: string
+        requestTypeName:
+          type: string
+        categoryName:
+          type: string
+        subcategoryName:
+          type: string
+        ticketType:
+          $ref: '#/components/schemas/TicketType'
+        summary:
+          type: string
+        currentStatus:
+          $ref: '#/components/schemas/TicketStatus'
+        currentPriority:
+          $ref: '#/components/schemas/Priority'
+        responsibleAreaId:
+          type: string
+        assignedAgentId:
+          type: string
+          description: Id interno (ModuleUser.id) del agente asignado, si existe.
+          nullable: true
+        anonymous:
+          type: boolean
+        estimatedAffectedCount:
+          type: integer
+          format: int32
+        escalated:
+          type: boolean
+        neighborhoodId:
+          type: string
+          format: uuid
+          nullable: true
+        neighborhoodName:
+          type: string
+          nullable: true
+        classificationFinalizedAt:
+          type: string
+          format: date-time
+          nullable: true
+        statusChangedAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+    PagedTicketResponse:
+      type: object
+      description: |
+        Forma simplificada de la página que devuelve Spring Data (`Page<TicketResponse>`)
+        para el listado de tickets; se documentan los campos estables para el
+        cliente, sin los metadatos internos de paginación de Spring (`pageable`, `sort`).
+      required: [content, totalElements, totalPages, size, number, first, last, numberOfElements, empty]
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/TicketResponse'
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        number:
+          type: integer
+          format: int32
+          description: Página actual (0-indexed).
+        first:
+          type: boolean
+        last:
+          type: boolean
+        numberOfElements:
+          type: integer
+          format: int32
+        empty:
+          type: boolean
+    ClassificationCorrectionRequest:
+      type: object
+      required: [requestTypeId]
+      properties:
+        requestTypeId:
+          type: integer
+          format: int64
+      additionalProperties: false
     CreateTicketResponse:
       type: object
       required: [ticketId, publicId, trackingCode, status]
@@ -958,6 +1232,9 @@ components:
     TicketStatus:
       type: string
       enum: [REGISTERED, IN_REVIEW, ROUTED, IN_PROGRESS, PENDING_INFORMATION, DUPLICATE, RESOLVED, CLOSED, CANCELLED]
+    Priority:
+      type: string
+      enum: [LOW, MEDIUM, HIGH, CRITICAL]
     InformationRequestStatus:
       type: string
       enum: [PENDING, ANSWERED, EXPIRED]
