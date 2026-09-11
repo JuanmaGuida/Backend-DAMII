@@ -9,7 +9,9 @@ import com.reclamos.backend.exception.EvidenceRequiredException;
 import com.reclamos.backend.exception.InvalidTicketRequestException;
 import com.reclamos.backend.exception.ResourceNotFoundException;
 import com.reclamos.backend.exception.TicketStateConflictException;
+import com.reclamos.backend.exception.UnauthorizedTicketOperationException;
 import com.reclamos.backend.identity.AuthenticatedIdentity;
+import com.reclamos.backend.identity.ModuleRole;
 import com.reclamos.backend.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -431,6 +433,101 @@ public class TicketService {
                 .collect(Collectors.toMap(location -> location.getTicket().getId(), Function.identity()));
 
         return page.map(ticket -> toResponse(ticket, locationsByTicket.get(ticket.getId())));
+    }
+
+    /**
+     * GET /me/tickets (Entidades V1.49 §"Autenticación, roles y vistas"):
+     * cualquier usuario autenticado vía M1 conserva capacidades ciudadanas
+     * base sobre sus propios tickets. A diferencia de listTickets (la
+     * bandeja staff de la Story 3.1, restringida por rol en
+     * SecurityConfiguration), acá no hay scoping por rol ni área: siempre
+     * se filtra por el citizenId de quien pregunta.
+     */
+    @Transactional(readOnly = true)
+    public Page<TicketResponse> listMyTickets(AuthenticatedIdentity identity, Pageable pageable) {
+        validateSort(pageable.getSort());
+        Page<Ticket> page = ticketRepository.findByCitizenId(identity.citizenId(), pageable);
+
+        List<UUID> ticketIds = page.getContent().stream().map(Ticket::getId).toList();
+        Map<UUID, TicketLocation> locationsByTicket = locationRepository
+                .findAllByTicket_IdIn(ticketIds).stream()
+                .collect(Collectors.toMap(location -> location.getTicket().getId(), Function.identity()));
+
+        return page.map(ticket -> toResponse(ticket, locationsByTicket.get(ticket.getId())));
+    }
+
+    /**
+     * GET /tickets/{id} (Entidades V1.49 §"Autenticación, roles y vistas":
+     * "Ciudadano owner | Consultar detalle ciudadano autorizado."). Un
+     * ticket anónimo no tiene citizenId, así que nunca es "propio" de
+     * ningún autenticado acá; se consulta por POST /tracking/access, no por
+     * este endpoint.
+     */
+    @Transactional(readOnly = true)
+    public TicketResponse getById(UUID ticketId, AuthenticatedIdentity identity) {
+        Ticket ticket = ticketRepository.findById(ticketId)
+                .orElseThrow(() -> new ResourceNotFoundException("El ticket solicitado no existe"));
+        requireOwner(ticket, identity);
+        TicketLocation location = locationRepository.findByTicket_Id(ticketId).orElse(null);
+        return toResponse(ticket, location);
+    }
+
+    private void requireOwner(Ticket ticket, AuthenticatedIdentity identity) {
+        if (identity == null || ticket.isAnonymous() || ticket.getCitizenId() == null
+                || !ticket.getCitizenId().equals(identity.citizenId())) {
+            throw new UnauthorizedTicketOperationException();
+        }
+    }
+
+    /**
+     * GET /staff/tickets/{id} (Guía funcional M2 §7, tabla de roles + §7.1):
+     * detalle staff. AGENT y ADMIN acceden a cualquier ticket ajeno sin
+     * restricción de área. AREA_RESPONSIBLE sólo accede a tickets de su
+     * propia areaId, salvo que el ticket sea suyo como ciudadano (§7.1:
+     * "si el usuario interno es owner... puede ver información interna por
+     * su rol"), en cuyo caso también puede verlo aunque sea de otra área.
+     * La restricción de "toda acción staff queda bloqueada" en ticket propio
+     * no aplica acá porque este endpoint es de sólo lectura.
+     */
+    @Transactional(readOnly = true)
+    public TicketResponse getStaffDetail(UUID ticketId, AuthenticatedIdentity identity) {
+        Ticket ticket = ticketRepository.findById(ticketId)
+                .orElseThrow(() -> new ResourceNotFoundException("El ticket solicitado no existe"));
+        requireStaffAccess(ticket, identity);
+        TicketLocation location = locationRepository.findByTicket_Id(ticketId).orElse(null);
+        return toResponse(ticket, location);
+    }
+
+    private void requireStaffAccess(Ticket ticket, AuthenticatedIdentity identity) {
+        if (identity == null) {
+            throw new UnauthorizedTicketOperationException();
+        }
+        boolean isOwnTicket = !ticket.isAnonymous() && ticket.getCitizenId() != null
+                && ticket.getCitizenId().equals(identity.citizenId());
+        if (identity.role() == ModuleRole.AREA_RESPONSIBLE && !isOwnTicket
+                && !ticket.getResponsibleAreaId().equals(identity.areaId())) {
+            throw new UnauthorizedTicketOperationException();
+        }
+    }
+
+    /**
+     * GET /staff/tickets/{id}/citizen-view (Guía funcional M2 §7.1): "misma
+     * proyección visible al ciudadano", pero consultada desde el contexto
+     * staff — no cambia la identidad de quien pregunta ni suplanta al
+     * propietario. El control de acceso de entrada es el mismo que
+     * getStaffDetail (AGENT/ADMIN cualquier ticket ajeno; AREA_RESPONSIBLE
+     * sólo su areaId o su propio ticket); la Guía aclara "en ticket ajeno es
+     * read-only", pero eso ya lo garantiza que este endpoint sea un GET.
+     * <p>
+     * Hoy delega directo en getStaffDetail porque TicketResponse todavía no
+     * distingue campos exclusivos de staff de la proyección pública del
+     * ciudadano — son la misma forma. Si el equipo agrega campos internos al
+     * detalle staff (por ejemplo notas internas u otra info no pública), hay
+     * que separar los dos mapeos acá, no sólo el nombre del método.
+     */
+    @Transactional(readOnly = true)
+    public TicketResponse getStaffCitizenView(UUID ticketId, AuthenticatedIdentity identity) {
+        return getStaffDetail(ticketId, identity);
     }
 
     private void validateSort(Sort sort) {

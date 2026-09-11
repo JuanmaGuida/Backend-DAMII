@@ -8,6 +8,7 @@ import com.reclamos.backend.entity.TicketStatus;
 import com.reclamos.backend.exception.InvalidTicketRequestException;
 import com.reclamos.backend.exception.ResourceNotFoundException;
 import com.reclamos.backend.exception.TicketStateConflictException;
+import com.reclamos.backend.exception.UnauthorizedTicketOperationException;
 import com.reclamos.backend.identity.AuthenticatedIdentity;
 import com.reclamos.backend.identity.ModuleRole;
 import com.reclamos.backend.security.BearerTokenAuthenticationFilter;
@@ -50,6 +51,27 @@ class TicketControllerTest {
     private static final UsernamePasswordAuthenticationToken AGENT_AUTHENTICATION =
             new UsernamePasswordAuthenticationToken(
                     AGENT, null, List.of(new SimpleGrantedAuthority("ROLE_AGENT")));
+
+    private static final AuthenticatedIdentity ADMIN = new AuthenticatedIdentity(
+            "test-admin", UUID.fromString("10000000-0000-0000-0000-000000000003"),
+            "Admin de prueba", null, ModuleRole.ADMIN);
+    private static final UsernamePasswordAuthenticationToken ADMIN_AUTHENTICATION =
+            new UsernamePasswordAuthenticationToken(
+                    ADMIN, null, List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
+
+    private static final AuthenticatedIdentity AREA_RESPONSIBLE = new AuthenticatedIdentity(
+            "test-area-responsible", UUID.fromString("10000000-0000-0000-0000-000000000004"),
+            "Responsable de área de prueba", "M2", ModuleRole.AREA_RESPONSIBLE);
+    private static final UsernamePasswordAuthenticationToken AREA_RESPONSIBLE_AUTHENTICATION =
+            new UsernamePasswordAuthenticationToken(
+                    AREA_RESPONSIBLE, null, List.of(new SimpleGrantedAuthority("ROLE_AREA_RESPONSIBLE")));
+
+    private static final AuthenticatedIdentity CITIZEN = new AuthenticatedIdentity(
+            "test-citizen", UUID.fromString("10000000-0000-0000-0000-000000000005"),
+            "Vecino de prueba", null, ModuleRole.CITIZEN);
+    private static final UsernamePasswordAuthenticationToken CITIZEN_AUTHENTICATION =
+            new UsernamePasswordAuthenticationToken(
+                    CITIZEN, null, List.of(new SimpleGrantedAuthority("ROLE_CITIZEN")));
 
     @Autowired
     private MockMvc mockMvc;
@@ -121,6 +143,72 @@ class TicketControllerTest {
         mockMvc.perform(get("/api/tickets").with(authentication(AGENT_AUTHENTICATION))
                         .param("sort", "notAField,desc"))
                 .andExpect(status().isBadRequest());
+    }
+
+    /**
+     * La bandeja (Story 3.1) es para quienes gestionan tickets del lado
+     * staff (Guía funcional M2 §7): AGENT, AREA_RESPONSIBLE y ADMIN. CITIZEN
+     * sólo tiene capacidades ciudadanas sobre sus propios tickets, así que
+     * no debe poder listar la bandeja completa vía este endpoint.
+     */
+    @Test
+    void listIsForbiddenForCitizen() throws Exception {
+        mockMvc.perform(get("/api/tickets").with(authentication(CITIZEN_AUTHENTICATION)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void listIsReachableForEveryStaffRole() throws Exception {
+        TicketResponse response = new TicketResponse();
+        response.setId(UUID.randomUUID());
+        Page<TicketResponse> page = new PageImpl<>(List.of(response));
+        when(ticketService.listTickets(any(TicketFilter.class), any(Pageable.class))).thenReturn(page);
+
+        mockMvc.perform(get("/api/tickets").with(authentication(AGENT_AUTHENTICATION)))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/tickets").with(authentication(AREA_RESPONSIBLE_AUTHENTICATION)))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/tickets").with(authentication(ADMIN_AUTHENTICATION)))
+                .andExpect(status().isOk());
+    }
+
+    /**
+     * GET /tickets/{id} (Entidades V1.49): "Ciudadano owner". El controller
+     * sólo delega; el 403 por no-ownership lo produce
+     * TicketService.requireOwner vía UnauthorizedTicketOperationException.
+     */
+    @Test
+    void getByIdDelegatesToServiceAndReturnsOk() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+        TicketResponse response = new TicketResponse();
+        response.setId(ticketId);
+        response.setCurrentStatus(TicketStatus.REGISTERED);
+        when(ticketService.getById(eq(ticketId), eq(AGENT))).thenReturn(response);
+
+        mockMvc.perform(get("/api/tickets/{ticketId}", ticketId).with(authentication(AGENT_AUTHENTICATION)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.currentStatus").value("REGISTERED"));
+    }
+
+    @Test
+    void getByIdOnMissingTicketReturnsNotFound() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+        when(ticketService.getById(eq(ticketId), any()))
+                .thenThrow(new ResourceNotFoundException("El ticket solicitado no existe"));
+
+        mockMvc.perform(get("/api/tickets/{ticketId}", ticketId).with(authentication(AGENT_AUTHENTICATION)))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void getByIdOnNonOwnerReturnsForbidden() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+        when(ticketService.getById(eq(ticketId), any()))
+                .thenThrow(new UnauthorizedTicketOperationException());
+
+        mockMvc.perform(get("/api/tickets/{ticketId}", ticketId).with(authentication(CITIZEN_AUTHENTICATION)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
     }
 
     @Test
