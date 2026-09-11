@@ -69,6 +69,18 @@ public class TicketController {
     }
 
     /**
+     * GET /tickets/{id} (Entidades V1.49): detalle ciudadano de un ticket,
+     * sólo para su propietario autenticado.
+     */
+    @GetMapping("/{ticketId}")
+    public TicketResponse getById(
+            @PathVariable UUID ticketId,
+            @AuthenticationPrincipal AuthenticatedIdentity identity
+    ) {
+        return ticketService.getById(ticketId, identity);
+    }
+
+    /**
      * Story 3.2 - BE: Endpoint de transición REGISTERED -&gt; IN_REVIEW (toma de
      * ticket por un agente).
      */

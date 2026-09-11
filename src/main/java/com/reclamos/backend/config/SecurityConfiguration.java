@@ -66,11 +66,41 @@ public class SecurityConfiguration {
                                 "/api/catalog/subcategories/{subcategoryId}/request-types",
                                 "/api/catalog/request-types/{requestTypeId}/form").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/auth/me").authenticated()
+                        // GET /me/tickets (Entidades V1.49): listado propio del ciudadano.
+                        // Cualquier rol conserva capacidades ciudadanas base, así que
+                        // alcanza con estar autenticado — el scoping por citizenId lo
+                        // hace TicketService.listMyTickets, no un rol puntual acá.
+                        .requestMatchers(HttpMethod.GET, "/api/me/tickets").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/tickets").authenticated()
-                        // BE - Story 3.1/3.2/3.3: sólo exigen estar autenticado, no un rol
-                        // puntual — el control de acceso por rol lo agrega otro compañero
-                        // por separado.
-                        .requestMatchers(HttpMethod.GET, "/api/tickets").authenticated()
+                        // BE - Story 3.1: la bandeja de triage es para quienes gestionan
+                        // tickets del lado staff (Guía funcional M2 §7: AGENT, AREA_RESPONSIBLE
+                        // y ADMIN conservan acceso staff a tickets ajenos). CITIZEN sólo tiene
+                        // capacidades ciudadanas sobre sus propios tickets y queda afuera.
+                        // Pendiente (no lo cubre este cambio): la Guía también dice que
+                        // AREA_RESPONSIBLE sólo accede a tickets de su propia areaId — acá
+                        // sólo se resuelve el "quién puede entrar", no el "qué ve una vez
+                        // adentro" por área.
+                        .requestMatchers(HttpMethod.GET, "/api/tickets")
+                        .hasAnyRole("AGENT", "AREA_RESPONSIBLE", "ADMIN")
+                        // GET /tickets/{id} (Entidades V1.49): detalle ciudadano, "Ciudadano
+                        // owner". No hay rol puntual que filtrar acá — cualquier autenticado
+                        // conserva capacidades ciudadanas base — el ownership real (sólo el
+                        // dueño del ticket) lo valida TicketService.requireOwner (403 si no
+                        // coincide el citizenId).
+                        .requestMatchers(HttpMethod.GET, "/api/tickets/*").authenticated()
+                        // GET /staff/tickets/{id} (Guía funcional M2 §7): detalle staff,
+                        // mismos roles que la bandeja (AGENT/AREA_RESPONSIBLE/ADMIN). El
+                        // scoping por areaId de AREA_RESPONSIBLE (y la excepción de ticket
+                        // propio) lo valida TicketService.requireStaffAccess, no acá.
+                        .requestMatchers(HttpMethod.GET, "/api/staff/tickets/*")
+                        .hasAnyRole("AGENT", "AREA_RESPONSIBLE", "ADMIN")
+                        // GET /staff/tickets/{id}/citizen-view (Guía funcional M2 §7.1):
+                        // mismo filtro de rol de entrada que el detalle staff — el
+                        // ownership/areaId real lo valida el mismo
+                        // TicketService.requireStaffAccess (getStaffCitizenView delega en
+                        // getStaffDetail).
+                        .requestMatchers(HttpMethod.GET, "/api/staff/tickets/*/citizen-view")
+                        .hasAnyRole("AGENT", "AREA_RESPONSIBLE", "ADMIN")
                         .requestMatchers(HttpMethod.POST, "/api/tickets/*/review").authenticated()
                         .requestMatchers(HttpMethod.PATCH, "/api/tickets/*/classification").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/tickets/*/route").authenticated()

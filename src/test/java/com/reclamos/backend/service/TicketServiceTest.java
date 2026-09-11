@@ -1027,6 +1027,235 @@ class TicketServiceTest {
     }
 
     // ==================================================================
+    // ---- listMyTickets (GET /me/tickets) ----
+    // ==================================================================
+
+    /**
+     * A diferencia de listTickets (bandeja staff, Specification con
+     * filtros), listMyTickets siempre scopea por el citizenId de quien
+     * pregunta y no acepta ningún filtro adicional.
+     */
+    @Test
+    void listMyTicketsScopesToCallerCitizenIdAndMapsNeighborhoodFromBatchedLocations() {
+        Ticket ticket = ticket(TicketStatus.REGISTERED, Priority.MEDIUM);
+        Neighborhood neighborhood = new Neighborhood();
+        neighborhood.setId(UUID.randomUUID());
+        neighborhood.setName("Recoleta");
+        neighborhood.setPopulation(150_000);
+        TicketLocation location = new TicketLocation();
+        location.setTicket(ticket);
+        location.setNeighborhood(neighborhood);
+
+        Pageable pageable = Pageable.unpaged();
+        Page<Ticket> page = new PageImpl<>(List.of(ticket));
+
+        when(tickets.findByCitizenId(eq(actor.citizenId()), any(Pageable.class))).thenReturn(page);
+        when(locations.findAllByTicket_IdIn(anyList())).thenReturn(List.of(location));
+
+        Page<TicketResponse> result = service.listMyTickets(actor, pageable);
+
+        assertThat(result.getContent()).hasSize(1);
+        assertThat(result.getContent().get(0).getNeighborhoodName()).isEqualTo("Recoleta");
+        verify(tickets).findByCitizenId(eq(actor.citizenId()), any(Pageable.class));
+        verify(tickets, never()).findAll(any(Specification.class), any(Pageable.class));
+    }
+
+    @Test
+    void listMyTicketsWithInvalidSortFieldThrowsBadRequestWithoutQueryingRepository() {
+        Pageable pageable = PageRequest.of(0, 20, Sort.by("notAField"));
+
+        assertThatThrownBy(() -> service.listMyTickets(actor, pageable))
+                .isInstanceOf(InvalidTicketRequestException.class);
+
+        verify(tickets, never()).findByCitizenId(any(), any());
+    }
+
+    // ==================================================================
+    // ---- getById (GET /tickets/{id}) ----
+    // ==================================================================
+
+    @Test
+    void getByIdReturnsTheTicketWhenTheCallerIsItsOwner() {
+        Ticket ticket = ticket(TicketStatus.REGISTERED, Priority.MEDIUM);
+        ticket.setCitizenId(actor.citizenId());
+        ticket.setAnonymous(false);
+
+        when(tickets.findById(ticketId)).thenReturn(Optional.of(ticket));
+        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+
+        TicketResponse response = service.getById(ticketId, actor);
+
+        assertThat(response.getId()).isEqualTo(ticketId);
+    }
+
+    @Test
+    void getByIdOnMissingTicketThrowsResourceNotFound() {
+        when(tickets.findById(ticketId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.getById(ticketId, actor))
+                .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void getByIdOnSomeoneElsesTicketThrowsUnauthorized() {
+        Ticket ticket = ticket(TicketStatus.REGISTERED, Priority.MEDIUM);
+        ticket.setCitizenId(UUID.randomUUID());
+        ticket.setAnonymous(false);
+
+        when(tickets.findById(ticketId)).thenReturn(Optional.of(ticket));
+
+        assertThatThrownBy(() -> service.getById(ticketId, actor))
+                .isInstanceOf(UnauthorizedTicketOperationException.class);
+        verify(locations, never()).findByTicket_Id(any());
+    }
+
+    /**
+     * Un ticket anónimo no tiene citizenId, así que nunca es "propio" de
+     * ningún autenticado, aunque coincidencialmente algún campo calzara.
+     */
+    @Test
+    void getByIdOnAnonymousTicketThrowsUnauthorizedEvenWithoutACitizenId() {
+        Ticket ticket = ticket(TicketStatus.REGISTERED, Priority.MEDIUM);
+        ticket.setCitizenId(null);
+        ticket.setAnonymous(true);
+
+        when(tickets.findById(ticketId)).thenReturn(Optional.of(ticket));
+
+        assertThatThrownBy(() -> service.getById(ticketId, actor))
+                .isInstanceOf(UnauthorizedTicketOperationException.class);
+    }
+
+    // ==================================================================
+    // ---- getStaffDetail (GET /staff/tickets/{id}) ----
+    // ==================================================================
+
+    @Test
+    void getStaffDetailAllowsAgentOnATicketFromAnyArea() {
+        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.MEDIUM);
+        // fixture ticket() usa responsibleAreaId="obras-viales"; actor es AGENT de "area-obras".
+        when(tickets.findById(ticketId)).thenReturn(Optional.of(ticket));
+        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+
+        TicketResponse response = service.getStaffDetail(ticketId, actor);
+
+        assertThat(response.getId()).isEqualTo(ticketId);
+    }
+
+    @Test
+    void getStaffDetailAllowsAdminOnATicketFromAnyArea() {
+        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.MEDIUM);
+        AuthenticatedIdentity admin = new AuthenticatedIdentity(
+                "admin-1", UUID.randomUUID(), "Admin Uno", null, ModuleRole.ADMIN);
+        when(tickets.findById(ticketId)).thenReturn(Optional.of(ticket));
+        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+
+        TicketResponse response = service.getStaffDetail(ticketId, admin);
+
+        assertThat(response.getId()).isEqualTo(ticketId);
+    }
+
+    @Test
+    void getStaffDetailAllowsAreaResponsibleWhenTheTicketBelongsToTheirArea() {
+        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.MEDIUM);
+        ticket.setResponsibleAreaId("obras-viales");
+        AuthenticatedIdentity areaResponsible = new AuthenticatedIdentity(
+                "area-1", UUID.randomUUID(), "Responsable Uno", "obras-viales", ModuleRole.AREA_RESPONSIBLE);
+        when(tickets.findById(ticketId)).thenReturn(Optional.of(ticket));
+        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+
+        TicketResponse response = service.getStaffDetail(ticketId, areaResponsible);
+
+        assertThat(response.getId()).isEqualTo(ticketId);
+    }
+
+    @Test
+    void getStaffDetailRejectsAreaResponsibleFromADifferentAreaOnSomeoneElsesTicket() {
+        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.MEDIUM);
+        ticket.setResponsibleAreaId("obras-viales");
+        ticket.setCitizenId(UUID.randomUUID());
+        ticket.setAnonymous(false);
+        AuthenticatedIdentity areaResponsible = new AuthenticatedIdentity(
+                "area-1", UUID.randomUUID(), "Responsable Uno", "otra-area", ModuleRole.AREA_RESPONSIBLE);
+        when(tickets.findById(ticketId)).thenReturn(Optional.of(ticket));
+
+        assertThatThrownBy(() -> service.getStaffDetail(ticketId, areaResponsible))
+                .isInstanceOf(UnauthorizedTicketOperationException.class);
+        verify(locations, never()).findByTicket_Id(any());
+    }
+
+    /**
+     * Guía funcional M2 §7.1: si el usuario interno es owner del ticket
+     * (aunque sea de otra área), igual puede ver el detalle staff.
+     */
+    @Test
+    void getStaffDetailAllowsAreaResponsibleOnTheirOwnTicketEvenFromADifferentArea() {
+        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.MEDIUM);
+        ticket.setResponsibleAreaId("obras-viales");
+        UUID citizenId = UUID.randomUUID();
+        ticket.setCitizenId(citizenId);
+        ticket.setAnonymous(false);
+        AuthenticatedIdentity areaResponsible = new AuthenticatedIdentity(
+                "area-1", citizenId, "Responsable Uno", "otra-area", ModuleRole.AREA_RESPONSIBLE);
+        when(tickets.findById(ticketId)).thenReturn(Optional.of(ticket));
+        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+
+        TicketResponse response = service.getStaffDetail(ticketId, areaResponsible);
+
+        assertThat(response.getId()).isEqualTo(ticketId);
+    }
+
+    @Test
+    void getStaffDetailOnMissingTicketThrowsResourceNotFound() {
+        when(tickets.findById(ticketId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.getStaffDetail(ticketId, actor))
+                .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    // ==================================================================
+    // ---- getStaffCitizenView (GET /staff/tickets/{id}/citizen-view) ----
+    // ==================================================================
+
+    /**
+     * getStaffCitizenView delega directo en getStaffDetail (misma
+     * proyección hoy, ver el javadoc del método); estos tests sólo
+     * verifican que esa delegación funciona — la matriz completa de
+     * autorización ya está cubierta arriba, sobre getStaffDetail.
+     */
+    @Test
+    void getStaffCitizenViewReturnsTheTicketWhenAccessIsAllowed() {
+        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.MEDIUM);
+        when(tickets.findById(ticketId)).thenReturn(Optional.of(ticket));
+        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+
+        TicketResponse response = service.getStaffCitizenView(ticketId, actor);
+
+        assertThat(response.getId()).isEqualTo(ticketId);
+    }
+
+    @Test
+    void getStaffCitizenViewRejectsAreaResponsibleFromADifferentAreaOnSomeoneElsesTicket() {
+        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.MEDIUM);
+        ticket.setResponsibleAreaId("obras-viales");
+        ticket.setCitizenId(UUID.randomUUID());
+        ticket.setAnonymous(false);
+        AuthenticatedIdentity areaResponsible = new AuthenticatedIdentity(
+                "area-1", UUID.randomUUID(), "Responsable Uno", "otra-area", ModuleRole.AREA_RESPONSIBLE);
+        when(tickets.findById(ticketId)).thenReturn(Optional.of(ticket));
+
+        assertThatThrownBy(() -> service.getStaffCitizenView(ticketId, areaResponsible))
+                .isInstanceOf(UnauthorizedTicketOperationException.class);
+    }
+
+    @Test
+    void getStaffCitizenViewOnMissingTicketThrowsResourceNotFound() {
+        when(tickets.findById(ticketId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.getStaffCitizenView(ticketId, actor))
+                .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    // ==================================================================
     // ---- fixtures Sprint 2 ----
     // ==================================================================
 
