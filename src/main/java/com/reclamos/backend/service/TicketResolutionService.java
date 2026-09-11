@@ -42,6 +42,9 @@ public class TicketResolutionService {
         this.resolutionRepository = resolutionRepository;
         this.activityRepository = activityRepository;
         this.clock = clock;
+        if (confirmationDuration == null || confirmationDuration.isZero() || confirmationDuration.isNegative()) {
+            throw new IllegalArgumentException("La duración de confirmación debe ser positiva");
+        }
         this.confirmationDuration = confirmationDuration;
     }
 

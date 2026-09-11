@@ -28,9 +28,9 @@ public class InformationRequestService {
 
     private final TicketRepository ticketRepository;
     private final InformationRequestRepository informationRequestRepository;
-    private final TicketCancellationRepository cancellationRepository;
     private final TicketActivityRepository activityRepository;
     private final InformationRequestDeadlineService deadlineService;
+    private final InformationRequestExpirationService expirationService;
 
     @Transactional
     public InformationRequestResponse requestInformation(UUID ticketId, CreateInformationRequest request,
@@ -98,7 +98,7 @@ public class InformationRequestService {
 
     private InformationRequestResponse answerPending(Ticket ticket, String responseMessage, String actorId) {
         InformationRequest informationRequest = informationRequestRepository
-                .findByTicketIdAndStatus(ticket.getId(), InformationRequestStatus.PENDING)
+                .findByTicketIdAndStatusForUpdate(ticket.getId(), InformationRequestStatus.PENDING)
                 .orElseThrow(() -> new InformationRequestConflictException(
                         "No existe una solicitud de información pendiente"));
         if (deadlineService.isExpired(informationRequest.getDueAt())) {
@@ -122,37 +122,11 @@ public class InformationRequestService {
     }
 
     @Scheduled(fixedDelayString = "${ticket.information-request.expiration-scan-delay:60000}") // Revisa periódicamente las solicitudes pendientes que se les venció el plazo
-    @Transactional
     public void expireDueRequests() {
         Instant now = deadlineService.now();
-        for (InformationRequest request : informationRequestRepository
-                .findByStatusAndDueAtLessThanEqual(InformationRequestStatus.PENDING, now)) { // Solo se procesan solicitudes pendientens con fecha final menor o igual al momento actual
-            if (request.getStatus() != InformationRequestStatus.PENDING) continue;
-            request.setStatus(InformationRequestStatus.EXPIRED);
-            informationRequestRepository.save(request);
-            cancelForTimeout(request.getTicket(), now);
-        }
-    }
-
-    private void cancelForTimeout(Ticket ticket, Instant now) {
-        if (cancellationRepository.existsByTicketId(ticket.getId())) return;
-        ticket.setCurrentStatus(TicketStatus.CANCELLED);
-        ticket.setStatusChangedAt(now);
-        ticketRepository.save(ticket);
-
-        TicketCancellation cancellation = new TicketCancellation();
-        cancellation.setTicket(ticket);
-        cancellation.setReasonCode(CancellationReasonCode.INFO_TIMEOUT);
-        cancellation.setPublicMessage("El ticket fue cancelado por falta de respuesta dentro del plazo");
-        cancellation.setInternalMessage("Vencimiento automático de solicitud de información");
-        cancellation.setCancelledByType(ActorType.SYSTEM);
-        cancellation.setCancelledById(null);
-        cancellation.setCancelledByModuleId(MODULE_ID);
-        cancellation.setCancelledAt(now);
-        cancellationRepository.save(cancellation);
-        saveActivity(ticket, ActivityType.CANCELLED, TicketStatus.PENDING_INFORMATION, TicketStatus.CANCELLED,
-                ActorType.SYSTEM, null, CancellationReasonCode.INFO_TIMEOUT.name(),
-                cancellation.getPublicMessage(), now);
+        informationRequestRepository.findExpirationCandidates(InformationRequestStatus.PENDING, now)
+                .forEach(candidate -> expirationService.expireIfDue(
+                        candidate.getRequestId(), candidate.getTicketId(), now));
     }
 
     private void saveActivity(Ticket ticket, ActivityType type, TicketStatus previous, TicketStatus next,

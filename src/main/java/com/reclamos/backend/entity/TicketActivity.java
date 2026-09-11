@@ -23,12 +23,6 @@ import java.util.UUID;
                                 "sequence"
                         }
                 )
-        },
-        indexes = {
-                @Index(
-                        name = "idx_ticket_activity_ticket_sequence",
-                        columnList = "ticket_id,sequence"
-                )
         }
 )
 @NoArgsConstructor
