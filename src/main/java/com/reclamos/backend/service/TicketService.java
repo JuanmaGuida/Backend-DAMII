@@ -156,6 +156,7 @@ public class TicketService {
         activity.setActorId(identity.citizenId().toString());
         activity.setOccurredAt(now);
         activityRepository.save(activity);
+        activateCriticalEscalationIfNeeded(ticket, now);
         ticketRepository.flush();
         return new CreateTicketResponse(ticket.getId(), ticket.getPublicId(), trackingCode,
                 TicketStatus.REGISTERED);
@@ -273,6 +274,7 @@ public class TicketService {
                 + "' a '" + newRequestType.getCode() + "' durante la revisión inicial";
         recordActivity(ticket, ActivityType.REQUEST_TYPE_CHANGED, ticket.getCurrentStatus(), ticket.getCurrentStatus(),
                 actor, previousPriority, newPriority, message);
+        activateCriticalEscalationIfNeeded(ticket, clock.instant());
 
         return toResponse(ticket, location);
     }
@@ -356,7 +358,7 @@ public class TicketService {
         routing.put("location", toEventLocation(location));
         routing.put("resolutionDueAt", ticket.getResolutionDueAt() != null
                 ? ticket.getResolutionDueAt().toString() : null);
-        routing.put("escalation", null); // Escalamiento no implementado todavía (Sprint 4)
+        routing.put("escalation", toEventEscalation(ticket));
 
         Map<String, Object> details = new LinkedHashMap<>();
         details.put("routing", routing);
@@ -483,6 +485,46 @@ public class TicketService {
         activityRepository.save(activity);
     }
 
+    /**
+     * Activa una sola vez el escalamiento automático por prioridad crítica.
+     * La marca es independiente del estado y la actividad representa una
+     * decisión del sistema, incluso cuando la prioridad surgió de una
+     * reclasificación iniciada por un agente.
+     */
+    private void activateCriticalEscalationIfNeeded(Ticket ticket, Instant activatedAt) {
+        if (ticket.getCurrentPriority() != Priority.CRITICAL || ticket.isEscalated()) {
+            return;
+        }
+
+        ticket.setEscalated(true);
+        ticket.setEscalationReasonCode(EscalationReasonCode.CRITICAL_PRIORITY);
+        ticket.setEscalatedAt(activatedAt);
+        ticketRepository.save(ticket);
+
+        TicketActivity activity = new TicketActivity();
+        activity.setTicket(ticket);
+        activity.setSequence(activityRepository.countByTicketId(ticket.getId()) + 1);
+        activity.setActionType(ActivityType.ESCALATED);
+        activity.setPreviousStatus(ticket.getCurrentStatus());
+        activity.setNewStatus(ticket.getCurrentStatus());
+        activity.setActorType(ActorType.SYSTEM);
+        activity.setActorId(null);
+        activity.setReasonCode(EscalationReasonCode.CRITICAL_PRIORITY.name());
+        activity.setMessage("Escalamiento automático por prioridad crítica");
+        activity.setOccurredAt(activatedAt);
+        activityRepository.save(activity);
+    }
+
+    private Map<String, Object> toEventEscalation(Ticket ticket) {
+        Map<String, Object> escalation = new LinkedHashMap<>();
+        escalation.put("active", ticket.isEscalated());
+        escalation.put("reasonCode", ticket.getEscalationReasonCode() != null
+                ? ticket.getEscalationReasonCode().name() : null);
+        escalation.put("escalatedAt", ticket.getEscalatedAt() != null
+                ? ticket.getEscalatedAt().toString() : null);
+        return escalation;
+    }
+
     private TicketResponse toResponse(Ticket ticket, TicketLocation location) {
         RequestType requestType = ticket.getRequestType();
         Subcategory subcategory = requestType.getSubcategory();
@@ -505,6 +547,8 @@ public class TicketService {
         response.setAnonymous(ticket.isAnonymous());
         response.setEstimatedAffectedCount(ticket.getEstimatedAffectedCount());
         response.setEscalated(ticket.isEscalated());
+        response.setEscalationReasonCode(ticket.getEscalationReasonCode());
+        response.setEscalatedAt(ticket.getEscalatedAt());
         if (location != null && location.getNeighborhood() != null) {
             response.setNeighborhoodId(location.getNeighborhood().getId());
             response.setNeighborhoodName(location.getNeighborhood().getName());

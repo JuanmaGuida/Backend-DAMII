@@ -6,6 +6,7 @@ import com.reclamos.backend.dto.UpdateTicketStatusRequest;
 import com.reclamos.backend.dto.request.ReopenTicketRequest;
 import com.reclamos.backend.entity.ActivityType;
 import com.reclamos.backend.entity.Category;
+import com.reclamos.backend.entity.EscalationReasonCode;
 import com.reclamos.backend.entity.InboxEvent;
 import com.reclamos.backend.entity.InboxStatus;
 import com.reclamos.backend.entity.Priority;
@@ -107,6 +108,10 @@ class TicketStatusUpdateServiceTest {
     @Test
     void startedMovesRoutedTicketToInProgressAndRecordsTraceability() {
         Ticket ticket = ticket(TicketStatus.ROUTED);
+        Instant escalatedAt = Instant.parse("2026-09-08T10:00:00Z");
+        ticket.setEscalated(true);
+        ticket.setEscalationReasonCode(EscalationReasonCode.CRITICAL_PRIORITY);
+        ticket.setEscalatedAt(escalatedAt);
         when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
         when(activityRepository.countByTicketId(ticketId)).thenReturn(0);
         when(locationRepository.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
@@ -120,6 +125,10 @@ class TicketStatusUpdateServiceTest {
         TicketResponse response = service.applyUpdate(ticketId, envelope);
 
         assertThat(response.getCurrentStatus()).isEqualTo(TicketStatus.IN_PROGRESS);
+        assertThat(response.isEscalated()).isTrue();
+        assertThat(response.getEscalationReasonCode()).isEqualTo(EscalationReasonCode.CRITICAL_PRIORITY);
+        assertThat(response.getEscalatedAt()).isEqualTo(escalatedAt);
+        assertThat(ticket.getEscalatedAt()).isEqualTo(escalatedAt);
         verify(messageRepository).save(any());
 
         // Verifica que externalEventId y occurredAt queden persistidos en TicketActivity.

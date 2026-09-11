@@ -169,6 +169,10 @@ class OpenApiContractTest {
 
         assertFalse(map(schemas, "TrackingTicketResponse", "properties").containsKey("ticketId"));
         assertEquals(Set.of("name"), map(schemas, "TrackingRequestTypeSummary", "properties").keySet());
+        assertTrue(map(schemas, "TicketResponse", "properties").containsKey("escalationReasonCode"));
+        assertTrue(map(schemas, "TicketResponse", "properties").containsKey("escalatedAt"));
+        assertEquals(Set.of("CRITICAL_PRIORITY", "SLA_NEAR_DUE", "SLA_BREACHED", "MANUAL"),
+                Set.copyOf(list(map(schemas, "EscalationReasonCode"), "enum")));
     }
 
     @Test
