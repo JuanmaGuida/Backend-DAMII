@@ -19,6 +19,15 @@ public class TrackingTicketResponse {
     private RequestTypeSummary requestType;
     private CategorySummary category;
     private SubcategorySummary subcategory;
+    private SlaSummary sla;
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class SlaSummary {
+        private Instant firstResponseDueAt;
+        private Instant resolutionDueAt;
+    }
 
     @Data
     @NoArgsConstructor
