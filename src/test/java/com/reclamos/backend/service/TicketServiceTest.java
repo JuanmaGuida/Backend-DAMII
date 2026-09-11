@@ -156,9 +156,8 @@ class TicketServiceTest {
     @Test
     void correctClassificationRecalculatesAreaAffectedCountFormTemplateAndPriorityFromNewRequestType() {
         Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.LOW);
-        // QA (BE - Endpoint de corrección de clasificación): formData del
-        // RequestType viejo no debe sobrevivir a la reclasificación — ver
-        // assertion de formData al final del test.
+        // formData del RequestType viejo no debe sobrevivir a la reclasificación
+        // — ver assertion de formData al final del test.
         ticket.setFormData(new HashMap<>(Map.of("waterHeight", 35)));
         Neighborhood neighborhood = new Neighborhood();
         neighborhood.setId(UUID.randomUUID());
@@ -192,16 +191,10 @@ class TicketServiceTest {
     }
 
     /**
-     * Revisión post-actualización de documentación: la versión anterior de
-     * este test ("correctClassificationNeverLowersAnAlreadyHigherPriority")
-     * verificaba que la prioridad NUNCA bajara respecto a la vigente,
-     * flooreando sólo con minimumPriority. La Guía funcional complementaria
-     * M2 V1.09 §3 ("REGLA DE EVOLUCIÓN") aclara que ese piso de "nunca baja"
-     * aplica sólo a la recalculación periódica automática (por edad/SLA):
-     * "una corrección del RequestType durante la primera IN_REVIEW SÍ puede
-     * recalcularla". Este test verifica ahora el comportamiento correcto —
-     * la prioridad puede bajar cuando el nuevo RequestType tiene
-     * minimumPriority y baseRisk más bajos.
+     * Guía funcional §3 ("REGLA DE EVOLUCIÓN"): el piso de "nunca baja" sólo
+     * aplica a la recalculación periódica automática (por edad/SLA); una
+     * corrección de RequestType durante la primera IN_REVIEW todavía forma
+     * parte de la clasificación inicial y puede bajar la prioridad.
      */
     @Test
     void correctClassificationCanLowerPriorityWhenNewRequestTypeHasLowerMinimumAndBaseRisk() {
@@ -249,9 +242,8 @@ class TicketServiceTest {
 
     /**
      * Cubre el guard en sí (classificationFinalizedAt != null -&gt; conflicto).
-     * El bug que QA encontró era que nada seteaba ese campo en el flujo real
-     * — ver routeToAreaKeepsOriginalClassificationFinalizedAtOnSecondRouting
-     * y el fix en TicketService.routeToArea.
+     * Ese campo se fija en TicketService.routeToArea — ver
+     * routeToAreaKeepsOriginalClassificationFinalizedAtOnSecondRouting.
      */
     @Test
     void correctClassificationRejectsWhenClassificationAlreadyFinalized() {
@@ -290,9 +282,6 @@ class TicketServiceTest {
 
         assertThat(response.getCurrentStatus()).isEqualTo(TicketStatus.ROUTED);
         assertThat(ticket.getCurrentStatus()).isEqualTo(TicketStatus.ROUTED);
-        // Regresión QA: classificationFinalizedAt nunca se seteaba acá, así que
-        // correctClassification seguía aceptando correcciones después de un
-        // ROUTED -> RETURNED -> IN_REVIEW.
         assertThat(ticket.getClassificationFinalizedAt()).isNotNull();
 
         ArgumentCaptor<TicketActivity> activityCaptor = ArgumentCaptor.forClass(TicketActivity.class);
@@ -348,11 +337,8 @@ class TicketServiceTest {
     }
 
     /**
-     * Regresión QA (BE - Endpoint de corrección de clasificación): reproduce
-     * exactamente el escenario que falló — ROUTED -&gt; RETURNED -&gt;
-     * IN_REVIEW -&gt; nueva derivación no debe volver a mover
-     * classificationFinalizedAt, y esa segunda IN_REVIEW ya debería tener la
-     * clasificación bloqueada (ver
+     * ROUTED -&gt; RETURNED -&gt; IN_REVIEW -&gt; nueva derivación no debe volver
+     * a mover classificationFinalizedAt (ver también
      * correctClassificationRejectsWhenClassificationAlreadyFinalized).
      */
     @Test
@@ -414,12 +400,9 @@ class TicketServiceTest {
     }
 
     /**
-     * QA (BE - Endpoint de listado): ?sort=notAField,desc devolvía 500
-     * porque el Sort inválido llegaba sin validar hasta el repository, que
-     * lanzaba una excepción interna de Spring Data sin manejar. Ahora se
-     * valida contra una whitelist propia (TicketService.SORTABLE_TICKET_PROPERTIES)
-     * antes de tocar el repository, así que el 400 no depende de ninguna
-     * clase interna del framework.
+     * ?sort=notAField,desc se valida contra la whitelist propia
+     * (TicketService.SORTABLE_TICKET_PROPERTIES) antes de tocar el
+     * repository, sin depender de ninguna clase interna de Spring Data.
      */
     @Test
     void listTicketsWithInvalidSortFieldThrowsBadRequestWithoutQueryingRepository() {
@@ -469,11 +452,10 @@ class TicketServiceTest {
     }
 
     /**
-     * Revisión post-actualización de documentación: se agrega baseRisk acá
-     * porque correctClassification ahora lo usa para recalcular
-     * currentPriority (ver correctClassificationCanLowerPriorityWhen...).
-     * El overload de 5 argumentos delega acá con Risk.LOW por default para
-     * no tocar los tests que no les importa ese valor.
+     * baseRisk lo usa correctClassification para recalcular currentPriority
+     * (ver correctClassificationCanLowerPriorityWhen...). El overload de 5
+     * argumentos delega acá con Risk.LOW por default para los tests a los
+     * que no les importa ese valor.
      */
     private RequestType requestType(Long id, String code, String responsibleAreaId,
                                      Priority minimumPriority, Risk baseRisk, BigDecimal affectedPopulationFactor) {

@@ -29,12 +29,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * @TestPropertySource para poder cargarlo — en application.properties
  * "real" el default es false.
  * <p>
- * Post-QA: el body ahora es el envelope común completo (specVersion/
- * eventId/eventType/producer/subject + data), no sólo el payload plano de
- * updateType. Como el service está mockeado acá, estos tests sólo cubren el
- * wiring HTTP y las validaciones de Bean Validation sobre el DTO — la
- * validación semántica del envelope (eventType/subject/dedupe) está cubierta
- * en TicketStatusUpdateServiceTest, no acá.
+ * El body es el envelope común completo (specVersion/eventId/eventType/
+ * producer/subject + data), no sólo el payload plano de updateType. Como el
+ * service está mockeado acá, estos tests sólo cubren el wiring HTTP y las
+ * validaciones de Bean Validation sobre el DTO — la validación semántica del
+ * envelope (eventType/subject/dedupe) está cubierta en
+ * TicketStatusUpdateServiceTest, no acá.
  */
 @WebMvcTest(TicketSimulationController.class)
 @TestPropertySource(properties = "app.simulator.enabled=true")
@@ -135,8 +135,7 @@ class TicketSimulationControllerTest {
     }
 
     /**
-     * QA (BE - Implementar transiciones a partir del consumo de eventos):
-     * el rechazo de data.ticketId inválido vive en el service (ver
+     * El rechazo de data.ticketId inválido vive en el service (ver
      * TicketStatusUpdateServiceTest.ticketIdMismatchInDataIsRejectedWithoutTouchingTheTicket);
      * acá sólo se cubre que ese rechazo llega como 400 al cliente HTTP.
      */
@@ -161,10 +160,9 @@ class TicketSimulationControllerTest {
     }
 
     private String envelopeJson(UUID ticketId, String data) {
-        // QA (BE - Implementar transiciones a partir del consumo de eventos):
-        // data.ticketId es obligatorio (Eventos v1.6 §8.1) y antes no se
-        // validaba. Se inyecta acá para no tener que tocar cada bloque de
-        // "data" inline de los tests de abajo uno por uno.
+        // data.ticketId es obligatorio (Eventos §8.1). Se inyecta acá para no
+        // tener que tocar cada bloque de "data" inline de los tests de abajo
+        // uno por uno.
         String dataWithTicketId = data.replaceFirst("\\{", "{\n                  \"ticketId\": \"" + ticketId + "\",");
         return """
                 {

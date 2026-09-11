@@ -18,11 +18,10 @@ import java.util.UUID;
  * subject) — por eso este record ya no tiene un campo producerModuleId
  * propio: el productor del hecho es {@code envelope.producer().moduleId()}.
  * <p>
- * QA (BE - Implementar transiciones a partir del consumo de eventos):
- * faltaba {@code ticketId}, que Eventos v1.6 §8.1 sí exige dentro de
- * {@code data} ("Ticket de M2 sobre el que se informa el hecho") como campo
- * separado de {@code envelope.subject}. {@code TicketStatusUpdateService}
- * valida que coincida con el ticket de la URL antes de tocar nada.
+ * {@code ticketId} es un campo propio de {@code data} (Eventos §8.1,
+ * "Ticket de M2 sobre el que se informa el hecho"), separado de
+ * {@code envelope.subject}. {@code TicketStatusUpdateService} valida que
+ * coincida con el ticket de la URL antes de tocar nada.
  * <p>
  * Simplificación consciente que sigue vigente: no incluye
  * {@code attachments} (el módulo todavía no persiste adjuntos, Sprint 5 /
