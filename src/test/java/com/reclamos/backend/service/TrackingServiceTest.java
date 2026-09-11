@@ -17,10 +17,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -51,6 +48,8 @@ class TrackingServiceTest {
         assertEquals("Tipo de solicitud", response.getRequestType().getName());
         assertEquals("Categoría", response.getCategory().getName());
         assertEquals("Subcategoría", response.getSubcategory().getName());
+        assertNull(response.getSla().getFirstResponseDueAt());
+        assertNull(response.getSla().getResolutionDueAt());
         verify(trackingCodes).hash(CODE);
         verify(tickets).findByTrackingCodeHash(HASH);
         verify(tickets, never()).save(org.mockito.ArgumentMatchers.any());
@@ -82,8 +81,7 @@ class TrackingServiceTest {
         Set<String> forbidden = Set.of("ticketId", "citizenId", "subjectId", "trackingCode", "trackingCodeHash",
                 "trackingAccessCode",
                 "riskScore", "riskLevel", "internalMessage", "actorId", "resolvedById", "sourceModuleId",
-                "responsibleAreaId", "firstResponseDueAt", "resolutionDueAt");
-        Set<String> fieldNames = Arrays.stream(TrackingTicketResponse.class.getDeclaredFields())
+                "responsibleAreaId", "firstResponseDueAt", "resolutionDueAt", "policyId", "cycleNumber");        Set<String> fieldNames = Arrays.stream(TrackingTicketResponse.class.getDeclaredFields())
                 .map(java.lang.reflect.Field::getName).collect(java.util.stream.Collectors.toSet());
         assertTrueNoIntersection(fieldNames, forbidden);
         assertFalse(Arrays.stream(TrackingTicketResponse.RequestTypeSummary.class.getDeclaredFields())
@@ -94,6 +92,66 @@ class TrackingServiceTest {
                 .anyMatch(field -> field.getName().equals("id")));
         assertFalse(Arrays.stream(TrackingTicketResponse.SubcategorySummary.class.getDeclaredFields())
                 .anyMatch(field -> field.getName().equals("id")));
+        Set<String> slaFields = Arrays.stream(TrackingTicketResponse.SlaSummary.class.getDeclaredFields())
+                .map(java.lang.reflect.Field::getName).collect(java.util.stream.Collectors.toSet());
+        assertEquals(Set.of("firstResponseDueAt", "resolutionDueAt"),
+                slaFields);
+    }
+
+    @Test
+    void returnsBothPersistedTicketDeadlines() {
+        Ticket ticket = ticket();
+        Instant firstResponse = Instant.parse("2026-09-02T18:00:00Z");
+        Instant resolution = Instant.parse("2026-09-18T18:00:00Z");
+        ticket.setFirstResponseDueAt(firstResponse);
+        ticket.setResolutionDueAt(resolution);
+        when(trackingCodes.isValid(CODE)).thenReturn(true);
+        when(trackingCodes.hash(CODE)).thenReturn(HASH);
+        when(tickets.findByTrackingCodeHash(HASH)).thenReturn(Optional.of(ticket));
+
+        TrackingTicketResponse.SlaSummary result = service.findByTrackingCode(CODE).getSla();
+
+        assertEquals(firstResponse, result.getFirstResponseDueAt());
+        assertEquals(resolution, result.getResolutionDueAt());
+    }
+
+    @Test
+    void toleratesOneMissingDeadline() {
+        Ticket ticket = ticket();
+        Instant resolution = Instant.parse("2026-09-18T18:00:00Z");
+        ticket.setResolutionDueAt(resolution);
+        when(trackingCodes.isValid(CODE)).thenReturn(true);
+        when(trackingCodes.hash(CODE)).thenReturn(HASH);
+        when(tickets.findByTrackingCodeHash(HASH)).thenReturn(Optional.of(ticket));
+
+        TrackingTicketResponse.SlaSummary result = service.findByTrackingCode(CODE).getSla();
+
+        assertNull(result.getFirstResponseDueAt());
+        assertEquals(resolution, result.getResolutionDueAt());
+    }
+
+    @Test
+    void duplicateReadsEffectiveDeadlinesFromMainTicket() {
+        Ticket main = ticket();
+        Instant firstResponse = Instant.parse("2026-09-02T18:00:00Z");
+        Instant resolution = Instant.parse("2026-09-18T18:00:00Z");
+        main.setFirstResponseDueAt(firstResponse);
+        main.setResolutionDueAt(resolution);
+        Ticket duplicate = ticket();
+        duplicate.setId(UUID.fromString("20000000-0000-0000-0000-000000000002"));
+        duplicate.setCurrentStatus(TicketStatus.DUPLICATE);
+        duplicate.setMainTicket(main);
+        duplicate.setFirstResponseDueAt(Instant.parse("2030-01-01T00:00:00Z"));
+        duplicate.setResolutionDueAt(Instant.parse("2030-01-02T00:00:00Z"));
+        when(trackingCodes.isValid(CODE)).thenReturn(true);
+        when(trackingCodes.hash(CODE)).thenReturn(HASH);
+        when(tickets.findByTrackingCodeHash(HASH)).thenReturn(Optional.of(duplicate));
+
+        TrackingTicketResponse response = service.findByTrackingCode(CODE);
+
+        assertEquals(firstResponse, response.getSla().getFirstResponseDueAt());
+        assertEquals(resolution, response.getSla().getResolutionDueAt());
+        verify(tickets, never()).save(org.mockito.ArgumentMatchers.any());
     }
 
     @Test
