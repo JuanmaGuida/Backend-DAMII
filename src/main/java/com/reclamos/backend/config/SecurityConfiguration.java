@@ -67,12 +67,24 @@ public class SecurityConfiguration {
                                 "/api/catalog/request-types/{requestTypeId}/form").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/auth/me").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/tickets").authenticated()
+                        // BE - Story 3.1/3.2/3.3: sólo exigen estar autenticado, no un rol
+                        // puntual — el control de acceso por rol lo agrega otro compañero
+                        // por separado.
+                        .requestMatchers(HttpMethod.GET, "/api/tickets").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/api/tickets/*/review").authenticated()
+                        .requestMatchers(HttpMethod.PATCH, "/api/tickets/*/classification").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/api/tickets/*/route").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/tickets/*/information-request").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/tickets/*/information-response").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/tickets/*/resolution").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/tickets/*/resolution/confirm").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/tickets/*/resolution/reopen").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/tracking/access").permitAll()
+                        // BE - Story 3.4/DDA2-61: el simulador de updateTicketStatus simula
+                        // una llamada de un sistema externo (llegaría por bus de eventos, no
+                        // HTTP con bearer token de agente) y sólo existe como bean cuando
+                        // app.simulator.enabled=true (ver TicketSimulationController).
+                        .requestMatchers(HttpMethod.POST, "/api/tickets/*/simulate-status-update").permitAll()
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(bearerTokenAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)

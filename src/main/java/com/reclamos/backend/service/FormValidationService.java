@@ -79,6 +79,31 @@ public class FormValidationService {
         return new ResolvedForm(template, fields, data);
     }
 
+    /**
+     * Entidades V1.49 §4/§6: TicketService.correctClassification necesita
+     * resolver la FormTemplate activa del nuevo RequestType para actualizar
+     * Ticket.formTemplateId, pero sin validar formData contra ella — en esa
+     * operación formData se resetea a {} (las respuestas viejas no
+     * corresponden necesariamente a los campos del nuevo RequestType), así
+     * que no corresponde correrlo por resolveAndValidate (fallaría por
+     * cualquier campo requerido del nuevo formulario). Devuelve null cuando
+     * el RequestType no tiene formulario configurado, igual que la rama
+     * correspondiente de resolveAndValidate, en vez de lanzar una excepción:
+     * un RequestType sin formulario es una configuración válida (formData
+     * vacío), no un error.
+     */
+    public FormTemplate resolveActiveTemplate(RequestType requestType) {
+        if (requestType == null || requestType.getId() == null) {
+            throw new FormValidationException("El Request Type es obligatorio");
+        }
+        if (!requestType.isActive()) {
+            throw new FormValidationException("El Request Type seleccionado está inactivo");
+        }
+        return formTemplateRepository
+                .findFirstByRequestType_IdAndActiveTrueOrderByVersionDesc(requestType.getId())
+                .orElse(null);
+    }
+
     private void validateValue(FormField field, Object value) {
         switch (field.getType()) {
             case TEXT, TEXTAREA -> requireType(field, value instanceof String);

@@ -14,6 +14,12 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.multipart.support.MissingServletRequestPartException;
 
+/**
+ * La validación de {@code sort} en el listado de tickets no vive acá: se
+ * hace explícita en {@code TicketService.listTickets} contra una whitelist
+ * propia de propiedades ordenables, para no depender de excepciones
+ * internas de Spring Data.
+ */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
     @ExceptionHandler(FormValidationException.class)
@@ -99,6 +105,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(EvidenceRequiredException.class)
     public ResponseEntity<ApiErrorResponse> handleEvidenceRequired(EvidenceRequiredException exception) {
         return response(HttpStatus.UNPROCESSABLE_ENTITY, EvidenceRequiredException.CODE, exception.getMessage());
+    }
+
+    @ExceptionHandler(TicketStateConflictException.class)
+    public ResponseEntity<ApiErrorResponse> handleTicketStateConflict(TicketStateConflictException exception) {
+        return response(HttpStatus.CONFLICT, "TICKET_STATE_CONFLICT", exception.getMessage());
     }
 
     @ExceptionHandler(InformationRequestConflictException.class)
