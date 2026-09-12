@@ -195,6 +195,32 @@ class TicketResolutionServiceTest {
     }
 
     @Test
+    void resolutionProcessesPendingSlaUsingTheEffectiveResolutionTime() {
+        TicketSlaService ticketSlaService = mock(TicketSlaService.class);
+        service = new TicketResolutionService(tickets, resolutions, activities,
+                Clock.fixed(NOW, ZoneOffset.UTC), Duration.ofDays(3), ticketSlaService);
+
+        service.resolveManually(ticket.getId(), request(), agent());
+
+        verify(ticketSlaService).completeActiveResolutionCycle(ticket, NOW);
+    }
+
+    @Test
+    void reopenStartsANewResolutionSlaCycle() {
+        TicketSlaService ticketSlaService = mock(TicketSlaService.class);
+        ticket.setCurrentStatus(TicketStatus.RESOLVED);
+        ticket.setCurrentPriority(Priority.HIGH);
+        ticket.setTicketType(TicketType.REQUEST);
+        service = new TicketResolutionService(tickets, resolutions, activities,
+                Clock.fixed(NOW, ZoneOffset.UTC), Duration.ofDays(3), ticketSlaService);
+
+        service.reopen(ticket.getId(), new ReopenTicketRequest("El problema continúa"),
+                identity(ModuleRole.CITIZEN, ticket.getCitizenId()));
+
+        verify(ticketSlaService).startReopenedResolutionCycle(ticket, NOW);
+    }
+
+    @Test
     void citizenAndAreaResponsibleAreForbiddenWithoutLoadingTicket() {
         assertThrows(UnauthorizedTicketOperationException.class,
                 () -> service.resolveManually(ticket.getId(), request(), identity(ModuleRole.CITIZEN, UUID.randomUUID())));

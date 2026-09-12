@@ -29,6 +29,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 
@@ -37,6 +38,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -92,6 +94,8 @@ class TicketServiceTest {
     private TicketPublicIdGenerator publicIds;
     @Mock
     private SlaCalculationService sla;
+    @Mock
+    private TicketSlaService ticketSlaService;
     private final AttachmentService attachments = mock(AttachmentService.class);
     @Mock
     private Clock clock;
@@ -451,13 +455,18 @@ class TicketServiceTest {
     void creationStoresCalculatedResolutionDueAt() {
         allowLowRisk();
 
-        Instant dueAt = Instant.parse("2026-09-04T18:00:00Z");
-        when(sla.calculateResolutionDueAt(clock.instant(), Priority.LOW, TicketType.REQUEST))
-                .thenReturn(Optional.of(dueAt));
+        service.create(request(), identity(), null);
+
+        verify(ticketSlaService).startInitialResolutionCycle(any(Ticket.class), eq(NOW));
+    }
+
+    @Test
+    void creationStoresNearDueDeadlineWithCleanMilestoneMarkers() {
+        allowLowRisk();
 
         service.create(request(), identity(), null);
 
-        verify(tickets).save(argThat(ticket -> dueAt.equals(ticket.getResolutionDueAt())));
+        verify(ticketSlaService).startInitialResolutionCycle(any(Ticket.class), eq(NOW));
     }
 
     @Test
@@ -483,23 +492,17 @@ class TicketServiceTest {
     }
 
     @Test
-    void criticalCreationUsesTheCriticalPolicyResult() {
+    void criticalCreationStartsResolutionCycleAndKeepsCriticalEscalation() {
         MockMultipartFile evidence = new MockMultipartFile(
                 "evidence", "photo.jpg", "image/jpeg", new byte[]{1});
-
-        Instant dueAt = Instant.parse("2026-09-04T16:00:00Z");
 
         when(risks.calculateRisk(any(RequestType.class), any(ResolvedForm.class)))
                 .thenReturn(new RiskAssessment(0, Risk.CRITICAL));
 
-        when(sla.calculateResolutionDueAt(clock.instant(), Priority.CRITICAL, TicketType.REQUEST))
-                .thenReturn(Optional.of(dueAt));
-
         service.create(request(), identity(), new MockMultipartFile[]{evidence});
 
-        verify(tickets, times(2)).save(argThat(ticket ->
-                ticket.getCurrentPriority() == Priority.CRITICAL && dueAt.equals(ticket.getResolutionDueAt())
-        ));
+        verify(ticketSlaService).startInitialResolutionCycle(
+                argThat(ticket -> ticket.getCurrentPriority() == Priority.CRITICAL), eq(NOW));
     }
 
     // ==================================================================
@@ -507,7 +510,7 @@ class TicketServiceTest {
     // ==================================================================
 
     @Test
-    void routingRecalculatesWhenPolicyRequiresIt() {
+    void routingPreservesExistingResolutionCycleProjection() {
         UUID id = UUID.randomUUID();
 
         Ticket ticket = new Ticket();
@@ -516,69 +519,61 @@ class TicketServiceTest {
         ticket.setResolutionDueAt(Instant.parse("2026-09-04T13:00:00Z"));
 
         Instant routedAt = Instant.parse("2026-09-05T12:00:00Z");
-        Instant dueAt = Instant.parse("2026-09-05T14:00:00Z");
+        Instant dueAt = ticket.getResolutionDueAt();
 
         ticket.setCreatedAt(clock.instant());
 
         when(tickets.findByIdForUpdate(id)).thenReturn(Optional.of(ticket));
-        when(sla.calculateResolutionDueAt(clock.instant(), Priority.CRITICAL, TicketType.REQUEST))
-                .thenReturn(Optional.of(dueAt));
         when(tickets.save(ticket)).thenReturn(ticket);
 
         Ticket routed = service.route(id, "AREA-2", routedAt);
 
         assertEquals(dueAt, routed.getResolutionDueAt());
         assertEquals(TicketStatus.ROUTED, routed.getCurrentStatus());
+        verifyNoInteractions(sla, ticketSlaService);
     }
 
     @Test
-    void routingRecalculatesFromCreatedAtAndPreservesTheSameResult() {
+    void routingDoesNotRecalculateFromCreatedAt() {
         UUID id = UUID.randomUUID();
         Instant originalDueAt = Instant.parse("2026-09-06T12:00:00Z");
         Ticket ticket = routedTicket(Priority.HIGH, originalDueAt);
         ticket.setCreatedAt(clock.instant());
 
         when(tickets.findByIdForUpdate(id)).thenReturn(Optional.of(ticket));
-        when(sla.calculateResolutionDueAt(clock.instant(), Priority.HIGH, TicketType.REQUEST))
-                .thenReturn(Optional.of(originalDueAt));
         when(tickets.save(ticket)).thenReturn(ticket);
 
         assertEquals(originalDueAt, service.route(id, "AREA-2", clock.instant()).getResolutionDueAt());
 
-        verify(sla).calculateResolutionDueAt(clock.instant(), Priority.HIGH, TicketType.REQUEST);
+        verifyNoInteractions(sla, ticketSlaService);
     }
 
     @Test
-    void routingSetsMissingDueAtFromCreatedAt() {
+    void routingDoesNotFabricateMissingDueAt() {
         UUID id = UUID.randomUUID();
         Ticket ticket = routedTicket(Priority.MEDIUM, null);
-        Instant dueAt = Instant.parse("2026-09-07T12:00:00Z");
         ticket.setCreatedAt(clock.instant());
 
         when(tickets.findByIdForUpdate(id)).thenReturn(Optional.of(ticket));
-        when(sla.calculateResolutionDueAt(clock.instant(), Priority.MEDIUM, TicketType.REQUEST))
-                .thenReturn(Optional.of(dueAt));
         when(tickets.save(ticket)).thenReturn(ticket);
 
-        assertEquals(dueAt, service.route(id, "AREA-2", clock.instant()).getResolutionDueAt());
+        assertNull(service.route(id, "AREA-2", clock.instant()).getResolutionDueAt());
+        verifyNoInteractions(sla, ticketSlaService);
     }
 
     @Test
-    void routingAfterPriorityChangeStillUsesOriginalCreatedAt() {
+    void routingAfterPriorityChangeKeepsOriginalCycleDueAt() {
         UUID id = UUID.randomUUID();
         Ticket ticket = routedTicket(Priority.HIGH, Instant.parse("2026-09-10T12:00:00Z"));
         ticket.setCreatedAt(Instant.parse("2026-09-01T12:00:00Z"));
 
-        Instant recalculated = Instant.parse("2026-09-04T12:00:00Z");
-
         when(tickets.findByIdForUpdate(id)).thenReturn(Optional.of(ticket));
-        when(sla.calculateResolutionDueAt(ticket.getCreatedAt(), Priority.HIGH, TicketType.REQUEST))
-                .thenReturn(Optional.of(recalculated));
         when(tickets.save(ticket)).thenReturn(ticket);
 
-        assertEquals(recalculated, service.route(id, "AREA-2", clock.instant()).getResolutionDueAt());
+        assertEquals(Instant.parse("2026-09-10T12:00:00Z"),
+                service.route(id, "AREA-2", clock.instant()).getResolutionDueAt());
 
-        verify(sla).calculateResolutionDueAt(ticket.getCreatedAt(), Priority.HIGH, TicketType.REQUEST);
+        verifyNoInteractions(sla, ticketSlaService);
     }
 
     @Test
@@ -590,14 +585,12 @@ class TicketServiceTest {
         ticket.setFirstResponseDueAt(firstResponseDueAt);
 
         when(tickets.findByIdForUpdate(id)).thenReturn(Optional.of(ticket));
-        when(sla.calculateResolutionDueAt(ticket.getCreatedAt(), Priority.MEDIUM, TicketType.REQUEST))
-                .thenReturn(Optional.of(ticket.getResolutionDueAt()));
         when(tickets.save(ticket)).thenReturn(ticket);
 
         Ticket routed = service.route(id, "AREA-2", clock.instant());
 
         assertEquals(firstResponseDueAt, routed.getFirstResponseDueAt());
-        verify(sla, never()).calculateDueAt(any(), any(Priority.class), eq(SlaType.FIRST_RESPONSE));
+        verifyNoInteractions(sla, ticketSlaService);
     }
 
     @Test
@@ -826,6 +819,8 @@ class TicketServiceTest {
     @Test
     void correctClassificationRecalculatesAreaAffectedCountFormTemplateAndPriorityFromNewRequestType() {
         Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.LOW);
+        Instant slaStart = NOW.minus(Duration.ofHours(1));
+        ticket.setCreatedAt(slaStart);
         String originalPublicId = ticket.getPublicId();
         // formData del RequestType viejo no debe sobrevivir a la reclasificación
         // — ver assertion de formData al final del test.
@@ -860,6 +855,7 @@ class TicketServiceTest {
         assertThat(ticket.getFormTemplateId()).isEqualTo(99L);
         assertThat(response.getRequestTypeCode()).isEqualTo("FLOODING");
         assertThat(ticket.getFormData()).isEmpty();
+        verify(ticketSlaService).recalculateInitialResolutionCycle(ticket, NOW);
     }
 
     /**

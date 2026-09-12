@@ -959,7 +959,8 @@ components:
       required: [id, publicId, requestTypeCode, requestTypeName, categoryName, subcategoryName,
                  ticketType, summary, currentStatus, currentPriority, responsibleAreaId,
                  assignedAgentId, anonymous, estimatedAffectedCount, escalated, neighborhoodId,
-                 escalationReasonCode, escalatedAt, neighborhoodName, classificationFinalizedAt,
+                 escalationReasonCode, escalatedAt, slaNearDue, slaBreached, resolutionNearDueAt,
+                 neighborhoodName, classificationFinalizedAt,
                  statusChangedAt, createdAt, updatedAt]
       properties:
         id:
@@ -1004,6 +1005,17 @@ components:
           type: string
           format: date-time
           nullable: true
+        slaNearDue:
+          type: boolean
+          description: El ciclo de resolución más reciente se encuentra actualmente en estado NEAR_DUE.
+        slaBreached:
+          type: boolean
+          description: El ciclo de resolución incumplió su SLA.
+        resolutionNearDueAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Instante calculado con calendario para el umbral preventivo del ciclo de resolución actual o más reciente.
         neighborhoodId:
           type: string
           format: uuid

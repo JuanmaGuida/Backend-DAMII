@@ -10,6 +10,7 @@ import com.reclamos.backend.entity.InboxEvent;
 import com.reclamos.backend.entity.InboxStatus;
 import com.reclamos.backend.entity.RequestType;
 import com.reclamos.backend.entity.ResolutionType;
+import com.reclamos.backend.entity.SlaStatus;
 import com.reclamos.backend.entity.Subcategory;
 import com.reclamos.backend.entity.Ticket;
 import com.reclamos.backend.entity.TicketActivity;
@@ -76,6 +77,7 @@ public class TicketStatusUpdateService {
     private final TicketMessageRepository messageRepository;
     private final InboxEventRepository inboxEventRepository;
     private final TicketResolutionService ticketResolutionService;
+    private final TicketSlaService ticketSlaService;
 
     @Transactional
     public TicketResponse applyUpdate(UUID ticketId, UpdateTicketStatusEnvelope envelope) {
@@ -387,6 +389,15 @@ public class TicketStatusUpdateService {
         response.setEscalated(ticket.isEscalated());
         response.setEscalationReasonCode(ticket.getEscalationReasonCode());
         response.setEscalatedAt(ticket.getEscalatedAt());
+        ticketSlaService.findLatestResolutionCycle(ticket).ifPresentOrElse(sla -> {
+            response.setSlaNearDue(sla.getStatus() == SlaStatus.NEAR_DUE);
+            response.setSlaBreached(sla.getStatus() == SlaStatus.BREACHED);
+            response.setResolutionNearDueAt(sla.getNearDueAt());
+        }, () -> {
+            response.setSlaNearDue(false);
+            response.setSlaBreached(false);
+            response.setResolutionNearDueAt(null);
+        });
         if (location != null && location.getNeighborhood() != null) {
             response.setNeighborhoodId(location.getNeighborhood().getId());
             response.setNeighborhoodName(location.getNeighborhood().getName());

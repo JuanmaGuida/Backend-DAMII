@@ -4,6 +4,7 @@ import com.reclamos.backend.entity.*;
 import com.reclamos.backend.repository.SlaPolicyRepository;
 import org.junit.jupiter.api.*;
 import java.time.*;
+import java.math.BigDecimal;
 import java.util.*;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -165,6 +166,25 @@ class SlaCalculationServiceTest {
     @Test void criticalResolutionCanUseTwentyFourContinuousHours() {
         assertEquals(Instant.parse("2026-09-07T00:00:00Z"), service.calculateDueAt(
                 Instant.parse("2026-09-06T00:00:00Z"), continuous(SlaType.RESOLUTION, 24)));
+    }
+    @Test void nearDueUsesConfiguredThresholdForContinuousSla() {
+        SlaCalculationService custom = new SlaCalculationService(policies, new BigDecimal("0.75"));
+        SlaPolicy policy = continuous(SlaType.RESOLUTION, 24);
+        assertEquals(Instant.parse("2026-09-06T18:00:00Z"),
+                custom.calculateNearDueAt(Instant.parse("2026-09-06T00:00:00Z"), policy));
+    }
+    @Test void nearDueConsumesOnlyEffectiveBusinessHours() {
+        assertEquals(Instant.parse("2026-09-07T12:36:00Z"), service.calculateNearDueAt(
+                Instant.parse("2026-09-04T20:00:00Z"), business(2)));
+    }
+    @Test void nearDueForBusinessDaysUsesTheSameCalendar() {
+        calendar.getNonWorkingDays().add(LocalDate.of(2026, 9, 8));
+        assertEquals(Instant.parse("2026-09-11T21:00:00Z"), service.calculateNearDueAt(
+                Instant.parse("2026-09-07T12:00:00Z"), businessDays(5)));
+    }
+    @Test void rejectsInvalidNearDueThreshold() {
+        assertThrows(IllegalArgumentException.class, () -> new SlaCalculationService(policies, BigDecimal.ZERO));
+        assertThrows(IllegalArgumentException.class, () -> new SlaCalculationService(policies, BigDecimal.ONE));
     }
     @Test void highResolutionSupportsSeventyTwoBusinessHours() {
         SlaPolicy policy = business(72);
