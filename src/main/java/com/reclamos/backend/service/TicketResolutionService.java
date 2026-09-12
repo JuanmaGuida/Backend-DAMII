@@ -14,6 +14,7 @@ import com.reclamos.backend.repository.TicketActivityRepository;
 import com.reclamos.backend.repository.TicketRepository;
 import com.reclamos.backend.repository.TicketResolutionRepository;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -32,12 +33,23 @@ public class TicketResolutionService {
     private final TicketActivityRepository activityRepository;
     private final Clock clock;
     private final Duration confirmationDuration;
+    private final TicketSlaService ticketSlaService;
 
     public TicketResolutionService(TicketRepository ticketRepository,
                                    TicketResolutionRepository resolutionRepository,
                                    TicketActivityRepository activityRepository,
                                    Clock clock,
                                    @Value("${ticket.resolution.confirmation-duration}") Duration confirmationDuration) {
+        this(ticketRepository, resolutionRepository, activityRepository, clock, confirmationDuration, null);
+    }
+
+    @Autowired
+    public TicketResolutionService(TicketRepository ticketRepository,
+                                   TicketResolutionRepository resolutionRepository,
+                                   TicketActivityRepository activityRepository,
+                                   Clock clock,
+                                   @Value("${ticket.resolution.confirmation-duration}") Duration confirmationDuration,
+                                   TicketSlaService ticketSlaService) {
         this.ticketRepository = ticketRepository;
         this.resolutionRepository = resolutionRepository;
         this.activityRepository = activityRepository;
@@ -46,6 +58,7 @@ public class TicketResolutionService {
             throw new IllegalArgumentException("La duración de confirmación debe ser positiva");
         }
         this.confirmationDuration = confirmationDuration;
+        this.ticketSlaService = ticketSlaService;
     }
 
     @Transactional
@@ -87,6 +100,9 @@ public class TicketResolutionService {
         Objects.requireNonNull(application, "application es obligatoria");
 
         TicketStatus previousStatus = ticket.getCurrentStatus();
+        if (ticketSlaService != null) {
+            ticketSlaService.completeActiveResolutionCycle(ticket, application.resolvedAt());
+        }
         TicketResolution resolution = new TicketResolution();
         resolution.setTicket(ticket);
         resolution.setType(application.type());
@@ -135,6 +151,9 @@ public class TicketResolutionService {
         ticket.setStatusChangedAt(now);
         ticket.setReopenCount(ticket.getReopenCount() + 1);
         ticket.setResolutionConfirmationDueAt(null);
+        if (ticketSlaService != null) {
+            ticketSlaService.startReopenedResolutionCycle(ticket, now);
+        }
         ticketRepository.save(ticket);
         saveCitizenActivity(ticket, ActivityType.REOPENED, TicketStatus.IN_PROGRESS, identity,
                 null, request.getReason(), now);

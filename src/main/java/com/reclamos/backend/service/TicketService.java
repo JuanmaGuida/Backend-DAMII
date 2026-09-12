@@ -68,6 +68,7 @@ public class TicketService {
     private final TicketLocationRepository locationRepository;
     private final NeighborhoodRepository neighborhoodRepository;
     private final SlaCalculationService slaCalculationService;
+    private final TicketSlaService ticketSlaService;
     private final FormValidationService formValidationService;
     private final RiskCalculationService riskCalculationService;
     private final OutboxEventRepository outboxEventRepository;
@@ -129,8 +130,7 @@ public class TicketService {
         ticket.setCreatedAt(now);
         ticket.setFirstResponseDueAt(slaCalculationService
                 .calculateDueAt(now, ticket.getCurrentPriority(), SlaType.FIRST_RESPONSE).orElse(null));
-        ticket.setResolutionDueAt(slaCalculationService
-                .calculateResolutionDueAt(now, ticket.getCurrentPriority(), ticket.getTicketType()).orElse(null));
+        ticket.setResolutionDueAt(null);
         ticket.setEstimatedAffectedCount(0);
         ticket.setReopenCount(0);
         ticket.setEscalated(false);
@@ -138,6 +138,7 @@ public class TicketService {
         ticket.setStatusChangedAt(now);
         ticket = ticketRepository.save(ticket);
         ticketRepository.flush();
+        ticketSlaService.startInitialResolutionCycle(ticket, now);
 
         if (!validatedAttachments.isEmpty()) {
             attachmentService.storeForTicket(ticket, identity, validatedAttachments, now);
@@ -266,15 +267,15 @@ public class TicketService {
         // createdAt (no desde "ahora") con la nueva prioridad.
         ticket.setFirstResponseDueAt(slaCalculationService
                 .calculateDueAt(ticket.getCreatedAt(), newPriority, SlaType.FIRST_RESPONSE).orElse(null));
-        ticket.setResolutionDueAt(slaCalculationService
-                .calculateResolutionDueAt(ticket.getCreatedAt(), newPriority, ticket.getTicketType()).orElse(null));
         ticketRepository.save(ticket);
 
         String message = "RequestType corregido de '" + previousRequestType.getCode()
                 + "' a '" + newRequestType.getCode() + "' durante la revisión inicial";
         recordActivity(ticket, ActivityType.REQUEST_TYPE_CHANGED, ticket.getCurrentStatus(), ticket.getCurrentStatus(),
                 actor, previousPriority, newPriority, message);
-        activateCriticalEscalationIfNeeded(ticket, clock.instant());
+        Instant reclassifiedAt = clock.instant();
+        activateCriticalEscalationIfNeeded(ticket, reclassifiedAt);
+        ticketSlaService.recalculateInitialResolutionCycle(ticket, reclassifiedAt);
 
         return toResponse(ticket, location);
     }
@@ -549,6 +550,7 @@ public class TicketService {
         response.setEscalated(ticket.isEscalated());
         response.setEscalationReasonCode(ticket.getEscalationReasonCode());
         response.setEscalatedAt(ticket.getEscalatedAt());
+        applySlaSignals(response, ticket);
         if (location != null && location.getNeighborhood() != null) {
             response.setNeighborhoodId(location.getNeighborhood().getId());
             response.setNeighborhoodName(location.getNeighborhood().getName());
@@ -561,10 +563,9 @@ public class TicketService {
     }
 
     /**
-     * Re-derivación / recálculo de SLA de derivación (independiente de
+     * Re-derivación (independiente de
      * routeToArea, que cubre sólo la primera derivación IN_REVIEW -&gt; ROUTED
-     * de Story 3.3). Recalcula resolutionDueAt desde createdAt cada vez que
-     * se invoca. Nota (a confirmar con el equipo dev): no encontramos ningún
+     * de Story 3.3). Conserva el ciclo SLA iniciado previamente. Nota: no encontramos ningún
      * llamador todavía en esta rama — puede ser un método pensado para una
      * integración o story que no está visible en este merge; no lo
      * eliminamos porque tiene su propia batería de tests ya aprobada en dev.
@@ -575,12 +576,22 @@ public class TicketService {
                 .orElseThrow(() -> new ResourceNotFoundException("Ticket no encontrado"));
         if (ticket.getCurrentStatus() == TicketStatus.DUPLICATE)
             throw new InvalidTicketRequestException("Un ticket duplicado hereda el SLA del ticket principal");
-        ticket.setResolutionDueAt(slaCalculationService.calculateResolutionDueAt(
-                ticket.getCreatedAt(), ticket.getCurrentPriority(), ticket.getTicketType()).orElse(null));
         ticket.setResponsibleAreaId(responsibleAreaId);
         ticket.setCurrentStatus(TicketStatus.ROUTED);
         ticket.setStatusChangedAt(routedAt);
         return ticketRepository.save(ticket);
+    }
+
+    private void applySlaSignals(TicketResponse response, Ticket ticket) {
+        ticketSlaService.findLatestResolutionCycle(ticket).ifPresentOrElse(sla -> {
+            response.setSlaNearDue(sla.getStatus() == SlaStatus.NEAR_DUE);
+            response.setSlaBreached(sla.getStatus() == SlaStatus.BREACHED);
+            response.setResolutionNearDueAt(sla.getNearDueAt());
+        }, () -> {
+            response.setSlaNearDue(false);
+            response.setSlaBreached(false);
+            response.setResolutionNearDueAt(null);
+        });
     }
 
     private void validateLocation(RequestType type, CreateTicketRequest.LocationData location) {

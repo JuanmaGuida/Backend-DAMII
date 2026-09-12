@@ -12,10 +12,12 @@ import com.reclamos.backend.entity.InboxStatus;
 import com.reclamos.backend.entity.Priority;
 import com.reclamos.backend.entity.RequestType;
 import com.reclamos.backend.entity.ResolutionType;
+import com.reclamos.backend.entity.SlaStatus;
 import com.reclamos.backend.entity.Subcategory;
 import com.reclamos.backend.entity.Ticket;
 import com.reclamos.backend.entity.TicketActivity;
 import com.reclamos.backend.entity.TicketStatus;
+import com.reclamos.backend.entity.TicketSla;
 import com.reclamos.backend.entity.TicketResolution;
 import com.reclamos.backend.entity.TicketType;
 import com.reclamos.backend.entity.UpdateTicketStatusType;
@@ -80,6 +82,8 @@ class TicketStatusUpdateServiceTest {
     private InboxEventRepository inboxEventRepository;
     @Mock
     private TicketResolutionRepository resolutionRepository;
+    @Mock
+    private TicketSlaService ticketSlaService;
 
     private TicketStatusUpdateService service;
     private TicketResolutionService resolutionService;
@@ -94,7 +98,7 @@ class TicketStatusUpdateServiceTest {
                 ticketRepository, resolutionRepository, activityRepository,
                 Clock.fixed(Instant.parse("2026-09-08T12:00:00Z"), ZoneOffset.UTC), Duration.ofHours(72));
         service = new TicketStatusUpdateService(ticketRepository, activityRepository, locationRepository,
-                messageRepository, inboxEventRepository, resolutionService);
+                messageRepository, inboxEventRepository, resolutionService, ticketSlaService);
         // Default para los tests que no ejercitan dedupe en sí: "eventId nunca visto".
         // Los tests de dedupe pisan este stub explícitamente.
         lenient().when(inboxEventRepository.findById(any())).thenReturn(Optional.empty());
@@ -108,6 +112,9 @@ class TicketStatusUpdateServiceTest {
     @Test
     void startedMovesRoutedTicketToInProgressAndRecordsTraceability() {
         Ticket ticket = ticket(TicketStatus.ROUTED);
+        TicketSla sla = new TicketSla();
+        sla.setStatus(SlaStatus.NEAR_DUE);
+        sla.setNearDueAt(Instant.parse("2026-09-08T11:00:00Z"));
         Instant escalatedAt = Instant.parse("2026-09-08T10:00:00Z");
         ticket.setEscalated(true);
         ticket.setEscalationReasonCode(EscalationReasonCode.CRITICAL_PRIORITY);
@@ -115,6 +122,7 @@ class TicketStatusUpdateServiceTest {
         when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
         when(activityRepository.countByTicketId(ticketId)).thenReturn(0);
         when(locationRepository.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+        when(ticketSlaService.findLatestResolutionCycle(ticket)).thenReturn(Optional.of(sla));
 
         Instant realOccurredAt = Instant.now().minusSeconds(120);
         UpdateTicketStatusRequest data = new UpdateTicketStatusRequest(
@@ -128,6 +136,9 @@ class TicketStatusUpdateServiceTest {
         assertThat(response.isEscalated()).isTrue();
         assertThat(response.getEscalationReasonCode()).isEqualTo(EscalationReasonCode.CRITICAL_PRIORITY);
         assertThat(response.getEscalatedAt()).isEqualTo(escalatedAt);
+        assertThat(response.isSlaNearDue()).isTrue();
+        assertThat(response.isSlaBreached()).isFalse();
+        assertThat(response.getResolutionNearDueAt()).isEqualTo(sla.getNearDueAt());
         assertThat(ticket.getEscalatedAt()).isEqualTo(escalatedAt);
         verify(messageRepository).save(any());
 

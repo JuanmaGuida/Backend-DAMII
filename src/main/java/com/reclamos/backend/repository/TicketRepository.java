@@ -28,4 +28,5 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
     @Query("select t.id from Ticket t where t.currentStatus = com.reclamos.backend.entity.TicketStatus.RESOLVED " +
             "and t.resolutionConfirmationDueAt is not null and t.resolutionConfirmationDueAt <= :now")
     List<UUID> findExpiredResolutionConfirmationIds(@Param("now") Instant now);
+
 }

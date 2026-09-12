@@ -30,6 +30,9 @@ public class TicketResponse {
     private boolean escalated;
     private EscalationReasonCode escalationReasonCode;
     private Instant escalatedAt;
+    private boolean slaNearDue;
+    private boolean slaBreached;
+    private Instant resolutionNearDueAt;
     private UUID neighborhoodId;
     private String neighborhoodName;
     private Instant classificationFinalizedAt;
