@@ -55,7 +55,7 @@ class ResolutionSlaMilestoneServiceTest {
         when(activities.countByTicketId(ticket.getId())).thenReturn(0, 1, 2);
     }
 
-    @Test void lateScanRecordsNearThenBreachThenEscalationExactlyOnce() {
+    @Test void identifiedM2TicketPublishesEscalationChangedExactlyOnce() {
         service.processResolutionSlaMilestones(ticket, sla, PROCESSED);
         service.processResolutionSlaMilestones(ticket, sla, PROCESSED.plusSeconds(60));
 
@@ -74,7 +74,7 @@ class ResolutionSlaMilestoneServiceTest {
         assertTrue(ticket.isEscalated());
         assertEquals(EscalationReasonCode.SLA_BREACHED, ticket.getEscalationReasonCode());
         assertEquals(DUE, ticket.getEscalatedAt());
-        verifyNoInteractions(outbox);
+        assertPublishedEscalationChanged(ticket);
     }
 
     @Test void criticalEscalationIsPreservedWhenSlaBreaches() {
@@ -100,6 +100,7 @@ class ResolutionSlaMilestoneServiceTest {
         assertEquals(TicketStatus.IN_PROGRESS, ticket.getCurrentStatus());
         assertEquals(Priority.HIGH, ticket.getCurrentPriority());
         verify(activities).save(argThat(a -> a.getActionType() == ActivityType.SLA_NEAR_DUE));
+        verifyNoInteractions(outbox);
     }
 
     @Test void externallyReportedResolutionBeforeDueDoesNotCreateBreach() {
@@ -134,22 +135,77 @@ class ResolutionSlaMilestoneServiceTest {
         verifyNoInteractions(activities, outbox);
     }
 
-    @Test void newlyEscalatedExternalTicketWritesCompleteOutboxEvent() {
+    @Test void identifiedExternalTicketPublishesEscalationChanged() {
         ticket.setResponsibleAreaId("M6");
         ticket.setCurrentStatus(TicketStatus.ROUTED);
 
         service.processResolutionSlaMilestones(ticket, sla, DUE);
 
+        assertPublishedEscalationChanged(ticket);
+    }
+
+    @Test void anonymousM2TicketDoesNotPublishEscalationChanged() {
+        makeAnonymous();
+
+        service.processResolutionSlaMilestones(ticket, sla, DUE);
+
+        assertTrue(ticket.isEscalated());
+        verifyNoInteractions(outbox);
+    }
+
+    @Test void anonymousExternalTicketPublishesEscalationChanged() {
+        makeAnonymous();
+        ticket.setResponsibleAreaId("M6");
+        ticket.setCurrentStatus(TicketStatus.ROUTED);
+
+        service.processResolutionSlaMilestones(ticket, sla, DUE);
+
+        assertPublishedEscalationChanged(ticket);
+    }
+
+    @Test void anonymousExternalTicketAlreadyEscalatedDoesNotPublishEscalationChanged() {
+        makeAnonymous();
+        ticket.setResponsibleAreaId("M6");
+        ticket.setCurrentStatus(TicketStatus.ROUTED);
+        ticket.setEscalated(true);
+        ticket.setEscalationReasonCode(EscalationReasonCode.MANUAL);
+        ticket.setEscalatedAt(NEAR.minusSeconds(100));
+
+        service.processResolutionSlaMilestones(ticket, sla, DUE);
+
+        assertEquals(EscalationReasonCode.MANUAL, ticket.getEscalationReasonCode());
+        verifyNoInteractions(outbox);
+    }
+
+    private void makeAnonymous() {
+        ticket.setAnonymous(true);
+        ticket.setCitizenId(null);
+    }
+
+    private void assertPublishedEscalationChanged(Ticket expectedTicket) {
         ArgumentCaptor<OutboxEvent> captor = ArgumentCaptor.forClass(OutboxEvent.class);
         verify(outbox).save(captor.capture());
-        Map<String, Object> payload = captor.getValue().getPayload();
+        OutboxEvent event = captor.getValue();
+        assertEquals("ticketUpdated", event.getEventType());
+        assertEquals(TicketUpdatedType.ESCALATION_CHANGED, event.getUpdateType());
+
+        Map<String, Object> payload = event.getPayload();
+        assertEquals("tickets/" + expectedTicket.getId(), payload.get("subject"));
         @SuppressWarnings("unchecked") Map<String, Object> data = (Map<String, Object>) payload.get("data");
-        assertEquals(ticket.getId(), data.get("ticketId"));
-        assertEquals(ticket.getPublicId(), data.get("publicId"));
-        assertEquals(ticket.getCitizenId(), data.get("citizenId"));
-        assertEquals(false, data.get("isAnonymous"));
+        assertEquals(expectedTicket.getId(), data.get("ticketId"));
+        assertEquals(expectedTicket.getPublicId(), data.get("publicId"));
+        assertEquals(expectedTicket.getCitizenId(), data.get("citizenId"));
+        assertEquals(expectedTicket.isAnonymous(), data.get("isAnonymous"));
+        assertEquals(expectedTicket.getResponsibleAreaId(), data.get("responsibleAreaId"));
+        assertEquals(TicketUpdatedType.ESCALATION_CHANGED.name(), data.get("updateType"));
+        assertEquals(expectedTicket.getCurrentStatus().name(), data.get("currentStatus"));
+        assertEquals(expectedTicket.getCurrentPriority().name(), data.get("currentPriority"));
         assertEquals(PROCESSED.toString(), data.get("updatedAt"));
         assertNotEquals(DUE.toString(), data.get("updatedAt"));
-        assertTrue(data.containsKey("details"));
+        @SuppressWarnings("unchecked") Map<String, Object> details = (Map<String, Object>) data.get("details");
+        @SuppressWarnings("unchecked") Map<String, Object> escalation = (Map<String, Object>) details.get("escalation");
+        assertEquals(true, escalation.get("active"));
+        assertEquals(EscalationReasonCode.SLA_BREACHED.name(), escalation.get("reasonCode"));
+        assertEquals(DUE.toString(), escalation.get("escalatedAt"));
     }
 }

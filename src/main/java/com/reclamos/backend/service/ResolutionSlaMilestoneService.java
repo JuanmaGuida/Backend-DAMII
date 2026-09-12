@@ -71,7 +71,7 @@ public class ResolutionSlaMilestoneService {
                 ticket.setEscalatedAt(sla.getDueAt());
                 saveActivity(ticket, ActivityType.ESCALATED, EscalationReasonCode.SLA_BREACHED.name(),
                         "Escalamiento automático por incumplimiento del SLA de resolución", sla.getDueAt());
-                if (isExternallyManaged(ticket)) {
+                if (shouldPublishEscalationChanged(ticket)) {
                     writeEscalationChangedEvent(ticket, processedAt);
                 }
             }
@@ -92,13 +92,10 @@ public class ResolutionSlaMilestoneService {
                 };
     }
 
-    private boolean isExternallyManaged(Ticket ticket) {
-        return ticket.getResponsibleAreaId() != null
-                && !MODULE_ID.equalsIgnoreCase(ticket.getResponsibleAreaId())
-                && switch (ticket.getCurrentStatus()) {
-                    case ROUTED, IN_PROGRESS, PENDING_INFORMATION -> true;
-                    default -> false;
-                };
+    private boolean shouldPublishEscalationChanged(Ticket ticket) {
+        return !ticket.isAnonymous()
+                || (ticket.getResponsibleAreaId() != null
+                && !MODULE_ID.equalsIgnoreCase(ticket.getResponsibleAreaId()));
     }
 
     private void saveActivity(Ticket ticket, ActivityType type, String reason, String message, Instant occurredAt) {
