@@ -4,5 +4,6 @@ public enum SlaStatus {
     RUNNING,
     NEAR_DUE,
     MET,
-    BREACHED
+    BREACHED,
+    STOPPED
 }

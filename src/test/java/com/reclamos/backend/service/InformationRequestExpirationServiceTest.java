@@ -28,14 +28,15 @@ class InformationRequestExpirationServiceTest {
     private final InformationRequestRepository requests = mock(InformationRequestRepository.class);
     private final TicketCancellationRepository cancellations = mock(TicketCancellationRepository.class);
     private final TicketActivityRepository activities = mock(TicketActivityRepository.class);
+    private final TicketSlaService ticketSlaService = mock(TicketSlaService.class);
     private final InformationRequestExpirationService service = new InformationRequestExpirationService(
-            tickets, requests, cancellations, activities);
+            tickets, requests, cancellations, activities, ticketSlaService);
     private Ticket ticket;
     private InformationRequest request;
 
     @BeforeEach
     void setUp() {
-        reset(tickets, requests, cancellations, activities);
+        reset(tickets, requests, cancellations, activities, ticketSlaService);
         ticket = new Ticket();
         ticket.setId(UUID.randomUUID());
         ticket.setCurrentStatus(TicketStatus.PENDING_INFORMATION);
@@ -62,6 +63,7 @@ class InformationRequestExpirationServiceTest {
                 && value.getCancelledByType() == ActorType.SYSTEM));
         verify(activities).save(argThat(value -> value.getActionType() == ActivityType.CANCELLED
                 && value.getSequence() == 1));
+        verify(ticketSlaService).terminateActiveCycles(ticket, NOW);
     }
 
     @Test

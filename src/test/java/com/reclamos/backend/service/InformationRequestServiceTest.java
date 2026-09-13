@@ -24,15 +24,16 @@ class InformationRequestServiceTest {
     private final TicketActivityRepository activities = mock(TicketActivityRepository.class);
     private final InformationRequestExpirationService expirationService =
             mock(InformationRequestExpirationService.class);
+    private final TicketSlaService ticketSlaService = mock(TicketSlaService.class);
     private InformationRequestService service;
     private Ticket ticket;
 
     @BeforeEach
     void setUp() {
-        reset(tickets, requests, activities, expirationService);
+        reset(tickets, requests, activities, expirationService, ticketSlaService);
         service = new InformationRequestService(tickets, requests, activities,
                 new InformationRequestDeadlineService(Clock.fixed(NOW, ZoneOffset.UTC), Duration.ofHours(72)),
-                expirationService);
+                expirationService, ticketSlaService);
         ticket = ticket(TicketStatus.IN_PROGRESS, false);
         when(tickets.findByIdForUpdate(ticket.getId())).thenReturn(Optional.of(ticket));
         when(requests.save(any())).thenAnswer(invocation -> {
@@ -63,6 +64,7 @@ class InformationRequestServiceTest {
                 && value.getActorType() == ActorType.AGENT
                 && actor.citizenId().toString().equals(value.getActorId())
                 && "M2".equals(value.getSourceModuleId())));
+        verify(ticketSlaService).pauseActiveResolutionCycle(ticket, NOW);
     }
 
     @Test
@@ -133,6 +135,7 @@ class InformationRequestServiceTest {
                 && value.getActorType() == ActorType.CITIZEN
                 && actor.citizenId().toString().equals(value.getActorId())
                 && "M2".equals(value.getSourceModuleId())));
+        verify(ticketSlaService).resumeActiveResolutionCycle(ticket, NOW);
     }
 
     @Test

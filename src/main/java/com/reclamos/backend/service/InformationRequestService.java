@@ -31,6 +31,7 @@ public class InformationRequestService {
     private final TicketActivityRepository activityRepository;
     private final InformationRequestDeadlineService deadlineService;
     private final InformationRequestExpirationService expirationService;
+    private final TicketSlaService ticketSlaService;
 
     @Transactional
     public InformationRequestResponse requestInformation(UUID ticketId, CreateInformationRequest request,
@@ -40,38 +41,63 @@ public class InformationRequestService {
         if (Objects.equals(identity.citizenId(), ticket.getCitizenId())) {
             throw new UnauthorizedTicketOperationException();
         }
-        if (!REQUESTABLE_STATUSES.contains(ticket.getCurrentStatus())) { // No se permite solicitar información desde estados incompatibles
+        Instant requestedAt = deadlineService.now();
+        InformationRequest informationRequest = createPending(ticket,
+                new InformationRequestApplication(
+                        MODULE_ID,
+                        identity.role() == ModuleRole.ADMIN ? ActorType.ADMIN : ActorType.AGENT,
+                        identity.citizenId().toString(), request.getMessageForCitizen(), request.getInternalMessage(),
+                        requestedAt, deadlineService.calculateDueAt(requestedAt), null));
+        return response(informationRequest);
+    }
+
+    InformationRequest requestInformationFromExternal(Ticket lockedTicket, String sourceModuleId,
+                                                        ActorType actorType, String actorId,
+                                                        String messageForCitizen, String internalMessage,
+                                                        Instant requestedAt, Instant requiredBy,
+                                                        UUID externalEventId) {
+        Instant dueAt = requiredBy != null ? requiredBy : deadlineService.calculateDueAt(requestedAt);
+        if (!dueAt.isAfter(requestedAt)) {
+            throw new InvalidTicketRequestException("details.informationRequest.requiredBy debe ser posterior a updateOccurredAt");
+        }
+        return createPending(lockedTicket, new InformationRequestApplication(
+                sourceModuleId, actorType, actorId, messageForCitizen, internalMessage,
+                requestedAt, dueAt, externalEventId));
+    }
+
+    private InformationRequest createPending(Ticket ticket, InformationRequestApplication application) {
+        if (!REQUESTABLE_STATUSES.contains(ticket.getCurrentStatus())) {
             throw new InformationRequestConflictException(
                     "El estado actual del ticket no permite solicitar información");
         }
-        if (informationRequestRepository.existsByTicketIdAndStatus(ticketId, InformationRequestStatus.PENDING)) { // Un ticket solo puede tener una solicitud de información pendiente a la vez
+        if (informationRequestRepository.existsByTicketIdAndStatus(
+                ticket.getId(), InformationRequestStatus.PENDING)) {
             throw new InformationRequestConflictException("Ya existe una solicitud de información pendiente");
         }
 
-        Instant requestedAt = deadlineService.now();
-        TicketStatus resumeStatus = ticket.getCurrentStatus(); // Se guarda el estado actual para restaurarlo cuando el vecino responda
+        TicketStatus resumeStatus = ticket.getCurrentStatus();
         InformationRequest informationRequest = new InformationRequest(); // Se crea la solicitud y se registra quién la realizó, el mensaje y el plazo
         informationRequest.setTicket(ticket);
-        informationRequest.setRequestedByModuleId(MODULE_ID);
-        ActorType requesterType = identity.role() == ModuleRole.ADMIN ? ActorType.ADMIN : ActorType.AGENT;
-        String actorId = identity.citizenId().toString();
-        informationRequest.setRequestedByActorType(requesterType);
-        informationRequest.setRequestedByActorId(actorId);
-        informationRequest.setMessageForCitizen(request.getMessageForCitizen());
-        informationRequest.setInternalMessage(request.getInternalMessage());
+        informationRequest.setRequestedByModuleId(application.sourceModuleId());
+        informationRequest.setRequestedByActorType(application.actorType());
+        informationRequest.setRequestedByActorId(application.actorId());
+        informationRequest.setMessageForCitizen(application.messageForCitizen());
+        informationRequest.setInternalMessage(application.internalMessage());
         informationRequest.setResumeStatus(resumeStatus);
         informationRequest.setStatus(InformationRequestStatus.PENDING);
-        informationRequest.setRequestedAt(requestedAt);
-        informationRequest.setDueAt(deadlineService.calculateDueAt(requestedAt)); // El deadline se calcula a partir de la fecha de solicitud y la duración configurada
+        informationRequest.setRequestedAt(application.requestedAt());
+        informationRequest.setDueAt(application.dueAt());
         informationRequest = informationRequestRepository.save(informationRequest);
 
+        ticketSlaService.pauseActiveResolutionCycle(ticket, application.requestedAt());
         ticket.setCurrentStatus(TicketStatus.PENDING_INFORMATION); // Mientras se espera la respuesta, el ticket queda en PENDING_INFORMATION
-        ticket.setStatusChangedAt(requestedAt);
+        ticket.setStatusChangedAt(application.requestedAt());
         ticketRepository.save(ticket);
         saveActivity(ticket, ActivityType.INFORMATION_REQUIRED, resumeStatus,
-                TicketStatus.PENDING_INFORMATION, requesterType, actorId,
-                null, request.getMessageForCitizen(), requestedAt); // Se registra el cambio en el historial funcional del ticket
-        return response(informationRequest);
+                TicketStatus.PENDING_INFORMATION, application.actorType(), application.actorId(),
+                application.sourceModuleId(), null, application.messageForCitizen(), application.requestedAt(),
+                application.externalEventId());
+        return informationRequest;
     }
 
     @Transactional
@@ -112,12 +138,13 @@ public class InformationRequestService {
         informationRequest.setStatus(InformationRequestStatus.ANSWERED);
         informationRequestRepository.save(informationRequest);
 
+        ticketSlaService.resumeActiveResolutionCycle(ticket, answeredAt);
         ticket.setCurrentStatus(informationRequest.getResumeStatus());
         ticket.setStatusChangedAt(answeredAt);
         ticketRepository.save(ticket);
         saveActivity(ticket, ActivityType.INFORMATION_PROVIDED, TicketStatus.PENDING_INFORMATION,
                 informationRequest.getResumeStatus(), ActorType.CITIZEN, actorId,
-                null, responseMessage, answeredAt);
+                MODULE_ID, null, responseMessage, answeredAt, null);
         return response(informationRequest);
     }
 
@@ -130,7 +157,8 @@ public class InformationRequestService {
     }
 
     private void saveActivity(Ticket ticket, ActivityType type, TicketStatus previous, TicketStatus next,
-                              ActorType actorType, String actorId, String reason, String message, Instant at) {
+                              ActorType actorType, String actorId, String sourceModuleId, String reason,
+                              String message, Instant at, UUID externalEventId) {
         // Registra una nueva actividad en el historial funcional del ticket
         TicketActivity activity = new TicketActivity();
         activity.setTicket(ticket);
@@ -140,7 +168,8 @@ public class InformationRequestService {
         activity.setNewStatus(next);
         activity.setActorType(actorType);
         activity.setActorId(actorId);
-        activity.setSourceModuleId(MODULE_ID);
+        activity.setSourceModuleId(sourceModuleId);
+        activity.setExternalEventId(externalEventId);
         activity.setReasonCode(reason);
         activity.setMessage(message);
         activity.setOccurredAt(at);
@@ -163,5 +192,26 @@ public class InformationRequestService {
         return new InformationRequestResponse(request.getId(), request.getTicket().getId(), request.getStatus(),
                 request.getMessageForCitizen(), request.getRequestedAt(), request.getDueAt(),
                 request.getResumeStatus(), request.getResponseMessage(), request.getAnsweredAt());
+    }
+
+    private record InformationRequestApplication(
+            String sourceModuleId,
+            ActorType actorType,
+            String actorId,
+            String messageForCitizen,
+            String internalMessage,
+            Instant requestedAt,
+            Instant dueAt,
+            UUID externalEventId
+    ) {
+        private InformationRequestApplication {
+            Objects.requireNonNull(sourceModuleId, "sourceModuleId es obligatorio");
+            Objects.requireNonNull(actorType, "actorType es obligatorio");
+            if (messageForCitizen == null || messageForCitizen.isBlank()) {
+                throw new InvalidTicketRequestException("messageForCitizen es obligatorio");
+            }
+            Objects.requireNonNull(requestedAt, "requestedAt es obligatorio");
+            Objects.requireNonNull(dueAt, "dueAt es obligatorio");
+        }
     }
 }

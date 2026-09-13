@@ -212,6 +212,39 @@ class SlaCalculationServiceTest {
     }
     @Test void sameInputsAreDeterministic() { SlaPolicy p = business(5); Instant start = Instant.parse("2026-09-04T20:00:00Z"); assertEquals(service.calculateDueAt(start, p), service.calculateDueAt(start, p)); }
 
+    @Test void effectivePauseTimeForContinuousPolicyUsesWallClock() {
+        SlaPolicy policy = continuous(SlaType.RESOLUTION, 24);
+        assertEquals(Duration.ofHours(66).getSeconds(), service.effectiveSecondsBetween(
+                Instant.parse("2026-09-04T18:00:00Z"),
+                Instant.parse("2026-09-07T12:00:00Z"), policy));
+    }
+
+    @Test void effectivePauseTimeAcrossWeekendCountsOnlyBusinessWindow() {
+        calendar.setWorkdayEnd(LocalTime.of(17, 0));
+        SlaPolicy policy = business(8);
+        assertEquals(Duration.ofHours(2).getSeconds(), service.effectiveSecondsBetween(
+                Instant.parse("2026-09-04T18:00:00Z"),
+                Instant.parse("2026-09-07T12:00:00Z"), policy));
+    }
+
+    @Test void effectivePauseTimeSkipsConfiguredHoliday() {
+        calendar.getNonWorkingDays().add(LocalDate.of(2026, 9, 7));
+        SlaPolicy policy = business(8);
+        assertEquals(Duration.ofHours(2).getSeconds(), service.effectiveSecondsBetween(
+                Instant.parse("2026-09-04T19:00:00Z"),
+                Instant.parse("2026-09-08T12:00:00Z"), policy));
+    }
+
+    @Test void addingMeasuredBusinessTimeIsConsistentWithCalendar() {
+        SlaPolicy policy = business(8);
+        Instant friday = Instant.parse("2026-09-04T20:00:00Z");
+        Instant monday = service.addEffectiveSeconds(friday, Duration.ofHours(2).getSeconds(), policy);
+
+        assertEquals(Instant.parse("2026-09-07T13:00:00Z"), monday);
+        assertEquals(Duration.ofHours(2).getSeconds(),
+                service.effectiveSecondsBetween(friday, monday, policy));
+    }
+
     private void assertBusiness(String start, long hours, String expected) {
         assertEquals(Instant.parse(expected), service.calculateDueAt(Instant.parse(start), business(hours)));
     }

@@ -31,15 +31,17 @@ public interface TicketSlaRepository extends JpaRepository<TicketSla, Long> {
                                          @Param("slaType") SlaType slaType);
 
     @Query("select new com.reclamos.backend.repository.TicketSlaCandidate(s.ticket.id, s.id) " +
-            "from TicketSla s where s.slaType = com.reclamos.backend.entity.SlaType.RESOLUTION " +
-            "and s.completedAt is null and s.ticket.mainTicket is null and s.ticket.currentStatus in " +
+            "from TicketSla s where s.completedAt is null and s.pausedAt is null " +
+            "and s.ticket.mainTicket is null and (" +
+            "(s.slaType = com.reclamos.backend.entity.SlaType.FIRST_RESPONSE " +
+            "and s.ticket.currentStatus = com.reclamos.backend.entity.TicketStatus.REGISTERED) or " +
+            "(s.slaType = com.reclamos.backend.entity.SlaType.RESOLUTION and s.ticket.currentStatus in " +
             "(com.reclamos.backend.entity.TicketStatus.REGISTERED, " +
             "com.reclamos.backend.entity.TicketStatus.IN_REVIEW, " +
             "com.reclamos.backend.entity.TicketStatus.ROUTED, " +
-            "com.reclamos.backend.entity.TicketStatus.IN_PROGRESS, " +
-            "com.reclamos.backend.entity.TicketStatus.PENDING_INFORMATION) and (" +
+            "com.reclamos.backend.entity.TicketStatus.IN_PROGRESS))) and (" +
             "(s.status = com.reclamos.backend.entity.SlaStatus.RUNNING and s.nearDueAt <= :now) or " +
             "(s.status in (com.reclamos.backend.entity.SlaStatus.RUNNING, " +
             "com.reclamos.backend.entity.SlaStatus.NEAR_DUE) and s.dueAt <= :now))")
-    List<TicketSlaCandidate> findPendingResolutionMilestones(@Param("now") Instant now);
+    List<TicketSlaCandidate> findPendingMilestones(@Param("now") Instant now);
 }

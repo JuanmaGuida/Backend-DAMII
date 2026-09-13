@@ -2,6 +2,7 @@ package com.reclamos.backend.migration;
 
 import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.MigrationVersion;
+import org.flywaydb.core.api.FlywayException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -22,7 +23,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class TicketSlaMigrationIntegrationTest {
     @Autowired private DataSource dataSource;
 
-    @Test void cleanV1ToV29CreatesAndEnforcesTicketSlaModel() {
+    @Test void cleanV1ToV30CreatesAndEnforcesFinalTicketSlaModel() {
         String schema = "ticket_sla_" + UUID.randomUUID().toString().replace("-", "");
         JdbcTemplate database = new JdbcTemplate(dataSource);
         try {
@@ -32,12 +33,12 @@ class TicketSlaMigrationIntegrationTest {
                     .schemas(schema)
                     .defaultSchema(schema)
                     .cleanDisabled(false)
-                    .target(MigrationVersion.fromVersion("29"))
+                    .target(MigrationVersion.fromVersion("30"))
                     .load();
             flyway.migrate();
 
             assertTrue(flyway.validateWithResult().validationSuccessful);
-            assertEquals("29", database.queryForObject(
+            assertEquals("30", database.queryForObject(
                     "SELECT version FROM " + schema
                             + ".flyway_schema_history WHERE success ORDER BY installed_rank DESC LIMIT 1",
                     String.class));
@@ -81,11 +82,63 @@ class TicketSlaMigrationIntegrationTest {
             assertThrows(DataIntegrityViolationException.class,
                     () -> database.update("UPDATE " + schema
                             + ".ticket_sla SET near_due_at=started_at - INTERVAL '1 second' WHERE ticket_id=?", ticketId));
+            assertDoesNotThrow(() -> database.update("UPDATE " + schema
+                            + ".ticket_sla SET status='STOPPED', completed_at=? WHERE ticket_id=?",
+                    OffsetDateTime.parse("2026-09-11T22:30:00Z"), ticketId));
+            assertThrows(DataIntegrityViolationException.class,
+                    () -> database.update("UPDATE " + schema
+                            + ".ticket_sla SET completed_at=NULL WHERE ticket_id=?", ticketId));
+            assertThrows(DataIntegrityViolationException.class,
+                    () -> database.update("UPDATE " + schema
+                            + ".ticket_sla SET paused_at=CURRENT_TIMESTAMP WHERE ticket_id=?", ticketId));
+
+            UUID firstResponseTicket = insertTicket(database, schema);
+            Long firstResponsePolicy = database.queryForObject("SELECT id FROM " + schema
+                    + ".sla_policies WHERE priority='LOW' AND sla_type='FIRST_RESPONSE'", Long.class);
+            assertThrows(DataIntegrityViolationException.class,
+                    () -> database.update("INSERT INTO " + schema + ".ticket_sla "
+                                    + "(ticket_id, sla_type, cycle_number, policy_id, started_at, near_due_at, due_at, "
+                                    + "status, total_paused_seconds) VALUES (?, 'FIRST_RESPONSE', 2, ?, ?, ?, ?, 'RUNNING', 0)",
+                            firstResponseTicket, firstResponsePolicy,
+                            OffsetDateTime.parse("2026-09-11T12:00:00Z"),
+                            OffsetDateTime.parse("2026-09-11T18:00:00Z"),
+                            OffsetDateTime.parse("2026-09-11T22:00:00Z")));
             assertDoesNotThrow(() -> database.update("INSERT INTO " + schema
                             + ".ticket_activities (ticket_id, sequence, action_type, actor_type, occurred_at, created_at) "
                             + "VALUES (?, 1, 'SLA_NEAR_DUE', 'SYSTEM', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP), "
                             + "(?, 2, 'SLA_BREACHED', 'SYSTEM', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
                     ticketId, ticketId));
+        } finally {
+            database.execute("DROP SCHEMA IF EXISTS " + schema + " CASCADE");
+        }
+    }
+
+    @Test void populatedV29UpgradeFailsFastInsteadOfFabricatingFirstResponseHistory() {
+        String schema = "ticket_sla_upgrade_" + UUID.randomUUID().toString().replace("-", "");
+        JdbcTemplate database = new JdbcTemplate(dataSource);
+        try {
+            Flyway toV29 = Flyway.configure()
+                    .dataSource(dataSource)
+                    .locations("classpath:db/migration")
+                    .schemas(schema)
+                    .defaultSchema(schema)
+                    .cleanDisabled(false)
+                    .target(MigrationVersion.fromVersion("29"))
+                    .load();
+            toV29.migrate();
+            insertTicket(database, schema);
+
+            Flyway toV30 = Flyway.configure()
+                    .dataSource(dataSource)
+                    .locations("classpath:db/migration")
+                    .schemas(schema)
+                    .defaultSchema(schema)
+                    .cleanDisabled(false)
+                    .target(MigrationVersion.fromVersion("30"))
+                    .load();
+
+            FlywayException exception = assertThrows(FlywayException.class, toV30::migrate);
+            assertTrue(exception.getMessage().contains("V30 requires an empty disposable DEV/TEST ticket database"));
         } finally {
             database.execute("DROP SCHEMA IF EXISTS " + schema + " CASCADE");
         }

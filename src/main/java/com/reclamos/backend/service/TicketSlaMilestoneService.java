@@ -19,7 +19,7 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
-public class ResolutionSlaMilestoneService {
+public class TicketSlaMilestoneService {
     private static final String MODULE_ID = "M2";
 
     private final TicketRepository ticketRepository;
@@ -42,35 +42,37 @@ public class ResolutionSlaMilestoneService {
         }
         slaRepository.findByIdForUpdate(slaId)
                 .filter(sla -> sla.getTicket().getId().equals(ticketId))
-                .ifPresent(sla -> processResolutionSlaMilestones(ticket, sla, effectiveNow));
+                .filter(sla -> isSchedulerEligible(ticket, sla))
+                .ifPresent(sla -> processMilestones(ticket, sla, effectiveNow));
     }
 
     /** El llamador debe mantener los locks pesimistas en orden Ticket -&gt; TicketSla. */
-    public void processResolutionSlaMilestones(Ticket ticket, TicketSla sla, Instant effectiveNow) {
-        if (!hasActiveResolutionSla(ticket, sla)) {
+    public void processMilestones(Ticket ticket, TicketSla sla, Instant effectiveNow) {
+        if (!isProcessable(sla)) {
             return;
         }
 
         Instant processedAt = clock.instant();
+        String kind = sla.getSlaType() == SlaType.FIRST_RESPONSE ? "primera respuesta" : "resolución";
         if (sla.getStatus() == SlaStatus.RUNNING && !effectiveNow.isBefore(sla.getNearDueAt())) {
             sla.setStatus(SlaStatus.NEAR_DUE);
-            saveActivity(ticket, ActivityType.SLA_NEAR_DUE, "SLA_NEAR_DUE",
-                    "El ticket alcanzó el umbral preventivo de su SLA de resolución",
+            saveActivity(ticket, sla, ActivityType.SLA_NEAR_DUE, "SLA_NEAR_DUE",
+                    "El ticket alcanzó el umbral preventivo de su SLA de " + kind,
                     sla.getNearDueAt());
         }
 
         if ((sla.getStatus() == SlaStatus.RUNNING || sla.getStatus() == SlaStatus.NEAR_DUE)
                 && !effectiveNow.isBefore(sla.getDueAt())) {
             sla.setStatus(SlaStatus.BREACHED);
-            saveActivity(ticket, ActivityType.SLA_BREACHED, EscalationReasonCode.SLA_BREACHED.name(),
-                    "El ticket incumplió su SLA de resolución", sla.getDueAt());
+            saveActivity(ticket, sla, ActivityType.SLA_BREACHED, EscalationReasonCode.SLA_BREACHED.name(),
+                    "El ticket incumplió su SLA de " + kind, sla.getDueAt());
 
             if (!ticket.isEscalated()) {
                 ticket.setEscalated(true);
                 ticket.setEscalationReasonCode(EscalationReasonCode.SLA_BREACHED);
                 ticket.setEscalatedAt(sla.getDueAt());
-                saveActivity(ticket, ActivityType.ESCALATED, EscalationReasonCode.SLA_BREACHED.name(),
-                        "Escalamiento automático por incumplimiento del SLA de resolución", sla.getDueAt());
+                saveActivity(ticket, sla, ActivityType.ESCALATED, EscalationReasonCode.SLA_BREACHED.name(),
+                        "Escalamiento automático por incumplimiento del SLA de " + kind, sla.getDueAt());
                 if (shouldPublishEscalationChanged(ticket)) {
                     writeEscalationChangedEvent(ticket, processedAt);
                 }
@@ -80,25 +82,40 @@ public class ResolutionSlaMilestoneService {
         ticketRepository.save(ticket);
     }
 
-    private boolean hasActiveResolutionSla(Ticket ticket, TicketSla sla) {
-        return sla.getSlaType() == SlaType.RESOLUTION
-                && sla.getCompletedAt() == null
-                && sla.getStatus() != SlaStatus.MET
-                && sla.getStatus() != SlaStatus.BREACHED
-                && ticket.getMainTicket() == null
-                && switch (ticket.getCurrentStatus()) {
-                    case REGISTERED, IN_REVIEW, ROUTED, IN_PROGRESS, PENDING_INFORMATION -> true;
-                    default -> false;
-                };
+    private boolean isProcessable(TicketSla sla) {
+        return sla.getCompletedAt() == null
+                && sla.getPausedAt() == null
+                && (sla.getStatus() == SlaStatus.RUNNING || sla.getStatus() == SlaStatus.NEAR_DUE);
+    }
+
+    private boolean isSchedulerEligible(Ticket ticket, TicketSla sla) {
+        if (ticket.getMainTicket() != null || !isProcessable(sla)) {
+            return false;
+        }
+        return switch (sla.getSlaType()) {
+            case FIRST_RESPONSE -> ticket.getCurrentStatus() == TicketStatus.REGISTERED;
+            case RESOLUTION -> switch (ticket.getCurrentStatus()) {
+                case REGISTERED, IN_REVIEW, ROUTED, IN_PROGRESS -> true;
+                default -> false;
+            };
+        };
     }
 
     private boolean shouldPublishEscalationChanged(Ticket ticket) {
-        return !ticket.isAnonymous()
-                || (ticket.getResponsibleAreaId() != null
-                && !MODULE_ID.equalsIgnoreCase(ticket.getResponsibleAreaId()));
+        if (!ticket.isAnonymous()) {
+            return true;
+        }
+        boolean alreadyUnderExternalManagement = ticket.getClassificationFinalizedAt() != null
+                || ticket.getCurrentStatus() == TicketStatus.ROUTED
+                || ticket.getCurrentStatus() == TicketStatus.IN_PROGRESS
+                || ticket.getCurrentStatus() == TicketStatus.PENDING_INFORMATION;
+        return alreadyUnderExternalManagement
+                && ticket.getResponsibleAreaId() != null
+                && !MODULE_ID.equalsIgnoreCase(ticket.getResponsibleAreaId());
     }
 
-    private void saveActivity(Ticket ticket, ActivityType type, String reason, String message, Instant occurredAt) {
+    private void saveActivity(Ticket ticket, TicketSla sla, ActivityType type, String reason,
+                              String message, Instant occurredAt) {
         TicketActivity activity = new TicketActivity();
         activity.setTicket(ticket);
         activity.setSequence(activityRepository.countByTicketId(ticket.getId()) + 1);
@@ -110,6 +127,7 @@ public class ResolutionSlaMilestoneService {
         activity.setSourceModuleId(MODULE_ID);
         activity.setReasonCode(reason);
         activity.setMessage(message);
+        activity.setMetadata(Map.of("slaType", sla.getSlaType().name()));
         activity.setOccurredAt(occurredAt);
         activityRepository.save(activity);
     }
