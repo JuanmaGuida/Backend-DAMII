@@ -44,6 +44,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
@@ -190,7 +191,7 @@ class TicketServiceTest {
         verify(ticketOutboxService).ticketCreated(argThat(ticket ->
                 ticket.getCurrentStatus() == TicketStatus.REGISTERED
                         && citizen.citizenId().equals(ticket.getCitizenId())),
-                nullable(TicketLocation.class), eq(List.of()));
+                nullable(TicketLocation.class), eq(List.of()), nullable(Instant.class));
     }
 
     @Test
@@ -201,7 +202,8 @@ class TicketServiceTest {
         service.create(request(), identity(), null);
 
         verify(ticketOutboxService).ticketCreated(argThat(ticket ->
-                "M2".equals(ticket.getResponsibleAreaId())), nullable(TicketLocation.class), eq(List.of()));
+                "M2".equals(ticket.getResponsibleAreaId())), nullable(TicketLocation.class), eq(List.of()),
+                nullable(Instant.class));
     }
 
     @Test
@@ -455,10 +457,16 @@ class TicketServiceTest {
     @Test
     void creationStoresCalculatedResolutionDueAt() {
         allowLowRisk();
+        TicketSla resolutionSla = new TicketSla();
+        Instant dueAt = NOW.plus(Duration.ofHours(12));
+        resolutionSla.setDueAt(dueAt);
+        when(ticketSlaService.startInitialResolutionCycle(any(Ticket.class), eq(NOW)))
+                .thenReturn(Optional.of(resolutionSla));
 
         service.create(request(), identity(), null);
 
         verify(ticketSlaService).startInitialResolutionCycle(any(Ticket.class), eq(NOW));
+        verify(ticketOutboxService).ticketCreated(any(), any(), any(), eq(dueAt));
     }
 
     @Test
@@ -480,12 +488,12 @@ class TicketServiceTest {
     }
 
     @Test
-    void creationWithoutPolicyStoresNullResolutionDueAt() {
+    void creationWithoutResolutionPolicyPublishesNullDerivedDeadline() {
         allowLowRisk();
 
         service.create(request(), identity(), null);
 
-        verify(tickets).save(argThat(ticket -> ticket.getResolutionDueAt() == null));
+        verify(ticketOutboxService).ticketCreated(any(), any(), any(), isNull());
     }
 
     @Test
@@ -772,6 +780,11 @@ class TicketServiceTest {
         when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.of(location));
         when(activities.countByTicketId(ticketId)).thenReturn(0);
         when(forms.resolveActiveTemplate(newRequestType)).thenReturn(newFormTemplate);
+        TicketSla resolutionSla = new TicketSla();
+        Instant dueAt = NOW.plus(Duration.ofHours(24));
+        resolutionSla.setDueAt(dueAt);
+        when(ticketSlaService.recalculateInitialResolutionCycle(ticket, NOW))
+                .thenReturn(Optional.of(resolutionSla));
 
         TicketResponse response = service.correctClassification(ticketId, 20L, actor);
 
@@ -785,7 +798,7 @@ class TicketServiceTest {
         verify(ticketSlaService).recalculateInitialResolutionCycle(ticket, NOW);
         verify(ticketSlaService, never()).startFirstResponseCycle(any(), any());
         verify(ticketSlaService, never()).completeFirstResponseCycle(any(), any());
-        verify(ticketOutboxService).contentUpdated(ticket, NOW);
+        verify(ticketOutboxService).contentUpdated(ticket, dueAt, NOW);
     }
 
     @Test
@@ -800,7 +813,7 @@ class TicketServiceTest {
 
         verify(tickets, never()).save(any());
         verify(activities, never()).save(any());
-        verify(ticketOutboxService, never()).contentUpdated(any(), any());
+        verify(ticketOutboxService, never()).contentUpdated(any(), any(), any());
         verify(ticketSlaService, never()).recalculateInitialResolutionCycle(any(), any());
     }
 
@@ -947,6 +960,10 @@ class TicketServiceTest {
         when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
         when(activities.countByTicketId(ticketId)).thenReturn(0);
         when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+        TicketSla resolutionSla = new TicketSla();
+        Instant dueAt = NOW.plus(Duration.ofHours(36));
+        resolutionSla.setDueAt(dueAt);
+        when(ticketSlaService.findLatestResolutionCycle(ticket)).thenReturn(Optional.of(resolutionSla));
 
         TicketResponse response = service.routeToArea(ticketId, actor);
 
@@ -961,7 +978,7 @@ class TicketServiceTest {
         assertThat(activityCaptor.getValue().getActorType()).isEqualTo(ActorType.AGENT);
         assertThat(activityCaptor.getValue().getActorId()).isEqualTo(actor.citizenId().toString());
 
-        verify(ticketOutboxService).routed(ticket, null, NOW);
+        verify(ticketOutboxService).routed(ticket, null, dueAt, NOW);
         verify(ticketOutboxService, never()).statusChanged(any(), any(), any());
     }
 
@@ -981,7 +998,7 @@ class TicketServiceTest {
         assertThat(response.getCurrentStatus()).isEqualTo(TicketStatus.ROUTED);
         assertThat(response.isEscalated()).isTrue();
         assertThat(response.getEscalatedAt()).isEqualTo(escalatedAt);
-        verify(ticketOutboxService).routed(ticket, null, NOW);
+        verify(ticketOutboxService).routed(ticket, null, null, NOW);
     }
 
     @Test
@@ -999,7 +1016,7 @@ class TicketServiceTest {
         assertThat(ticket.getCurrentStatus()).isNotEqualTo(TicketStatus.ROUTED);
         verify(activities).save(argThat(activity -> activity.getActionType() == ActivityType.STATE_CHANGED
                 && activity.getNewStatus() == TicketStatus.IN_PROGRESS));
-        verify(ticketOutboxService, never()).routed(any(), any(), any());
+        verify(ticketOutboxService, never()).routed(any(), any(), any(), any());
         verify(ticketOutboxService).statusChanged(ticket, null, NOW);
     }
 
@@ -1084,11 +1101,14 @@ class TicketServiceTest {
 
         when(tickets.findAll(any(Specification.class), any(Pageable.class))).thenReturn(page);
         when(locations.findAllByTicket_IdIn(anyList())).thenReturn(List.of(location));
+        when(ticketSlaService.findLatestResolutionCycles(page.getContent())).thenReturn(Map.of());
 
         Page<TicketResponse> result = service.listTickets(filter, pageable);
 
         assertThat(result.getContent()).hasSize(1);
         assertThat(result.getContent().get(0).getNeighborhoodName()).isEqualTo("Recoleta");
+        verify(ticketSlaService).findLatestResolutionCycles(page.getContent());
+        verify(ticketSlaService, never()).findLatestResolutionCycle(any());
     }
 
     @Test
@@ -1101,6 +1121,7 @@ class TicketServiceTest {
 
         when(tickets.findAll(any(Specification.class), any(Pageable.class))).thenReturn(page);
         when(locations.findAllByTicket_IdIn(anyList())).thenReturn(List.of());
+        when(ticketSlaService.findLatestResolutionCycles(page.getContent())).thenReturn(Map.of());
 
         Page<TicketResponse> result = service.listTickets(filter, pageable);
 

@@ -98,6 +98,11 @@ public class TicketResolutionService {
         ticketSlaService.completeActiveResolutionCycle(ticket, application.resolvedAt());
         TicketResolution resolution = new TicketResolution();
         resolution.setTicket(ticket);
+        // El Ticket llega con lock pesimista desde ambos flujos de resolución.
+        // El ordinal es propio de TicketResolution y no depende de ciclos SLA,
+        // reaperturas ni secuencias de actividad.
+        resolution.setResolutionNumber(
+                resolutionRepository.findMaxResolutionNumber(ticket.getId()).orElse(0) + 1);
         resolution.setType(application.type());
         resolution.setPublicMessage(application.publicMessage());
         resolution.setInternalMessage(application.internalMessage());

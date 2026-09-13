@@ -9,12 +9,19 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 public interface TicketSlaRepository extends JpaRepository<TicketSla, Long> {
     Optional<TicketSla> findFirstByTicket_IdAndSlaTypeOrderByCycleNumberDesc(UUID ticketId, SlaType slaType);
+
+    @Query("select s from TicketSla s where s.ticket.id in :ticketIds and s.slaType = :slaType " +
+            "and s.cycleNumber = (select max(s2.cycleNumber) from TicketSla s2 " +
+            "where s2.ticket.id = s.ticket.id and s2.slaType = :slaType)")
+    List<TicketSla> findLatestByTicketIds(@Param("ticketIds") Collection<UUID> ticketIds,
+                                          @Param("slaType") SlaType slaType);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select s from TicketSla s where s.id = :id")

@@ -342,6 +342,7 @@ class TicketStatusUpdateServiceTest {
         assertThat(ticket.getResolutionConfirmationDueAt()).isEqualTo(resolvedAt.plus(Duration.ofHours(72)));
         verify(resolutionRepository).save(argThat(resolution ->
                 resolution.getTicket() == ticket
+                        && resolution.getResolutionNumber() == 1
                         && resolution.getType() == ResolutionType.ACTION_COMPLETED
                         && "La luminaria fue reparada.".equals(resolution.getPublicMessage())
                         && "Se reemplazó el artefacto.".equals(resolution.getInternalMessage())
@@ -534,6 +535,7 @@ class TicketStatusUpdateServiceTest {
         verify(ticketSlaService).terminateActiveCycles(ticket, data.updateOccurredAt());
         verify(outbox).cancelled(ticket, CancellationReasonCode.OUT_OF_SCOPE,
                 "No corresponde a esta gestión.", false, data.updateOccurredAt());
+        verify(resolutionRepository, never()).save(any());
     }
 
     @Test

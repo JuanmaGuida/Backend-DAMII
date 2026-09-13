@@ -29,6 +29,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
@@ -121,8 +122,6 @@ public class TicketService {
         ticket.setCurrentStatus(TicketStatus.REGISTERED);
         ticket.setCurrentPriority(max(requestType.getMinimumPriority(), risk));
         ticket.setCreatedAt(now);
-        ticket.setFirstResponseDueAt(null);
-        ticket.setResolutionDueAt(null);
         ticket.setEstimatedAffectedCount(0);
         ticket.setReopenCount(0);
         ticket.setEscalated(false);
@@ -131,7 +130,7 @@ public class TicketService {
         ticket = ticketRepository.save(ticket);
         ticketRepository.flush();
         ticketSlaService.startFirstResponseCycle(ticket, now);
-        ticketSlaService.startInitialResolutionCycle(ticket, now);
+        Optional<TicketSla> resolutionSla = ticketSlaService.startInitialResolutionCycle(ticket, now);
 
         List<Attachment> storedAttachments = validatedAttachments.isEmpty()
                 ? List.of()
@@ -152,7 +151,8 @@ public class TicketService {
         activity.setOccurredAt(now);
         activityRepository.save(activity);
         activateCriticalEscalationIfNeeded(ticket, now);
-        ticketOutboxService.ticketCreated(ticket, location, storedAttachments);
+        ticketOutboxService.ticketCreated(ticket, location, storedAttachments,
+                resolutionSla.map(TicketSla::getDueAt).orElse(null));
         ticketRepository.flush();
         return new CreateTicketResponse(ticket.getId(), ticket.getPublicId(), trackingCode,
                 TicketStatus.REGISTERED);
@@ -276,10 +276,11 @@ public class TicketService {
         recordActivity(ticket, ActivityType.REQUEST_TYPE_CHANGED, ticket.getCurrentStatus(), ticket.getCurrentStatus(),
                 actor, previousPriority, newPriority, message, reclassifiedAt);
         activateCriticalEscalationIfNeeded(ticket, reclassifiedAt);
-        ticketSlaService.recalculateInitialResolutionCycle(ticket, reclassifiedAt);
-        ticketOutboxService.contentUpdated(ticket, reclassifiedAt);
+        Optional<TicketSla> resolutionSla = ticketSlaService.recalculateInitialResolutionCycle(ticket, reclassifiedAt);
+        ticketOutboxService.contentUpdated(ticket,
+                resolutionSla.map(TicketSla::getDueAt).orElse(null), reclassifiedAt);
 
-        return toResponse(ticket, location);
+        return toResponse(ticket, location, resolutionSla.orElse(null));
     }
 
     /**
@@ -338,16 +339,18 @@ public class TicketService {
         recordActivity(ticket, activityType, previousStatus, nextStatus, actor, null, null, message, now);
 
         TicketLocation location = locationRepository.findByTicket_Id(ticketId).orElse(null);
+        TicketSla resolutionSla = ticketSlaService.findLatestResolutionCycle(ticket).orElse(null);
 
         // La gestión externa recibe el snapshot ROUTED. En gestión propia sólo
         // se proyecta STATUS_CHANGED para identificados; el helper omite anónimos.
         if (selfManaged) {
             ticketOutboxService.statusChanged(ticket, null, now);
         } else {
-            ticketOutboxService.routed(ticket, location, now);
+            ticketOutboxService.routed(ticket, location,
+                    resolutionSla == null ? null : resolutionSla.getDueAt(), now);
         }
 
-        return toResponse(ticket, location);
+        return toResponse(ticket, location, resolutionSla);
     }
 
     /**
@@ -365,8 +368,11 @@ public class TicketService {
         Map<UUID, TicketLocation> locationsByTicket = locationRepository
                 .findAllByTicket_IdIn(ticketIds).stream()
                 .collect(Collectors.toMap(location -> location.getTicket().getId(), Function.identity()));
+        Map<UUID, TicketSla> latestResolutionByTicket =
+                ticketSlaService.findLatestResolutionCycles(page.getContent());
 
-        return page.map(ticket -> toResponse(ticket, locationsByTicket.get(ticket.getId())));
+        return page.map(ticket -> toResponse(ticket, locationsByTicket.get(ticket.getId()),
+                latestResolutionByTicket.get(ticket.getId())));
     }
 
     private void validateSort(Sort sort) {
@@ -447,6 +453,10 @@ public class TicketService {
     }
 
     private TicketResponse toResponse(Ticket ticket, TicketLocation location) {
+        return toResponse(ticket, location, ticketSlaService.findLatestResolutionCycle(ticket).orElse(null));
+    }
+
+    private TicketResponse toResponse(Ticket ticket, TicketLocation location, TicketSla resolutionSla) {
         RequestType requestType = ticket.getRequestType();
         Subcategory subcategory = requestType.getSubcategory();
         Category category = subcategory.getCategory();
@@ -470,7 +480,7 @@ public class TicketService {
         response.setEscalated(ticket.isEscalated());
         response.setEscalationReasonCode(ticket.getEscalationReasonCode());
         response.setEscalatedAt(ticket.getEscalatedAt());
-        applySlaSignals(response, ticket);
+        applySlaSignals(response, resolutionSla);
         if (location != null && location.getNeighborhood() != null) {
             response.setNeighborhoodId(location.getNeighborhood().getId());
             response.setNeighborhoodName(location.getNeighborhood().getName());
@@ -482,16 +492,16 @@ public class TicketService {
         return response;
     }
 
-    private void applySlaSignals(TicketResponse response, Ticket ticket) {
-        ticketSlaService.findLatestResolutionCycle(ticket).ifPresentOrElse(sla -> {
-            response.setSlaNearDue(sla.getStatus() == SlaStatus.NEAR_DUE);
-            response.setSlaBreached(sla.getStatus() == SlaStatus.BREACHED);
-            response.setResolutionNearDueAt(sla.getNearDueAt());
-        }, () -> {
+    private void applySlaSignals(TicketResponse response, TicketSla resolutionSla) {
+        if (resolutionSla == null) {
             response.setSlaNearDue(false);
             response.setSlaBreached(false);
             response.setResolutionNearDueAt(null);
-        });
+            return;
+        }
+        response.setSlaNearDue(resolutionSla.getStatus() == SlaStatus.NEAR_DUE);
+        response.setSlaBreached(resolutionSla.getStatus() == SlaStatus.BREACHED);
+        response.setResolutionNearDueAt(resolutionSla.getNearDueAt());
     }
 
     private void validateLocation(RequestType type, CreateTicketRequest.LocationData location) {

@@ -2,13 +2,14 @@ package com.reclamos.backend.service;
 
 import com.reclamos.backend.entity.*;
 import com.reclamos.backend.exception.TicketStateConflictException;
-import com.reclamos.backend.repository.TicketRepository;
 import com.reclamos.backend.repository.TicketSlaRepository;
 import com.reclamos.backend.repository.SlaPolicyRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -21,15 +22,14 @@ class TicketSlaServiceTest {
     private static final Instant NEAR = Instant.parse("2026-09-11T20:00:00Z");
     private static final Instant DUE = Instant.parse("2026-09-11T22:00:00Z");
     private final TicketSlaRepository slas = mock(TicketSlaRepository.class);
-    private final TicketRepository tickets = mock(TicketRepository.class);
     private final SlaCalculationService calculations = mock(SlaCalculationService.class);
     private final TicketSlaMilestoneService milestones = mock(TicketSlaMilestoneService.class);
-    private final TicketSlaService service = new TicketSlaService(slas, tickets, calculations, milestones);
+    private final TicketSlaService service = new TicketSlaService(slas, calculations, milestones);
     private Ticket ticket;
     private SlaPolicy policy;
 
     @BeforeEach void setUp() {
-        reset(slas, tickets, calculations, milestones);
+        reset(slas, calculations, milestones);
         ticket = new Ticket();
         ticket.setId(UUID.randomUUID());
         ticket.setTicketType(TicketType.REQUEST);
@@ -42,7 +42,7 @@ class TicketSlaServiceTest {
                 .thenReturn(Optional.of(new SlaCalculationService.SlaSchedule(policy, NEAR, DUE)));
     }
 
-    @Test void creationStartsResolutionCycleOneAndSynchronizesProjection() {
+    @Test void creationStartsResolutionCycleOneAsTheOnlyPersistentDeadlineSource() {
         TicketSla sla = service.startInitialResolutionCycle(ticket, START).orElseThrow();
 
         assertEquals(SlaType.RESOLUTION, sla.getSlaType());
@@ -55,7 +55,6 @@ class TicketSlaServiceTest {
         assertNull(sla.getCompletedAt());
         assertNull(sla.getPausedAt());
         assertEquals(0, sla.getTotalPausedSeconds());
-        assertEquals(DUE, ticket.getResolutionDueAt());
     }
 
     @Test void creationStartsOnlyFirstResponseCycleOneWhenPolicyExists() {
@@ -67,7 +66,6 @@ class TicketSlaServiceTest {
         assertEquals(SlaType.FIRST_RESPONSE, sla.getSlaType());
         assertEquals(1, sla.getCycleNumber());
         assertEquals(SlaStatus.RUNNING, sla.getStatus());
-        assertEquals(DUE, ticket.getFirstResponseDueAt());
     }
 
     @Test void missingFirstResponsePolicyDoesNotCreateCycle() {
@@ -75,7 +73,6 @@ class TicketSlaServiceTest {
                 .thenReturn(Optional.empty());
 
         assertTrue(service.startFirstResponseCycle(ticket, START).isEmpty());
-        assertNull(ticket.getFirstResponseDueAt());
         verify(slas, never()).save(any());
     }
 
@@ -116,7 +113,6 @@ class TicketSlaServiceTest {
 
         assertSame(existing, updated);
         assertEquals(1, updated.getCycleNumber());
-        assertEquals(DUE, ticket.getResolutionDueAt());
         verify(milestones).processMilestones(ticket, existing, DUE);
     }
 
@@ -172,7 +168,6 @@ class TicketSlaServiceTest {
         when(calculations.calculateResolutionSchedule(any(), any(), any())).thenReturn(Optional.empty());
 
         assertTrue(service.startInitialResolutionCycle(ticket, START).isEmpty());
-        assertNull(ticket.getResolutionDueAt());
         verifyNoInteractions(slas);
     }
 
@@ -280,7 +275,7 @@ class TicketSlaServiceTest {
         TicketSla active = cycle(1, SlaStatus.RUNNING);
         active.setPolicy(continuous);
         when(slas.findActiveForUpdate(ticket.getId(), SlaType.RESOLUTION)).thenReturn(Optional.of(active));
-        TicketSlaService realCalendarService = new TicketSlaService(slas, tickets,
+        TicketSlaService realCalendarService = new TicketSlaService(slas,
                 new SlaCalculationService(mock(SlaPolicyRepository.class)), milestones);
         Instant firstPause = START.plusSeconds(600);
         Instant firstResume = firstPause.plusSeconds(3600);
@@ -315,7 +310,7 @@ class TicketSlaServiceTest {
         active.setPolicy(continuous);
         active.setPausedAt(START.plusSeconds(600));
         when(slas.findActiveForUpdate(ticket.getId(), SlaType.RESOLUTION)).thenReturn(Optional.of(active));
-        TicketSlaService realCalendarService = new TicketSlaService(slas, tickets,
+        TicketSlaService realCalendarService = new TicketSlaService(slas,
                 new SlaCalculationService(mock(SlaPolicyRepository.class)), milestones);
         Instant resolvedAt = START.plusSeconds(4200);
 
@@ -325,6 +320,46 @@ class TicketSlaServiceTest {
         assertEquals(resolvedAt, active.getCompletedAt());
         assertNull(active.getPausedAt());
         assertEquals(3600, active.getTotalPausedSeconds());
+    }
+
+    @Test void duplicateReadsTheLatestResolutionCycleFromItsMainTicket() {
+        Ticket main = new Ticket();
+        main.setId(UUID.randomUUID());
+        Ticket duplicate = new Ticket();
+        duplicate.setId(UUID.randomUUID());
+        duplicate.setMainTicket(main);
+        TicketSla mainSla = cycle(3, SlaStatus.RUNNING);
+        mainSla.setTicket(main);
+        when(slas.findFirstByTicket_IdAndSlaTypeOrderByCycleNumberDesc(main.getId(), SlaType.RESOLUTION))
+                .thenReturn(Optional.of(mainSla));
+
+        assertSame(mainSla, service.findLatestResolutionCycle(duplicate).orElseThrow());
+    }
+
+    @Test void paginatedTicketsLoadLatestResolutionCyclesInOneBatchIncludingDuplicates() {
+        Ticket main = new Ticket();
+        main.setId(UUID.randomUUID());
+        Ticket duplicate = new Ticket();
+        duplicate.setId(UUID.randomUUID());
+        duplicate.setMainTicket(main);
+        Ticket standalone = new Ticket();
+        standalone.setId(UUID.randomUUID());
+
+        TicketSla mainSla = cycle(2, SlaStatus.NEAR_DUE);
+        mainSla.setTicket(main);
+        TicketSla standaloneSla = cycle(1, SlaStatus.RUNNING);
+        standaloneSla.setTicket(standalone);
+        when(slas.findLatestByTicketIds(anyCollection(), eq(SlaType.RESOLUTION)))
+                .thenReturn(List.of(mainSla, standaloneSla));
+
+        Map<UUID, TicketSla> result = service.findLatestResolutionCycles(
+                List.of(main, duplicate, standalone));
+
+        assertSame(mainSla, result.get(main.getId()));
+        assertSame(mainSla, result.get(duplicate.getId()));
+        assertSame(standaloneSla, result.get(standalone.getId()));
+        verify(slas).findLatestByTicketIds(anyCollection(), eq(SlaType.RESOLUTION));
+        verify(slas, never()).findFirstByTicket_IdAndSlaTypeOrderByCycleNumberDesc(any(), any());
     }
 
     private TicketSla cycle(int cycleNumber, SlaStatus status) {

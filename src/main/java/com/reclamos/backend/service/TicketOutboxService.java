@@ -38,7 +38,8 @@ public class TicketOutboxService {
     private String producerService = "help-center-api";
 
     @Transactional(propagation = Propagation.MANDATORY)
-    public void ticketCreated(Ticket ticket, TicketLocation location, List<Attachment> attachments) {
+    public void ticketCreated(Ticket ticket, TicketLocation location, List<Attachment> attachments,
+                              Instant resolutionDueAt) {
         if (ticket.isAnonymous()) {
             return;
         }
@@ -60,7 +61,7 @@ public class TicketOutboxService {
         data.put("priority", ticket.getCurrentPriority().name());
         data.put("responsibleAreaId", ticket.getResponsibleAreaId());
         data.put("location", eventLocation(location));
-        data.put("resolutionDueAt", instant(ticket.getResolutionDueAt()));
+        data.put("resolutionDueAt", instant(resolutionDueAt));
         data.put("attachments", eventAttachments(attachments));
         data.put("createdAt", ticket.getCreatedAt().toString());
         save(ticket, "ticketCreated", null, data);
@@ -75,7 +76,7 @@ public class TicketOutboxService {
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
-    public void routed(Ticket ticket, TicketLocation location, Instant updatedAt) {
+    public void routed(Ticket ticket, TicketLocation location, Instant resolutionDueAt, Instant updatedAt) {
         if (isSelfManaged(ticket)) {
             return;
         }
@@ -88,14 +89,14 @@ public class TicketOutboxService {
         routing.put("description", ticket.getDescription());
         routing.put("formData", ticket.getFormData());
         routing.put("location", eventLocation(location));
-        routing.put("resolutionDueAt", instant(ticket.getResolutionDueAt()));
+        routing.put("resolutionDueAt", instant(resolutionDueAt));
         routing.put("escalation", eventEscalation(ticket));
         saveUpdated(ticket, TicketUpdatedType.ROUTED,
                 "El ticket fue derivado al área responsable.", Map.of("routing", routing), List.of(), updatedAt);
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
-    public void contentUpdated(Ticket ticket, Instant updatedAt) {
+    public void contentUpdated(Ticket ticket, Instant resolutionDueAt, Instant updatedAt) {
         if (ticket.isAnonymous()) {
             return;
         }
@@ -109,7 +110,7 @@ public class TicketOutboxService {
         content.put("summary", ticket.getSummary());
         content.put("description", ticket.getDescription());
         content.put("formData", ticket.getFormData());
-        content.put("resolutionDueAt", instant(ticket.getResolutionDueAt()));
+        content.put("resolutionDueAt", instant(resolutionDueAt));
         saveUpdated(ticket, TicketUpdatedType.CONTENT_UPDATED, null,
                 Map.of("content", content), List.of(), updatedAt);
     }
