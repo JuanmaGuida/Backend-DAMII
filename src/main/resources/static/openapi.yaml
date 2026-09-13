@@ -352,7 +352,9 @@ paths:
       summary: Tomar un ticket a revisión
       description: |
         Transición REGISTERED -> IN_REVIEW; asigna el agente autenticado como
-        assignedAgent si el ticket todavía no tiene uno asignado (Story 3.2).
+        assignedAgent si el ticket todavía no tiene uno asignado. Requiere rol
+        AGENT o ADMIN y no permite usar capacidad administrativa sobre un ticket
+        propio (Story 3.2).
       operationId: startTicketReview
       security:
         - bearerAuth: [ ]
@@ -367,6 +369,8 @@ paths:
                 $ref: '#/components/schemas/TicketResponse'
         '401':
           $ref: '#/components/responses/InvalidToken'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
@@ -379,7 +383,8 @@ paths:
         Permite reclasificar el RequestType durante la primera revisión del
         ticket (antes de derivarlo a un área), recalculando área responsable,
         cantidad estimada de afectados, plantilla de formulario, prioridad y
-        el SLA inicial (Story 3.2).
+        el SLA inicial (Story 3.2). Requiere rol AGENT o ADMIN y no permite
+        usar capacidad administrativa sobre un ticket propio.
       operationId: correctTicketClassification
       security:
         - bearerAuth: [ ]
@@ -402,6 +407,8 @@ paths:
           $ref: '#/components/responses/InvalidRequest'
         '401':
           $ref: '#/components/responses/InvalidToken'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
@@ -409,11 +416,13 @@ paths:
   /api/tickets/{ticketId}/route:
     post:
       tags: [ Tickets ]
-      summary: Derivar un ticket al área responsable
+      summary: Finalizar clasificación y comenzar o derivar la gestión
       description: |
-        Transición IN_REVIEW -> ROUTED; publica el evento ticketUpdated al
-        outbox salvo que el área responsable sea la propia gestión interna de
-        M2 (Story 3.3 / DDA2-59).
+        Requiere rol AGENT o ADMIN y no permite usar capacidad administrativa
+        sobre un ticket propio. Si responsibleAreaId=M2, realiza la transición
+        IN_REVIEW -> IN_PROGRESS e inicia la gestión propia sin evento ROUTED.
+        Si el área es externa, realiza IN_REVIEW -> ROUTED y publica el snapshot
+        ticketUpdated/ROUTED (Story 3.3 / DDA2-59).
       operationId: routeTicketToArea
       security:
         - bearerAuth: [ ]
@@ -421,13 +430,15 @@ paths:
         - $ref: '#/components/parameters/TicketId'
       responses:
         '200':
-          description: Ticket derivado.
+          description: Clasificación finalizada y gestión iniciada o derivada.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/TicketResponse'
         '401':
           $ref: '#/components/responses/InvalidToken'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':

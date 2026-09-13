@@ -53,7 +53,8 @@ import java.util.UUID;
  * <p>
  * La resolución delega sus efectos de dominio en {@link TicketResolutionService}
  * para que el simulador y un futuro consumer real compartan exactamente el
- * mismo caso de uso. La republicación de ticketUpdated sigue fuera de alcance.
+ * mismo caso de uso. Las variantes de salida incluidas en el cierre de
+ * integración se escriben en el Outbox dentro de esta misma transacción.
  * <p>
  * NO IMPLEMENTADO A PROPÓSITO: si el envelope es válido pero el payload de
  * negocio no lo es para ese updateType (ej. falta details.returnInfo), la
@@ -83,6 +84,7 @@ public class TicketStatusUpdateService {
     private final TicketSlaService ticketSlaService;
     private final InformationRequestService informationRequestService;
     private final TicketCancellationRepository cancellationRepository;
+    private final TicketOutboxService ticketOutboxService;
 
     @Transactional
     public TicketResponse applyUpdate(UUID ticketId, UpdateTicketStatusEnvelope envelope) {
@@ -260,6 +262,17 @@ public class TicketStatusUpdateService {
                     sourceModuleId, reasonCode,
                     !isBlank(request.internalMessage()) ? request.internalMessage() : request.publicMessage(),
                     envelope.eventId(), request.updateOccurredAt());
+        }
+
+        switch (request.updateType()) {
+            case STARTED, RETURNED -> ticketOutboxService.statusChanged(
+                    ticket, request.publicMessage(), request.updateOccurredAt());
+            case REJECTED -> ticketOutboxService.cancelled(
+                    ticket, cancellationReason, request.publicMessage(), false, request.updateOccurredAt());
+            default -> {
+                // Los productores PROGRESS e INFORMATION_REQUIRED no forman parte de este bloque.
+                // RESOLVED se publica dentro de TicketResolutionService.
+            }
         }
 
         // InboxEvent se inserta en la MISMA transacción que el resto: si esto

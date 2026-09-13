@@ -34,14 +34,7 @@ public class TicketResolutionService {
     private final Clock clock;
     private final Duration confirmationDuration;
     private final TicketSlaService ticketSlaService;
-
-    public TicketResolutionService(TicketRepository ticketRepository,
-                                   TicketResolutionRepository resolutionRepository,
-                                   TicketActivityRepository activityRepository,
-                                   Clock clock,
-                                   @Value("${ticket.resolution.confirmation-duration}") Duration confirmationDuration) {
-        this(ticketRepository, resolutionRepository, activityRepository, clock, confirmationDuration, null);
-    }
+    private final TicketOutboxService ticketOutboxService;
 
     @Autowired
     public TicketResolutionService(TicketRepository ticketRepository,
@@ -49,7 +42,8 @@ public class TicketResolutionService {
                                    TicketActivityRepository activityRepository,
                                    Clock clock,
                                    @Value("${ticket.resolution.confirmation-duration}") Duration confirmationDuration,
-                                   TicketSlaService ticketSlaService) {
+                                   TicketSlaService ticketSlaService,
+                                   TicketOutboxService ticketOutboxService) {
         this.ticketRepository = ticketRepository;
         this.resolutionRepository = resolutionRepository;
         this.activityRepository = activityRepository;
@@ -58,7 +52,8 @@ public class TicketResolutionService {
             throw new IllegalArgumentException("La duración de confirmación debe ser positiva");
         }
         this.confirmationDuration = confirmationDuration;
-        this.ticketSlaService = ticketSlaService;
+        this.ticketSlaService = Objects.requireNonNull(ticketSlaService, "ticketSlaService es obligatorio");
+        this.ticketOutboxService = Objects.requireNonNull(ticketOutboxService, "ticketOutboxService es obligatorio");
     }
 
     @Transactional
@@ -100,9 +95,7 @@ public class TicketResolutionService {
         Objects.requireNonNull(application, "application es obligatoria");
 
         TicketStatus previousStatus = ticket.getCurrentStatus();
-        if (ticketSlaService != null) {
-            ticketSlaService.completeActiveResolutionCycle(ticket, application.resolvedAt());
-        }
+        ticketSlaService.completeActiveResolutionCycle(ticket, application.resolvedAt());
         TicketResolution resolution = new TicketResolution();
         resolution.setTicket(ticket);
         resolution.setType(application.type());
@@ -119,6 +112,8 @@ public class TicketResolutionService {
         ticket.setResolutionConfirmationDueAt(application.resolvedAt().plus(confirmationDuration));
         ticketRepository.save(ticket);
         saveResolutionActivity(ticket, previousStatus, application);
+        ticketOutboxService.resolved(ticket, application.type(), application.publicMessage(),
+                application.resolvedAt());
 
         return resolution;
     }
@@ -151,12 +146,11 @@ public class TicketResolutionService {
         ticket.setStatusChangedAt(now);
         ticket.setReopenCount(ticket.getReopenCount() + 1);
         ticket.setResolutionConfirmationDueAt(null);
-        if (ticketSlaService != null) {
-            ticketSlaService.startReopenedResolutionCycle(ticket, now);
-        }
+        ticketSlaService.startReopenedResolutionCycle(ticket, now);
         ticketRepository.save(ticket);
         saveCitizenActivity(ticket, ActivityType.REOPENED, TicketStatus.IN_PROGRESS, identity,
                 null, request.getReason(), now);
+        ticketOutboxService.reopened(ticket, request.getReason(), now);
         return actionResponse(ticket);
     }
 

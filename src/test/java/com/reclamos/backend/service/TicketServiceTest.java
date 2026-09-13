@@ -24,7 +24,6 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.mock.web.MockMultipartFile;
-import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
@@ -58,7 +57,7 @@ import static org.mockito.Mockito.when;
 /**
  * Suite fusionada tras el merge feature-nico -&gt; dev: cubre tanto Sprint 2
  * (startReview/correctClassification/routeToArea/listTickets, con AssertJ)
- * como create()/route() con SLA y adjuntos (con JUnit Assertions), sobre el
+ * como create() con SLA y adjuntos (con JUnit Assertions), sobre el
  * TicketService ya reconciliado. Un test de validación de ubicación
  * requerida ("falta la ubicación cuando el RequestType la exige") no se
  * pudo recuperar con su nombre/firma original de dev por cómo git fragmentó
@@ -85,9 +84,7 @@ class TicketServiceTest {
     @Mock
     private RiskCalculationService risks;
     @Mock
-    private SlaCalculationService sla;
-    @Mock
-    private OutboxEventRepository outboxEventRepository;
+    private TicketOutboxService ticketOutboxService;
     @Mock
     private ModuleUserRepository moduleUsers;
     @Spy
@@ -111,9 +108,6 @@ class TicketServiceTest {
 
     @BeforeEach
     void setUp() {
-        ReflectionTestUtils.setField(service, "producerModuleId", "M2");
-        ReflectionTestUtils.setField(service, "producerService", "help-center-api");
-
         lenient().when(clock.instant()).thenReturn(NOW);
         lenient().when(publicIds.generate(NOW)).thenReturn("TK-2026-000123");
 
@@ -193,6 +187,21 @@ class TicketServiceTest {
                         && !citizen.subjectId().equals(activity.getActorId())
                         && activity.getSourceModuleId() == null
         ));
+        verify(ticketOutboxService).ticketCreated(argThat(ticket ->
+                ticket.getCurrentStatus() == TicketStatus.REGISTERED
+                        && citizen.citizenId().equals(ticket.getCitizenId())),
+                nullable(TicketLocation.class), eq(List.of()));
+    }
+
+    @Test
+    void identifiedSelfManagedCreationAlsoPublishesTicketCreated() {
+        requestType.setResponsibleAreaId("M2");
+        allowLowRisk();
+
+        service.create(request(), identity(), null);
+
+        verify(ticketOutboxService).ticketCreated(argThat(ticket ->
+                "M2".equals(ticket.getResponsibleAreaId())), nullable(TicketLocation.class), eq(List.of()));
     }
 
     @Test
@@ -494,117 +503,6 @@ class TicketServiceTest {
     }
 
     // ==================================================================
-    // ---- route() ----
-    // ==================================================================
-
-    @Test
-    void routingPreservesExistingResolutionCycleProjection() {
-        UUID id = UUID.randomUUID();
-
-        Ticket ticket = new Ticket();
-        ticket.setCurrentPriority(Priority.CRITICAL);
-        ticket.setTicketType(TicketType.REQUEST);
-        ticket.setResolutionDueAt(Instant.parse("2026-09-04T13:00:00Z"));
-
-        Instant routedAt = Instant.parse("2026-09-05T12:00:00Z");
-        Instant dueAt = ticket.getResolutionDueAt();
-
-        ticket.setCreatedAt(clock.instant());
-
-        when(tickets.findByIdForUpdate(id)).thenReturn(Optional.of(ticket));
-        when(tickets.save(ticket)).thenReturn(ticket);
-
-        Ticket routed = service.route(id, "AREA-2", routedAt);
-
-        assertEquals(dueAt, routed.getResolutionDueAt());
-        assertEquals(TicketStatus.ROUTED, routed.getCurrentStatus());
-        verifyNoInteractions(sla, ticketSlaService);
-    }
-
-    @Test
-    void routingDoesNotRecalculateFromCreatedAt() {
-        UUID id = UUID.randomUUID();
-        Instant originalDueAt = Instant.parse("2026-09-06T12:00:00Z");
-        Ticket ticket = routedTicket(Priority.HIGH, originalDueAt);
-        ticket.setCreatedAt(clock.instant());
-
-        when(tickets.findByIdForUpdate(id)).thenReturn(Optional.of(ticket));
-        when(tickets.save(ticket)).thenReturn(ticket);
-
-        assertEquals(originalDueAt, service.route(id, "AREA-2", clock.instant()).getResolutionDueAt());
-
-        verifyNoInteractions(sla, ticketSlaService);
-    }
-
-    @Test
-    void routingDoesNotFabricateMissingDueAt() {
-        UUID id = UUID.randomUUID();
-        Ticket ticket = routedTicket(Priority.MEDIUM, null);
-        ticket.setCreatedAt(clock.instant());
-
-        when(tickets.findByIdForUpdate(id)).thenReturn(Optional.of(ticket));
-        when(tickets.save(ticket)).thenReturn(ticket);
-
-        assertNull(service.route(id, "AREA-2", clock.instant()).getResolutionDueAt());
-        verifyNoInteractions(sla, ticketSlaService);
-    }
-
-    @Test
-    void routingAfterPriorityChangeKeepsOriginalCycleDueAt() {
-        UUID id = UUID.randomUUID();
-        Ticket ticket = routedTicket(Priority.HIGH, Instant.parse("2026-09-10T12:00:00Z"));
-        ticket.setCreatedAt(Instant.parse("2026-09-01T12:00:00Z"));
-
-        when(tickets.findByIdForUpdate(id)).thenReturn(Optional.of(ticket));
-        when(tickets.save(ticket)).thenReturn(ticket);
-
-        assertEquals(Instant.parse("2026-09-10T12:00:00Z"),
-                service.route(id, "AREA-2", clock.instant()).getResolutionDueAt());
-
-        verifyNoInteractions(sla, ticketSlaService);
-    }
-
-    @Test
-    void routingPreservesFirstResponseDueAt() {
-        UUID id = UUID.randomUUID();
-        Instant firstResponseDueAt = Instant.parse("2026-09-02T12:00:00Z");
-        Ticket ticket = routedTicket(Priority.MEDIUM, Instant.parse("2026-09-05T12:00:00Z"));
-        ticket.setCreatedAt(Instant.parse("2026-09-01T12:00:00Z"));
-        ticket.setFirstResponseDueAt(firstResponseDueAt);
-
-        when(tickets.findByIdForUpdate(id)).thenReturn(Optional.of(ticket));
-        when(tickets.save(ticket)).thenReturn(ticket);
-
-        Ticket routed = service.route(id, "AREA-2", clock.instant());
-
-        assertEquals(firstResponseDueAt, routed.getFirstResponseDueAt());
-        verifyNoInteractions(sla, ticketSlaService);
-    }
-
-    @Test
-    void duplicateCannotBeRoutedOrReceiveAnIndependentSla() {
-        UUID id = UUID.randomUUID();
-        Ticket duplicate = routedTicket(Priority.HIGH, null);
-        duplicate.setCurrentStatus(TicketStatus.DUPLICATE);
-        duplicate.setCreatedAt(Instant.parse("2026-09-01T12:00:00Z"));
-
-        when(tickets.findByIdForUpdate(id)).thenReturn(Optional.of(duplicate));
-
-        assertThrows(InvalidTicketRequestException.class, () -> service.route(id, "AREA-2", clock.instant()));
-
-        verifyNoInteractions(sla);
-        verify(tickets, never()).save(any());
-    }
-
-    private Ticket routedTicket(Priority priority, Instant dueAt) {
-        Ticket ticket = new Ticket();
-        ticket.setCurrentPriority(priority);
-        ticket.setTicketType(TicketType.REQUEST);
-        ticket.setResolutionDueAt(dueAt);
-        return ticket;
-    }
-
-    // ==================================================================
     // ---- adjuntos en create() ----
     // ==================================================================
 
@@ -742,8 +640,12 @@ class TicketServiceTest {
         assertThat(activity.getNewStatus()).isEqualTo(TicketStatus.IN_REVIEW);
         assertThat(activity.getSequence()).isEqualTo(1);
         assertThat(activity.getOccurredAt()).isEqualTo(NOW);
+        assertThat(activity.getActorType()).isEqualTo(ActorType.AGENT);
+        assertThat(activity.getActorId()).isEqualTo(actor.citizenId().toString());
+        assertThat(activity.getActorId()).isNotEqualTo(actor.subjectId());
         assertThat(ticket.getStatusChangedAt()).isEqualTo(NOW);
         verify(ticketSlaService).completeFirstResponseCycle(ticket, NOW);
+        verify(ticketOutboxService).statusChanged(ticket, null, NOW);
     }
 
     @Test
@@ -803,6 +705,40 @@ class TicketServiceTest {
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 
+    @Test
+    void administrativeLifecycleRejectsCitizenAreaResponsibleAndStaffOwnerWithoutMutating() {
+        for (ModuleRole role : List.of(ModuleRole.CITIZEN, ModuleRole.AREA_RESPONSIBLE)) {
+            Ticket ticket = ticket(TicketStatus.REGISTERED, Priority.MEDIUM);
+            AuthenticatedIdentity unauthorized = new AuthenticatedIdentity(
+                    "subject-" + role, UUID.randomUUID(), role.name(), "M6", role);
+            when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+
+            assertThatThrownBy(() -> service.startReview(ticketId, unauthorized))
+                    .isInstanceOf(UnauthorizedTicketOperationException.class);
+
+            ticket.setCurrentStatus(TicketStatus.IN_REVIEW);
+            assertThatThrownBy(() -> service.correctClassification(ticketId, 20L, unauthorized))
+                    .isInstanceOf(UnauthorizedTicketOperationException.class);
+            assertThatThrownBy(() -> service.routeToArea(ticketId, unauthorized))
+                    .isInstanceOf(UnauthorizedTicketOperationException.class);
+        }
+
+        Ticket owned = ticket(TicketStatus.REGISTERED, Priority.MEDIUM);
+        UUID ownerId = UUID.randomUUID();
+        owned.setCitizenId(ownerId);
+        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(owned));
+        for (ModuleRole role : List.of(ModuleRole.AGENT, ModuleRole.ADMIN)) {
+            AuthenticatedIdentity owner = new AuthenticatedIdentity(
+                    "owner-" + role, ownerId, role.name(), null, role);
+            assertThatThrownBy(() -> service.startReview(ticketId, owner))
+                    .isInstanceOf(UnauthorizedTicketOperationException.class);
+        }
+
+        verify(tickets, never()).save(any());
+        verify(activities, never()).save(any());
+        verifyNoInteractions(ticketOutboxService);
+    }
+
     // ==================================================================
     // ---- correctClassification (Sprint 2) ----
     // ==================================================================
@@ -849,6 +785,23 @@ class TicketServiceTest {
         verify(ticketSlaService).recalculateInitialResolutionCycle(ticket, NOW);
         verify(ticketSlaService, never()).startFirstResponseCycle(any(), any());
         verify(ticketSlaService, never()).completeFirstResponseCycle(any(), any());
+        verify(ticketOutboxService).contentUpdated(ticket, NOW);
+    }
+
+    @Test
+    void sameClassificationDoesNotWriteOrPublishContentUpdated() {
+        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.LOW);
+        RequestType current = ticket.getRequestType();
+        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+        when(requestTypes.findById(current.getId())).thenReturn(Optional.of(current));
+        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+
+        service.correctClassification(ticketId, current.getId(), actor);
+
+        verify(tickets, never()).save(any());
+        verify(activities, never()).save(any());
+        verify(ticketOutboxService, never()).contentUpdated(any(), any());
+        verify(ticketSlaService, never()).recalculateInitialResolutionCycle(any(), any());
     }
 
     /**
@@ -986,7 +939,7 @@ class TicketServiceTest {
     // ==================================================================
 
     @Test
-    void routeToAreaMovesInReviewTicketToRoutedAndWritesOutboxEvent() {
+    void routeToAreaMovesInReviewTicketToRoutedAndWritesRoutedEvent() {
         Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.HIGH);
         ticket.setResponsibleAreaId("M6");
         String originalPublicId = ticket.getPublicId();
@@ -1005,28 +958,11 @@ class TicketServiceTest {
         ArgumentCaptor<TicketActivity> activityCaptor = ArgumentCaptor.forClass(TicketActivity.class);
         verify(activities).save(activityCaptor.capture());
         assertThat(activityCaptor.getValue().getActionType()).isEqualTo(ActivityType.ROUTED);
+        assertThat(activityCaptor.getValue().getActorType()).isEqualTo(ActorType.AGENT);
+        assertThat(activityCaptor.getValue().getActorId()).isEqualTo(actor.citizenId().toString());
 
-        ArgumentCaptor<OutboxEvent> eventCaptor = ArgumentCaptor.forClass(OutboxEvent.class);
-        verify(outboxEventRepository).save(eventCaptor.capture());
-        OutboxEvent event = eventCaptor.getValue();
-        assertThat(event.getEventType()).isEqualTo("ticketUpdated");
-        assertThat(event.getTicket()).isSameAs(ticket);
-        @SuppressWarnings("unchecked")
-        Map<String, Object> data = (Map<String, Object>) event.getPayload().get("data");
-        assertThat(data.get("ticketId")).isEqualTo(ticketId);
-        assertThat(data.get("publicId")).isEqualTo(originalPublicId);
-        assertThat(data.get("updateType")).isEqualTo("ROUTED");
-        assertThat(data.get("responsibleAreaId")).isEqualTo("M6");
-        @SuppressWarnings("unchecked")
-        Map<String, Object> details = (Map<String, Object>) data.get("details");
-        @SuppressWarnings("unchecked")
-        Map<String, Object> routing = (Map<String, Object>) details.get("routing");
-        @SuppressWarnings("unchecked")
-        Map<String, Object> escalation = (Map<String, Object>) routing.get("escalation");
-        assertThat(escalation).containsEntry("active", false);
-        assertThat(escalation).containsEntry("reasonCode", null);
-        assertThat(escalation).containsEntry("escalatedAt", null);
-        assertThat(event.getPayload().get("subject")).isEqualTo("tickets/" + ticketId);
+        verify(ticketOutboxService).routed(ticket, null, NOW);
+        verify(ticketOutboxService, never()).statusChanged(any(), any(), any());
     }
 
     @Test
@@ -1045,24 +981,11 @@ class TicketServiceTest {
         assertThat(response.getCurrentStatus()).isEqualTo(TicketStatus.ROUTED);
         assertThat(response.isEscalated()).isTrue();
         assertThat(response.getEscalatedAt()).isEqualTo(escalatedAt);
-        ArgumentCaptor<OutboxEvent> captor = ArgumentCaptor.forClass(OutboxEvent.class);
-        verify(outboxEventRepository).save(captor.capture());
-        @SuppressWarnings("unchecked")
-        Map<String, Object> data = (Map<String, Object>) captor.getValue().getPayload().get("data");
-        assertThat(data.get("ticketId")).isEqualTo(ticketId);
-        assertThat(data.get("publicId")).isEqualTo(ticket.getPublicId());
-        @SuppressWarnings("unchecked")
-        Map<String, Object> details = (Map<String, Object>) data.get("details");
-        @SuppressWarnings("unchecked")
-        Map<String, Object> routing = (Map<String, Object>) details.get("routing");
-        assertThat(routing.get("escalation")).isEqualTo(Map.of(
-                "active", true,
-                "reasonCode", "CRITICAL_PRIORITY",
-                "escalatedAt", escalatedAt.toString()));
+        verify(ticketOutboxService).routed(ticket, null, NOW);
     }
 
     @Test
-    void routeToAreaSkipsOutboxWhenAreaIsSelfManaged() {
+    void routeToAreaStartsSelfManagedWorkWithoutRoutedActivityOrEvent() {
         Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.LOW);
         ticket.setResponsibleAreaId("M2");
 
@@ -1070,9 +993,14 @@ class TicketServiceTest {
         when(activities.countByTicketId(ticketId)).thenReturn(0);
         when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
 
-        service.routeToArea(ticketId, actor);
+        TicketResponse response = service.routeToArea(ticketId, actor);
 
-        verify(outboxEventRepository, never()).save(any());
+        assertThat(response.getCurrentStatus()).isEqualTo(TicketStatus.IN_PROGRESS);
+        assertThat(ticket.getCurrentStatus()).isNotEqualTo(TicketStatus.ROUTED);
+        verify(activities).save(argThat(activity -> activity.getActionType() == ActivityType.STATE_CHANGED
+                && activity.getNewStatus() == TicketStatus.IN_PROGRESS));
+        verify(ticketOutboxService, never()).routed(any(), any(), any());
+        verify(ticketOutboxService).statusChanged(ticket, null, NOW);
     }
 
     @Test
@@ -1083,7 +1011,7 @@ class TicketServiceTest {
         assertThatThrownBy(() -> service.routeToArea(ticketId, actor))
                 .isInstanceOf(TicketStateConflictException.class);
 
-        verify(outboxEventRepository, never()).save(any());
+        verifyNoInteractions(ticketOutboxService);
     }
 
     @Test
@@ -1117,6 +1045,22 @@ class TicketServiceTest {
         service.routeToArea(ticketId, actor);
 
         assertThat(ticket.getClassificationFinalizedAt()).isEqualTo(firstFinalization);
+    }
+
+    @Test
+    void routeToAreaAuditsAdminCapabilityAndCitizenId() {
+        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.LOW);
+        ticket.setResponsibleAreaId("M6");
+        AuthenticatedIdentity admin = new AuthenticatedIdentity(
+                "admin-subject", UUID.randomUUID(), "Admin", null, ModuleRole.ADMIN);
+        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+
+        service.routeToArea(ticketId, admin);
+
+        verify(activities).save(argThat(activity -> activity.getActorType() == ActorType.ADMIN
+                && admin.citizenId().toString().equals(activity.getActorId())
+                && !admin.subjectId().equals(activity.getActorId())));
     }
 
     // ==================================================================

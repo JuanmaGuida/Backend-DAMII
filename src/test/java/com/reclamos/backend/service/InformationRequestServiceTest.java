@@ -25,15 +25,16 @@ class InformationRequestServiceTest {
     private final InformationRequestExpirationService expirationService =
             mock(InformationRequestExpirationService.class);
     private final TicketSlaService ticketSlaService = mock(TicketSlaService.class);
+    private final TicketOutboxService outbox = mock(TicketOutboxService.class);
     private InformationRequestService service;
     private Ticket ticket;
 
     @BeforeEach
     void setUp() {
-        reset(tickets, requests, activities, expirationService, ticketSlaService);
+        reset(tickets, requests, activities, expirationService, ticketSlaService, outbox);
         service = new InformationRequestService(tickets, requests, activities,
                 new InformationRequestDeadlineService(Clock.fixed(NOW, ZoneOffset.UTC), Duration.ofHours(72)),
-                expirationService, ticketSlaService);
+                expirationService, ticketSlaService, outbox);
         ticket = ticket(TicketStatus.IN_PROGRESS, false);
         when(tickets.findByIdForUpdate(ticket.getId())).thenReturn(Optional.of(ticket));
         when(requests.save(any())).thenAnswer(invocation -> {
@@ -117,6 +118,7 @@ class InformationRequestServiceTest {
     @Test
     void citizenAnswersBeforeDeadlineAndResumeStatusIsRestored() {
         InformationRequest pending = pending(ticket, NOW.plusSeconds(1));
+        pending.setRequestedByModuleId("M2");
         ticket.setCurrentStatus(TicketStatus.PENDING_INFORMATION);
         when(requests.findByTicketIdAndStatusForUpdate(ticket.getId(), InformationRequestStatus.PENDING))
                 .thenReturn(Optional.of(pending));
@@ -136,6 +138,7 @@ class InformationRequestServiceTest {
                 && actor.citizenId().toString().equals(value.getActorId())
                 && "M2".equals(value.getSourceModuleId())));
         verify(ticketSlaService).resumeActiveResolutionCycle(ticket, NOW);
+        verify(outbox).informationProvided(ticket, "Respuesta", false, NOW);
     }
 
     @Test
@@ -170,12 +173,14 @@ class InformationRequestServiceTest {
     void anonymousTicketCanUsePreparedTrackingBusinessEntryPointWithoutCitizenId() {
         ticket = ticket(TicketStatus.PENDING_INFORMATION, true);
         InformationRequest pending = pending(ticket, NOW.plusSeconds(1));
+        pending.setRequestedByModuleId("M6");
         when(tickets.findByIdForUpdate(ticket.getId())).thenReturn(Optional.of(ticket));
         when(requests.findByTicketIdAndStatusForUpdate(ticket.getId(), InformationRequestStatus.PENDING))
                 .thenReturn(Optional.of(pending));
 
         assertDoesNotThrow(() -> service.answerAnonymousFromTracking(ticket.getId(), "Respuesta", "tracking"));
         assertEquals(InformationRequestStatus.ANSWERED, pending.getStatus());
+        verify(outbox).informationProvided(ticket, "Respuesta", true, NOW);
     }
 
     private InformationRequest pending(Ticket owner, Instant dueAt) {
