@@ -10,9 +10,14 @@ import java.util.UUID;
 @Data
 @Entity
 @NoArgsConstructor
-@Table(name = "ticket_resolutions", indexes = {
-        @Index(name = "idx_ticket_resolution_ticket_resolved_at", columnList = "ticket_id,resolved_at")
-})
+@Table(
+        name = "ticket_resolutions",
+        indexes = @Index(name = "idx_ticket_resolution_ticket_resolved_at", columnList = "ticket_id,resolved_at"),
+        uniqueConstraints = @UniqueConstraint(
+                name = "uk_ticket_resolution_number",
+                columnNames = {"ticket_id", "resolution_number"}
+        )
+)
 public class TicketResolution {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -22,6 +27,9 @@ public class TicketResolution {
     @JoinColumn(name = "ticket_id", nullable = false,
             foreignKey = @ForeignKey(name = "fk_ticket_resolution_ticket"))
     private Ticket ticket;
+
+    @Column(name = "resolution_number", nullable = false)
+    private Integer resolutionNumber;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "resolution_type", nullable = false, length = 50)

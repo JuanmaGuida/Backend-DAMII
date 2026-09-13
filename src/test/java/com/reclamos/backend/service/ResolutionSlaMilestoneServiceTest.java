@@ -42,7 +42,6 @@ class ResolutionSlaMilestoneServiceTest {
         ticket.setCurrentStatus(TicketStatus.IN_PROGRESS);
         ticket.setCurrentPriority(Priority.HIGH);
         ticket.setResponsibleAreaId("M2");
-        ticket.setResolutionDueAt(DUE);
         sla = new TicketSla();
         sla.setId(10L);
         sla.setTicket(ticket);

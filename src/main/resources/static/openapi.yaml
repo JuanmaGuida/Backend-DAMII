@@ -1274,7 +1274,7 @@ components:
       enum: [LOW, MEDIUM, HIGH, CRITICAL]
     EscalationReasonCode:
       type: string
-      enum: [CRITICAL_PRIORITY, SLA_NEAR_DUE, SLA_BREACHED, MANUAL]
+      enum: [CRITICAL_PRIORITY, SLA_BREACHED, MANUAL]
     InformationRequestStatus:
       type: string
       enum: [PENDING, ANSWERED, EXPIRED]

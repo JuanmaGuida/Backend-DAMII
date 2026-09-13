@@ -33,6 +33,7 @@ import static org.mockito.Mockito.verify;
 
 class TicketOutboxServiceTest {
     private static final Instant NOW = Instant.parse("2026-09-12T12:00:00Z");
+    private static final Instant RESOLUTION_DUE = Instant.parse("2026-09-15T12:00:00Z");
     private final OutboxEventRepository repository = mock(OutboxEventRepository.class);
     private final TicketOutboxService service = new TicketOutboxService(
             repository, Clock.fixed(NOW, ZoneOffset.UTC));
@@ -48,9 +49,9 @@ class TicketOutboxServiceTest {
         Ticket external = ticket(false, "M6", TicketStatus.REGISTERED);
         Ticket anonymous = ticket(true, "M6", TicketStatus.REGISTERED);
 
-        service.ticketCreated(selfManaged, null, List.of());
-        service.ticketCreated(external, null, List.of());
-        service.ticketCreated(anonymous, null, List.of());
+        service.ticketCreated(selfManaged, null, List.of(), RESOLUTION_DUE);
+        service.ticketCreated(external, null, List.of(), RESOLUTION_DUE);
+        service.ticketCreated(anonymous, null, List.of(), RESOLUTION_DUE);
 
         ArgumentCaptor<OutboxEvent> captor = ArgumentCaptor.forClass(OutboxEvent.class);
         verify(repository, times(2)).save(captor.capture());
@@ -62,7 +63,8 @@ class TicketOutboxServiceTest {
             Map<String, Object> data = (Map<String, Object>) event.getPayload().get("data");
             assertThat(data).containsEntry("publicId", event.getTicket().getPublicId())
                     .containsEntry("isAnonymous", false)
-                    .containsEntry("status", "REGISTERED");
+                    .containsEntry("status", "REGISTERED")
+                    .containsEntry("resolutionDueAt", RESOLUTION_DUE.toString());
         });
     }
 
@@ -72,10 +74,10 @@ class TicketOutboxServiceTest {
         Ticket anonymous = ticket(true, "M2", TicketStatus.IN_PROGRESS);
 
         service.statusChanged(identified, null, NOW);
-        service.contentUpdated(identified, NOW);
+        service.contentUpdated(identified, RESOLUTION_DUE, NOW);
         service.resolved(identified, ResolutionType.ACTION_COMPLETED, "Resuelto", NOW);
         service.statusChanged(anonymous, null, NOW);
-        service.contentUpdated(anonymous, NOW);
+        service.contentUpdated(anonymous, RESOLUTION_DUE, NOW);
         service.resolved(anonymous, ResolutionType.ACTION_COMPLETED, "Resuelto", NOW);
 
         ArgumentCaptor<OutboxEvent> captor = ArgumentCaptor.forClass(OutboxEvent.class);
@@ -87,16 +89,23 @@ class TicketOutboxServiceTest {
 
     @Test
     void routedIsExclusiveToExternalManagementForIdentifiedAndAnonymous() {
-        service.routed(ticket(false, "M6", TicketStatus.ROUTED), null, NOW);
-        service.routed(ticket(true, "M6", TicketStatus.ROUTED), null, NOW);
-        service.routed(ticket(false, "M2", TicketStatus.IN_PROGRESS), null, NOW);
-        service.routed(ticket(true, "M2", TicketStatus.IN_PROGRESS), null, NOW);
+        service.routed(ticket(false, "M6", TicketStatus.ROUTED), null, RESOLUTION_DUE, NOW);
+        service.routed(ticket(true, "M6", TicketStatus.ROUTED), null, RESOLUTION_DUE, NOW);
+        service.routed(ticket(false, "M2", TicketStatus.IN_PROGRESS), null, RESOLUTION_DUE, NOW);
+        service.routed(ticket(true, "M2", TicketStatus.IN_PROGRESS), null, RESOLUTION_DUE, NOW);
 
         ArgumentCaptor<OutboxEvent> captor = ArgumentCaptor.forClass(OutboxEvent.class);
         verify(repository, times(2)).save(captor.capture());
         assertThat(captor.getAllValues()).allSatisfy(event -> {
             assertThat(event.getUpdateType()).isEqualTo(TicketUpdatedType.ROUTED);
             assertThat(event.getTicket().getResponsibleAreaId()).isEqualTo("M6");
+            @SuppressWarnings("unchecked")
+            Map<String, Object> data = (Map<String, Object>) event.getPayload().get("data");
+            @SuppressWarnings("unchecked")
+            Map<String, Object> details = (Map<String, Object>) data.get("details");
+            @SuppressWarnings("unchecked")
+            Map<String, Object> routing = (Map<String, Object>) details.get("routing");
+            assertThat(routing).containsEntry("resolutionDueAt", RESOLUTION_DUE.toString());
         });
     }
 

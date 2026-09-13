@@ -2,19 +2,21 @@ package com.reclamos.backend.service;
 
 import com.reclamos.backend.entity.*;
 import com.reclamos.backend.exception.TicketStateConflictException;
-import com.reclamos.backend.repository.TicketRepository;
 import com.reclamos.backend.repository.TicketSlaRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
 public class TicketSlaService {
     private final TicketSlaRepository slaRepository;
-    private final TicketRepository ticketRepository;
     private final SlaCalculationService calculationService;
     private final TicketSlaMilestoneService milestoneService;
 
@@ -39,8 +41,6 @@ public class TicketSlaService {
         Optional<TicketSla> active = slaRepository.findActiveForUpdate(ticket.getId(), SlaType.RESOLUTION);
         if (schedule.isEmpty()) {
             active.ifPresent(slaRepository::delete);
-            ticket.setResolutionDueAt(null);
-            ticketRepository.save(ticket);
             return Optional.empty();
         }
 
@@ -55,8 +55,6 @@ public class TicketSlaService {
         sla.setStatus(SlaStatus.RUNNING);
         sla.setPausedAt(null);
         sla.setTotalPausedSeconds(0);
-        ticket.setResolutionDueAt(sla.getDueAt());
-        ticketRepository.save(ticket);
         slaRepository.save(sla);
         milestoneService.processMilestones(ticket, sla, effectiveNow);
         return Optional.of(sla);
@@ -107,8 +105,6 @@ public class TicketSlaService {
         sla.setDueAt(calculationService.addEffectiveSeconds(resumedAt, remainingDueSeconds, policy));
         sla.setTotalPausedSeconds(Math.addExact(sla.getTotalPausedSeconds(), effectivePausedSeconds));
         sla.setPausedAt(null);
-        ticket.setResolutionDueAt(sla.getDueAt());
-        ticketRepository.save(ticket);
         return Optional.of(slaRepository.save(sla));
     }
 
@@ -126,8 +122,6 @@ public class TicketSlaService {
         Optional<SlaCalculationService.SlaSchedule> schedule = calculationService.calculateResolutionSchedule(
                 reopenedAt, ticket.getCurrentPriority(), ticket.getTicketType());
         if (schedule.isEmpty()) {
-            ticket.setResolutionDueAt(null);
-            ticketRepository.save(ticket);
             return Optional.empty();
         }
         int nextCycle = slaRepository.findMaxCycleNumber(ticket.getId(), SlaType.RESOLUTION).orElse(0) + 1;
@@ -137,6 +131,30 @@ public class TicketSlaService {
     public Optional<TicketSla> findLatestResolutionCycle(Ticket ticket) {
         Ticket owner = ticket.getMainTicket() == null ? ticket : ticket.getMainTicket();
         return slaRepository.findFirstByTicket_IdAndSlaTypeOrderByCycleNumberDesc(owner.getId(), SlaType.RESOLUTION);
+    }
+
+    /** Carga una sola vez el último ciclo de cada owner para respuestas paginadas. */
+    public Map<UUID, TicketSla> findLatestResolutionCycles(List<Ticket> tickets) {
+        if (tickets.isEmpty()) {
+            return Map.of();
+        }
+        Map<UUID, UUID> ownerByTicket = new HashMap<>();
+        for (Ticket ticket : tickets) {
+            Ticket owner = ticket.getMainTicket() == null ? ticket : ticket.getMainTicket();
+            ownerByTicket.put(ticket.getId(), owner.getId());
+        }
+        Map<UUID, TicketSla> latestByOwner = new HashMap<>();
+        slaRepository.findLatestByTicketIds(ownerByTicket.values(), SlaType.RESOLUTION)
+                .forEach(sla -> latestByOwner.put(sla.getTicket().getId(), sla));
+
+        Map<UUID, TicketSla> result = new HashMap<>();
+        ownerByTicket.forEach((ticketId, ownerId) -> {
+            TicketSla sla = latestByOwner.get(ownerId);
+            if (sla != null) {
+                result.put(ticketId, sla);
+            }
+        });
+        return result;
     }
 
     private Optional<TicketSla> completeActiveCycle(Ticket ticket, SlaType type, Instant completedAt) {
@@ -175,12 +193,6 @@ public class TicketSlaService {
     private TicketSla createCycle(Ticket ticket, SlaType type, int cycleNumber, Instant startedAt,
                                   SlaCalculationService.SlaSchedule schedule) {
         TicketSla sla = newCycle(ticket, type, cycleNumber, startedAt, schedule);
-        if (type == SlaType.FIRST_RESPONSE) {
-            ticket.setFirstResponseDueAt(sla.getDueAt());
-        } else {
-            ticket.setResolutionDueAt(sla.getDueAt());
-        }
-        ticketRepository.save(ticket);
         return slaRepository.save(sla);
     }
 

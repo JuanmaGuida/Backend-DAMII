@@ -118,7 +118,6 @@ class ResolutionSlaMilestoneConcurrencyIntegrationTest {
         ticket.setCurrentStatus(TicketStatus.IN_PROGRESS);
         ticket.setCurrentPriority(Priority.HIGH);
         ticket.setStatusChangedAt(NEAR.minusSeconds(1));
-        ticket.setResolutionDueAt(DUE);
         ticket = tickets.saveAndFlush(ticket);
 
         TicketSla sla = new TicketSla();
@@ -148,7 +147,6 @@ class ResolutionSlaMilestoneConcurrencyIntegrationTest {
         ticket.setCurrentStatus(TicketStatus.REGISTERED);
         ticket.setCurrentPriority(Priority.HIGH);
         ticket.setStatusChangedAt(NEAR.minusSeconds(1));
-        ticket.setFirstResponseDueAt(DUE);
         ticket = tickets.saveAndFlush(ticket);
 
         TicketSla sla = new TicketSla();
