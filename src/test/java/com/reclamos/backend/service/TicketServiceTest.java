@@ -85,6 +85,8 @@ class TicketServiceTest {
     @Mock
     private RiskCalculationService risks;
     @Mock
+    private SlaCalculationService sla;
+    @Mock
     private OutboxEventRepository outboxEventRepository;
     @Mock
     private ModuleUserRepository moduleUsers;
@@ -92,8 +94,6 @@ class TicketServiceTest {
     private TrackingCodeService trackingCodes = new TrackingCodeService();
     @Mock
     private TicketPublicIdGenerator publicIds;
-    @Mock
-    private SlaCalculationService sla;
     @Mock
     private TicketSlaService ticketSlaService;
     private final AttachmentService attachments = mock(AttachmentService.class);
@@ -116,14 +116,6 @@ class TicketServiceTest {
 
         lenient().when(clock.instant()).thenReturn(NOW);
         lenient().when(publicIds.generate(NOW)).thenReturn("TK-2026-000123");
-
-        lenient().when(
-                sla.calculateDueAt(any(), any(Priority.class), eq(SlaType.FIRST_RESPONSE))
-        ).thenReturn(Optional.empty());
-
-        lenient().when(
-                sla.calculateResolutionDueAt(any(), any(Priority.class), any(TicketType.class))
-        ).thenReturn(Optional.empty());
 
         requestType = requestType(true);
 
@@ -470,16 +462,12 @@ class TicketServiceTest {
     }
 
     @Test
-    void creationStoresFirstResponseDueAtFromCreatedAt() {
+    void creationStartsFirstResponseCycleFromCreatedAt() {
         allowLowRisk();
-
-        Instant dueAt = Instant.parse("2026-09-04T14:00:00Z");
-        when(sla.calculateDueAt(clock.instant(), Priority.LOW, SlaType.FIRST_RESPONSE))
-                .thenReturn(Optional.of(dueAt));
 
         service.create(request(), identity(), null);
 
-        verify(tickets).save(argThat(ticket -> dueAt.equals(ticket.getFirstResponseDueAt())));
+        verify(ticketSlaService).startFirstResponseCycle(any(Ticket.class), eq(NOW));
     }
 
     @Test
@@ -753,6 +741,9 @@ class TicketServiceTest {
         assertThat(activity.getPreviousStatus()).isEqualTo(TicketStatus.REGISTERED);
         assertThat(activity.getNewStatus()).isEqualTo(TicketStatus.IN_REVIEW);
         assertThat(activity.getSequence()).isEqualTo(1);
+        assertThat(activity.getOccurredAt()).isEqualTo(NOW);
+        assertThat(ticket.getStatusChangedAt()).isEqualTo(NOW);
+        verify(ticketSlaService).completeFirstResponseCycle(ticket, NOW);
     }
 
     @Test
@@ -856,6 +847,8 @@ class TicketServiceTest {
         assertThat(response.getRequestTypeCode()).isEqualTo("FLOODING");
         assertThat(ticket.getFormData()).isEmpty();
         verify(ticketSlaService).recalculateInitialResolutionCycle(ticket, NOW);
+        verify(ticketSlaService, never()).startFirstResponseCycle(any(), any());
+        verify(ticketSlaService, never()).completeFirstResponseCycle(any(), any());
     }
 
     /**

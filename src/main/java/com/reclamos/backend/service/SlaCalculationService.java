@@ -45,6 +45,14 @@ public class SlaCalculationService {
                 .map(policy -> calculateDueAt(start, policy));
     }
 
+    public Optional<SlaSchedule> calculateSchedule(Instant start, Priority priority, SlaType slaType) {
+        Objects.requireNonNull(start, "El instante inicial es obligatorio");
+        Objects.requireNonNull(priority, "La prioridad es obligatoria");
+        Objects.requireNonNull(slaType, "El tipo de SLA es obligatorio");
+        return policyRepository.findByPriorityAndSlaType(priority, slaType)
+                .map(policy -> calculateSchedule(start, policy));
+    }
+
     public Optional<Instant> calculateResolutionDueAt(Instant start, Priority priority, TicketType ticketType) {
         return calculateResolutionSchedule(start, priority, ticketType).map(SlaSchedule::dueAt);
     }
@@ -128,6 +136,69 @@ public class SlaCalculationService {
             case BUSINESS_DAYS -> addBusinessDays(start, policy.getDurationBusinessDays(), policy.getWorkCalendar());
             case SAME_BUSINESS_DAY -> sameBusinessDay(start, policy.getWorkCalendar());
         };
+    }
+
+    /**
+     * Agrega segundos efectivos del SLA respetando el mismo calendario que se
+     * usa para calcular sus vencimientos.
+     */
+    public Instant addEffectiveSeconds(Instant start, long seconds, SlaPolicy policy) {
+        Objects.requireNonNull(start, "El instante inicial es obligatorio");
+        Objects.requireNonNull(policy, "La política SLA es obligatoria");
+        if (seconds < 0) {
+            throw new IllegalArgumentException("Los segundos efectivos no pueden ser negativos");
+        }
+        if (seconds == 0) {
+            return start;
+        }
+        if (policy.getMode() == SlaMode.CONTINUOUS_24X7) {
+            return start.plusSeconds(seconds);
+        }
+        if (policy.getMode() != SlaMode.BUSINESS_HOURS || policy.getWorkCalendar() == null) {
+            throw new IllegalArgumentException("La política de horario laboral requiere un calendario");
+        }
+        validateBusinessCalendar(policy.getWorkCalendar());
+        return addBusinessTime(start, Duration.ofSeconds(seconds), policy.getWorkCalendar());
+    }
+
+    /**
+     * Mide únicamente los segundos en que el reloj SLA estuvo operativo entre
+     * dos instantes. Es la operación inversa de {@link #addEffectiveSeconds}.
+     */
+    public long effectiveSecondsBetween(Instant start, Instant end, SlaPolicy policy) {
+        Objects.requireNonNull(start, "El instante inicial es obligatorio");
+        Objects.requireNonNull(end, "El instante final es obligatorio");
+        Objects.requireNonNull(policy, "La política SLA es obligatoria");
+        if (end.isBefore(start)) {
+            throw new IllegalArgumentException("El instante final no puede ser anterior al inicial");
+        }
+        if (policy.getMode() == SlaMode.CONTINUOUS_24X7) {
+            return Duration.between(start, end).getSeconds();
+        }
+        if (policy.getMode() != SlaMode.BUSINESS_HOURS || policy.getWorkCalendar() == null) {
+            throw new IllegalArgumentException("La política de horario laboral requiere un calendario");
+        }
+
+        WorkCalendar calendar = policy.getWorkCalendar();
+        validateBusinessCalendar(calendar);
+        ZoneId zone = ZoneId.of(calendar.getZoneId());
+        LocalDate date = start.atZone(zone).toLocalDate();
+        LocalDate lastDate = end.atZone(zone).toLocalDate();
+        long seconds = 0;
+        while (!date.isAfter(lastDate)) {
+            if (calendar.getWorkingDays().contains(date.getDayOfWeek())
+                    && !calendar.getNonWorkingDays().contains(date)) {
+                Instant opening = date.atTime(calendar.getWorkdayStart()).atZone(zone).toInstant();
+                Instant closing = date.atTime(calendar.getWorkdayEnd()).atZone(zone).toInstant();
+                Instant intervalStart = start.isAfter(opening) ? start : opening;
+                Instant intervalEnd = end.isBefore(closing) ? end : closing;
+                if (intervalStart.isBefore(intervalEnd)) {
+                    seconds = Math.addExact(seconds, Duration.between(intervalStart, intervalEnd).getSeconds());
+                }
+            }
+            date = date.plusDays(1);
+        }
+        return seconds;
     }
 
     private Instant addBusinessDays(Instant start, Integer days, WorkCalendar calendar) {

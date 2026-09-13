@@ -10,15 +10,15 @@ import java.time.Instant;
 
 @Component
 @RequiredArgsConstructor
-public class ResolutionSlaMilestoneJob {
+public class TicketSlaMilestoneJob {
     private final TicketSlaRepository slaRepository;
-    private final ResolutionSlaMilestoneService milestoneService;
+    private final TicketSlaMilestoneService milestoneService;
     private final Clock clock;
 
     @Scheduled(fixedDelayString = "${ticket.sla.milestone-scan-delay:60000}")
     public void processPendingMilestones() {
         Instant now = clock.instant();
-        slaRepository.findPendingResolutionMilestones(now)
+        slaRepository.findPendingMilestones(now)
                 .forEach(candidate -> milestoneService.processCandidate(
                         candidate.ticketId(), candidate.slaId(), now));
     }

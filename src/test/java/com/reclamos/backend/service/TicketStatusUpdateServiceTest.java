@@ -6,9 +6,12 @@ import com.reclamos.backend.dto.UpdateTicketStatusRequest;
 import com.reclamos.backend.dto.request.ReopenTicketRequest;
 import com.reclamos.backend.entity.ActivityType;
 import com.reclamos.backend.entity.Category;
+import com.reclamos.backend.entity.CancellationReasonCode;
 import com.reclamos.backend.entity.EscalationReasonCode;
 import com.reclamos.backend.entity.InboxEvent;
 import com.reclamos.backend.entity.InboxStatus;
+import com.reclamos.backend.entity.InformationRequest;
+import com.reclamos.backend.entity.InformationRequestStatus;
 import com.reclamos.backend.entity.Priority;
 import com.reclamos.backend.entity.RequestType;
 import com.reclamos.backend.entity.ResolutionType;
@@ -16,6 +19,7 @@ import com.reclamos.backend.entity.SlaStatus;
 import com.reclamos.backend.entity.Subcategory;
 import com.reclamos.backend.entity.Ticket;
 import com.reclamos.backend.entity.TicketActivity;
+import com.reclamos.backend.entity.TicketCancellation;
 import com.reclamos.backend.entity.TicketStatus;
 import com.reclamos.backend.entity.TicketSla;
 import com.reclamos.backend.entity.TicketResolution;
@@ -27,7 +31,9 @@ import com.reclamos.backend.exception.TicketStateConflictException;
 import com.reclamos.backend.identity.AuthenticatedIdentity;
 import com.reclamos.backend.identity.ModuleRole;
 import com.reclamos.backend.repository.InboxEventRepository;
+import com.reclamos.backend.repository.InformationRequestRepository;
 import com.reclamos.backend.repository.TicketActivityRepository;
+import com.reclamos.backend.repository.TicketCancellationRepository;
 import com.reclamos.backend.repository.TicketLocationRepository;
 import com.reclamos.backend.repository.TicketMessageRepository;
 import com.reclamos.backend.repository.TicketRepository;
@@ -84,9 +90,16 @@ class TicketStatusUpdateServiceTest {
     private TicketResolutionRepository resolutionRepository;
     @Mock
     private TicketSlaService ticketSlaService;
+    @Mock
+    private InformationRequestRepository informationRequestRepository;
+    @Mock
+    private InformationRequestExpirationService informationRequestExpirationService;
+    @Mock
+    private TicketCancellationRepository cancellationRepository;
 
     private TicketStatusUpdateService service;
     private TicketResolutionService resolutionService;
+    private InformationRequestService informationRequestService;
 
     private final UUID ticketId = UUID.randomUUID();
     private final UpdateTicketStatusRequest.Actor externalActor =
@@ -96,9 +109,15 @@ class TicketStatusUpdateServiceTest {
     void setUp() {
         resolutionService = new TicketResolutionService(
                 ticketRepository, resolutionRepository, activityRepository,
-                Clock.fixed(Instant.parse("2026-09-08T12:00:00Z"), ZoneOffset.UTC), Duration.ofHours(72));
+                 Clock.fixed(Instant.parse("2026-09-08T12:00:00Z"), ZoneOffset.UTC), Duration.ofHours(72));
+        informationRequestService = new InformationRequestService(
+                ticketRepository, informationRequestRepository, activityRepository,
+                new InformationRequestDeadlineService(
+                        Clock.fixed(Instant.parse("2026-09-08T12:00:00Z"), ZoneOffset.UTC), Duration.ofHours(72)),
+                informationRequestExpirationService, ticketSlaService);
         service = new TicketStatusUpdateService(ticketRepository, activityRepository, locationRepository,
-                messageRepository, inboxEventRepository, resolutionService, ticketSlaService);
+                messageRepository, inboxEventRepository, resolutionService, ticketSlaService,
+                informationRequestService, cancellationRepository);
         // Default para los tests que no ejercitan dedupe en sí: "eventId nunca visto".
         // Los tests de dedupe pisan este stub explícitamente.
         lenient().when(inboxEventRepository.findById(any())).thenReturn(Optional.empty());
@@ -106,6 +125,11 @@ class TicketStatusUpdateServiceTest {
             TicketResolution resolution = invocation.getArgument(0);
             resolution.setId(UUID.randomUUID());
             return resolution;
+        });
+        lenient().when(informationRequestRepository.save(any())).thenAnswer(invocation -> {
+            InformationRequest informationRequest = invocation.getArgument(0);
+            if (informationRequest.getId() == null) informationRequest.setId(UUID.randomUUID());
+            return informationRequest;
         });
     }
 
@@ -223,6 +247,35 @@ class TicketStatusUpdateServiceTest {
         TicketResponse response = service.applyUpdate(ticketId, envelope(data));
 
         assertThat(response.getCurrentStatus()).isEqualTo(TicketStatus.PENDING_INFORMATION);
+        ArgumentCaptor<InformationRequest> captor = ArgumentCaptor.forClass(InformationRequest.class);
+        verify(informationRequestRepository).save(captor.capture());
+        InformationRequest saved = captor.getValue();
+        assertThat(saved.getStatus()).isEqualTo(InformationRequestStatus.PENDING);
+        assertThat(saved.getResumeStatus()).isEqualTo(TicketStatus.ROUTED);
+        assertThat(saved.getRequestedByModuleId()).isEqualTo("M6");
+        assertThat(saved.getRequestedByActorType()).isEqualTo(com.reclamos.backend.entity.ActorType.EXTERNAL_USER);
+        assertThat(saved.getRequestedByActorId()).isEqualTo("USR-M6-77");
+        assertThat(saved.getMessageForCitizen()).isEqualTo("Indique la altura aproximada.");
+        verify(ticketSlaService).pauseActiveResolutionCycle(ticket, data.updateOccurredAt());
+    }
+
+    @Test
+    void informationRequiredRejectsASecondPendingRequest() {
+        Ticket ticket = ticket(TicketStatus.ROUTED);
+        when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+        when(informationRequestRepository.existsByTicketIdAndStatus(
+                ticketId, InformationRequestStatus.PENDING)).thenReturn(true);
+        UpdateTicketStatusRequest.Details details = new UpdateTicketStatusRequest.Details(
+                new UpdateTicketStatusRequest.InformationRequest("Dato", null), null, null, null);
+        UpdateTicketStatusRequest data = new UpdateTicketStatusRequest(
+                ticketId, UpdateTicketStatusType.INFORMATION_REQUIRED, null, null, null, details,
+                externalActor, Instant.now());
+
+        assertThatThrownBy(() -> service.applyUpdate(ticketId, envelope(data)))
+                .isInstanceOf(com.reclamos.backend.exception.InformationRequestConflictException.class);
+
+        verify(ticketSlaService, never()).pauseActiveResolutionCycle(any(), any());
+        verify(inboxEventRepository, never()).save(any());
     }
 
     @Test
@@ -462,6 +515,34 @@ class TicketStatusUpdateServiceTest {
         TicketResponse response = service.applyUpdate(ticketId, envelope(data));
 
         assertThat(response.getCurrentStatus()).isEqualTo(TicketStatus.CANCELLED);
+        ArgumentCaptor<TicketCancellation> captor = ArgumentCaptor.forClass(TicketCancellation.class);
+        verify(cancellationRepository).save(captor.capture());
+        TicketCancellation cancellation = captor.getValue();
+        assertThat(cancellation.getReasonCode()).isEqualTo(CancellationReasonCode.OUT_OF_SCOPE);
+        assertThat(cancellation.getCancelledByModuleId()).isEqualTo("M6");
+        assertThat(cancellation.getCancelledById()).isEqualTo("USR-M6-77");
+        assertThat(cancellation.getCancelledAt()).isEqualTo(data.updateOccurredAt());
+        verify(ticketSlaService).terminateActiveCycles(ticket, data.updateOccurredAt());
+    }
+
+    @Test
+    void rejectedWhileWaitingInformationTerminatesThePausedSla() {
+        Ticket ticket = ticket(TicketStatus.PENDING_INFORMATION);
+        when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+        when(activityRepository.countByTicketId(ticketId)).thenReturn(0);
+        when(locationRepository.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+        UpdateTicketStatusRequest.Details details = new UpdateTicketStatusRequest.Details(
+                null, null, null, new UpdateTicketStatusRequest.Cancellation("REJECTED_BY_AREA"));
+        UpdateTicketStatusRequest data = new UpdateTicketStatusRequest(
+                ticketId, UpdateTicketStatusType.REJECTED, "No es posible continuar.", null, null, details,
+                externalActor, Instant.parse("2026-09-08T11:00:00Z"));
+
+        service.applyUpdate(ticketId, envelope(data));
+
+        assertThat(ticket.getCurrentStatus()).isEqualTo(TicketStatus.CANCELLED);
+        verify(ticketSlaService).terminateActiveCycles(ticket, data.updateOccurredAt());
+        verify(cancellationRepository).save(argThat(cancellation ->
+                cancellation.getReasonCode() == CancellationReasonCode.REJECTED_BY_AREA));
     }
 
     @Test

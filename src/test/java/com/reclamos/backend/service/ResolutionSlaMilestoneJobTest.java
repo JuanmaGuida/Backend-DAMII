@@ -16,13 +16,13 @@ class ResolutionSlaMilestoneJobTest {
     @Test void delegatesEachCandidateWithOneConsistentTimestamp() {
         Instant now = Instant.parse("2026-09-10T12:10:00Z");
         TicketSlaRepository slas = mock(TicketSlaRepository.class);
-        ResolutionSlaMilestoneService processor = mock(ResolutionSlaMilestoneService.class);
+        TicketSlaMilestoneService processor = mock(TicketSlaMilestoneService.class);
         UUID first = UUID.randomUUID();
         UUID second = UUID.randomUUID();
-        when(slas.findPendingResolutionMilestones(now)).thenReturn(List.of(
+        when(slas.findPendingMilestones(now)).thenReturn(List.of(
                 new TicketSlaCandidate(first, 11L), new TicketSlaCandidate(second, 12L)));
 
-        new ResolutionSlaMilestoneJob(slas, processor, Clock.fixed(now, ZoneOffset.UTC))
+        new TicketSlaMilestoneJob(slas, processor, Clock.fixed(now, ZoneOffset.UTC))
                 .processPendingMilestones();
 
         verify(processor).processCandidate(first, 11L, now);

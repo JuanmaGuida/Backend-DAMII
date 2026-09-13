@@ -92,7 +92,7 @@ class ActorSemanticsMigrationIntegrationTest {
             insertModuleUser(database, schema, citizenId);
             insertModuleUser(database, schema, timeoutCitizenId);
             insertModuleUser(database, schema, unrelatedCitizenId);
-            flyway(schema, null).migrate();
+            flyway(schema, "29").migrate();
 
             assertEquals(citizenId.toString(), activityActorId(database, schema, identifiedTicket, 1));
             assertEquals(citizenId.toString(), scalar(database, "SELECT answered_by_id FROM " + schema

@@ -28,7 +28,7 @@ class ResolutionSlaMilestoneServiceTest {
     private final TicketSlaRepository slas = mock(TicketSlaRepository.class);
     private final TicketActivityRepository activities = mock(TicketActivityRepository.class);
     private final OutboxEventRepository outbox = mock(OutboxEventRepository.class);
-    private final ResolutionSlaMilestoneService service = new ResolutionSlaMilestoneService(
+    private final TicketSlaMilestoneService service = new TicketSlaMilestoneService(
             tickets, slas, activities, outbox, Clock.fixed(PROCESSED, ZoneOffset.UTC));
     private Ticket ticket;
     private TicketSla sla;
@@ -56,8 +56,8 @@ class ResolutionSlaMilestoneServiceTest {
     }
 
     @Test void identifiedM2TicketPublishesEscalationChangedExactlyOnce() {
-        service.processResolutionSlaMilestones(ticket, sla, PROCESSED);
-        service.processResolutionSlaMilestones(ticket, sla, PROCESSED.plusSeconds(60));
+        service.processMilestones(ticket, sla, PROCESSED);
+        service.processMilestones(ticket, sla, PROCESSED.plusSeconds(60));
 
         ArgumentCaptor<TicketActivity> captor = ArgumentCaptor.forClass(TicketActivity.class);
         verify(activities, times(3)).save(captor.capture());
@@ -83,7 +83,7 @@ class ResolutionSlaMilestoneServiceTest {
         ticket.setEscalationReasonCode(EscalationReasonCode.CRITICAL_PRIORITY);
         ticket.setEscalatedAt(escalatedAt);
 
-        service.processResolutionSlaMilestones(ticket, sla, DUE);
+        service.processMilestones(ticket, sla, DUE);
 
         verify(activities, times(2)).save(any());
         assertEquals(SlaStatus.BREACHED, sla.getStatus());
@@ -93,7 +93,7 @@ class ResolutionSlaMilestoneServiceTest {
     }
 
     @Test void nearDueDoesNotEscalateOrChangeTicketStateOrPriority() {
-        service.processResolutionSlaMilestones(ticket, sla, NEAR);
+        service.processMilestones(ticket, sla, NEAR);
 
         assertEquals(SlaStatus.NEAR_DUE, sla.getStatus());
         assertFalse(ticket.isEscalated());
@@ -104,7 +104,7 @@ class ResolutionSlaMilestoneServiceTest {
     }
 
     @Test void externallyReportedResolutionBeforeDueDoesNotCreateBreach() {
-        service.processResolutionSlaMilestones(ticket, sla, DUE.minusNanos(1));
+        service.processMilestones(ticket, sla, DUE.minusNanos(1));
 
         assertEquals(SlaStatus.NEAR_DUE, sla.getStatus());
         assertFalse(ticket.isEscalated());
@@ -114,32 +114,48 @@ class ResolutionSlaMilestoneServiceTest {
     @Test void pendingInformationContinuesConsumingResolutionSla() {
         ticket.setCurrentStatus(TicketStatus.PENDING_INFORMATION);
 
-        service.processResolutionSlaMilestones(ticket, sla, DUE);
+        service.processMilestones(ticket, sla, DUE);
 
         assertEquals(SlaStatus.BREACHED, sla.getStatus());
         assertTrue(ticket.isEscalated());
     }
 
-    @Test void beforeThresholdAndTerminalDuplicateOrCompletedCyclesAreIgnored() {
-        service.processResolutionSlaMilestones(ticket, sla, NEAR.minusNanos(1));
-        ticket.setCurrentStatus(TicketStatus.RESOLVED);
-        service.processResolutionSlaMilestones(ticket, sla, PROCESSED);
-        ticket.setCurrentStatus(TicketStatus.IN_PROGRESS);
-        ticket.setMainTicket(new Ticket());
-        service.processResolutionSlaMilestones(ticket, sla, PROCESSED);
-        ticket.setMainTicket(null);
+    @Test void beforeThresholdAndCompletedCyclesAreIgnored() {
+        service.processMilestones(ticket, sla, NEAR.minusNanos(1));
         sla.setCompletedAt(PROCESSED);
         sla.setStatus(SlaStatus.MET);
-        service.processResolutionSlaMilestones(ticket, sla, PROCESSED);
+        service.processMilestones(ticket, sla, PROCESSED);
 
         verifyNoInteractions(activities, outbox);
+    }
+
+    @Test void schedulerRevalidationIgnoresDuplicateTickets() {
+        ticket.setCurrentStatus(TicketStatus.DUPLICATE);
+        ticket.setMainTicket(new Ticket());
+        when(tickets.findByIdForUpdate(ticket.getId())).thenReturn(java.util.Optional.of(ticket));
+        when(slas.findByIdForUpdate(sla.getId())).thenReturn(java.util.Optional.of(sla));
+
+        service.processCandidate(ticket.getId(), sla.getId(), PROCESSED);
+
+        assertEquals(SlaStatus.RUNNING, sla.getStatus());
+        verifyNoInteractions(activities, outbox);
+    }
+
+    @Test void explicitLifecycleReconciliationStillBreachesAnAlreadyLinkedDuplicate() {
+        ticket.setCurrentStatus(TicketStatus.DUPLICATE);
+        ticket.setMainTicket(new Ticket());
+
+        service.processMilestones(ticket, sla, DUE);
+
+        assertEquals(SlaStatus.BREACHED, sla.getStatus());
+        assertTrue(ticket.isEscalated());
     }
 
     @Test void identifiedExternalTicketPublishesEscalationChanged() {
         ticket.setResponsibleAreaId("M6");
         ticket.setCurrentStatus(TicketStatus.ROUTED);
 
-        service.processResolutionSlaMilestones(ticket, sla, DUE);
+        service.processMilestones(ticket, sla, DUE);
 
         assertPublishedEscalationChanged(ticket);
     }
@@ -147,7 +163,7 @@ class ResolutionSlaMilestoneServiceTest {
     @Test void anonymousM2TicketDoesNotPublishEscalationChanged() {
         makeAnonymous();
 
-        service.processResolutionSlaMilestones(ticket, sla, DUE);
+        service.processMilestones(ticket, sla, DUE);
 
         assertTrue(ticket.isEscalated());
         verifyNoInteractions(outbox);
@@ -158,7 +174,7 @@ class ResolutionSlaMilestoneServiceTest {
         ticket.setResponsibleAreaId("M6");
         ticket.setCurrentStatus(TicketStatus.ROUTED);
 
-        service.processResolutionSlaMilestones(ticket, sla, DUE);
+        service.processMilestones(ticket, sla, DUE);
 
         assertPublishedEscalationChanged(ticket);
     }
@@ -171,10 +187,48 @@ class ResolutionSlaMilestoneServiceTest {
         ticket.setEscalationReasonCode(EscalationReasonCode.MANUAL);
         ticket.setEscalatedAt(NEAR.minusSeconds(100));
 
-        service.processResolutionSlaMilestones(ticket, sla, DUE);
+        service.processMilestones(ticket, sla, DUE);
 
         assertEquals(EscalationReasonCode.MANUAL, ticket.getEscalationReasonCode());
         verifyNoInteractions(outbox);
+    }
+
+    @Test void firstResponseUsesTheSameMilestonesAndRecordsItsType() {
+        ticket.setCurrentStatus(TicketStatus.REGISTERED);
+        sla.setSlaType(SlaType.FIRST_RESPONSE);
+
+        service.processMilestones(ticket, sla, DUE);
+
+        ArgumentCaptor<TicketActivity> captor = ArgumentCaptor.forClass(TicketActivity.class);
+        verify(activities, times(3)).save(captor.capture());
+        assertEquals(List.of(ActivityType.SLA_NEAR_DUE, ActivityType.SLA_BREACHED, ActivityType.ESCALATED),
+                captor.getAllValues().stream().map(TicketActivity::getActionType).toList());
+        assertTrue(captor.getAllValues().stream()
+                .allMatch(activity -> "FIRST_RESPONSE".equals(activity.getMetadata().get("slaType"))));
+    }
+
+    @Test void anonymousFirstResponseBreachBeforeRoutingDoesNotPublishExternally() {
+        makeAnonymous();
+        ticket.setResponsibleAreaId("M6");
+        ticket.setCurrentStatus(TicketStatus.REGISTERED);
+        sla.setSlaType(SlaType.FIRST_RESPONSE);
+
+        service.processMilestones(ticket, sla, DUE);
+
+        assertTrue(ticket.isEscalated());
+        verifyNoInteractions(outbox);
+    }
+
+    @Test void pausedSlaIsIgnoredByTransactionalRevalidation() {
+        sla.setPausedAt(NEAR.minusSeconds(60));
+        when(tickets.findByIdForUpdate(ticket.getId())).thenReturn(java.util.Optional.of(ticket));
+        when(slas.findByIdForUpdate(sla.getId())).thenReturn(java.util.Optional.of(sla));
+
+        service.processCandidate(ticket.getId(), sla.getId(), DUE);
+
+        verify(tickets).findByIdForUpdate(ticket.getId());
+        verify(slas, never()).save(any());
+        verifyNoInteractions(activities, outbox);
     }
 
     private void makeAnonymous() {

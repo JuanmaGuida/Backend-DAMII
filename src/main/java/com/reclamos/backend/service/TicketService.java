@@ -67,7 +67,6 @@ public class TicketService {
     private final TicketActivityRepository activityRepository;
     private final TicketLocationRepository locationRepository;
     private final NeighborhoodRepository neighborhoodRepository;
-    private final SlaCalculationService slaCalculationService;
     private final TicketSlaService ticketSlaService;
     private final FormValidationService formValidationService;
     private final RiskCalculationService riskCalculationService;
@@ -128,8 +127,7 @@ public class TicketService {
         ticket.setCurrentStatus(TicketStatus.REGISTERED);
         ticket.setCurrentPriority(max(requestType.getMinimumPriority(), risk));
         ticket.setCreatedAt(now);
-        ticket.setFirstResponseDueAt(slaCalculationService
-                .calculateDueAt(now, ticket.getCurrentPriority(), SlaType.FIRST_RESPONSE).orElse(null));
+        ticket.setFirstResponseDueAt(null);
         ticket.setResolutionDueAt(null);
         ticket.setEstimatedAffectedCount(0);
         ticket.setReopenCount(0);
@@ -138,6 +136,7 @@ public class TicketService {
         ticket.setStatusChangedAt(now);
         ticket = ticketRepository.save(ticket);
         ticketRepository.flush();
+        ticketSlaService.startFirstResponseCycle(ticket, now);
         ticketSlaService.startInitialResolutionCycle(ticket, now);
 
         if (!validatedAttachments.isEmpty()) {
@@ -180,8 +179,10 @@ public class TicketService {
         }
 
         TicketStatus previousStatus = ticket.getCurrentStatus();
+        Instant reviewedAt = clock.instant();
+        ticketSlaService.completeFirstResponseCycle(ticket, reviewedAt);
         ticket.setCurrentStatus(TicketStatus.IN_REVIEW);
-        ticket.setStatusChangedAt(clock.instant());
+        ticket.setStatusChangedAt(reviewedAt);
         // Entidades V1.49 §"CONVENCIÓN DE IDENTIFICADORES DE ACTOR": a diferencia
         // de la mayoría de los actorId (que guardan citizenId), Ticket.assignedAgentId
         // es una FK real a ModuleUser.id, reservada para relaciones puramente
@@ -201,7 +202,7 @@ public class TicketService {
         ticketRepository.save(ticket);
 
         recordActivity(ticket, ActivityType.REVIEW_STARTED, previousStatus, TicketStatus.IN_REVIEW,
-                actor, null, null, null);
+                actor, null, null, null, reviewedAt);
 
         return toResponse(ticket, locationRepository.findByTicket_Id(ticketId).orElse(null));
     }
@@ -265,15 +266,13 @@ public class TicketService {
         // Guía funcional §5 / Decisiones #2: la corrección de clasificación
         // durante la primera IN_REVIEW recalcula el SLA inicial desde
         // createdAt (no desde "ahora") con la nueva prioridad.
-        ticket.setFirstResponseDueAt(slaCalculationService
-                .calculateDueAt(ticket.getCreatedAt(), newPriority, SlaType.FIRST_RESPONSE).orElse(null));
         ticketRepository.save(ticket);
 
         String message = "RequestType corregido de '" + previousRequestType.getCode()
                 + "' a '" + newRequestType.getCode() + "' durante la revisión inicial";
-        recordActivity(ticket, ActivityType.REQUEST_TYPE_CHANGED, ticket.getCurrentStatus(), ticket.getCurrentStatus(),
-                actor, previousPriority, newPriority, message);
         Instant reclassifiedAt = clock.instant();
+        recordActivity(ticket, ActivityType.REQUEST_TYPE_CHANGED, ticket.getCurrentStatus(), ticket.getCurrentStatus(),
+                actor, previousPriority, newPriority, message, reclassifiedAt);
         activateCriticalEscalationIfNeeded(ticket, reclassifiedAt);
         ticketSlaService.recalculateInitialResolutionCycle(ticket, reclassifiedAt);
 
@@ -324,7 +323,7 @@ public class TicketService {
         ticketRepository.save(ticket);
 
         recordActivity(ticket, ActivityType.ROUTED, previousStatus, TicketStatus.ROUTED, actor, null, null,
-                "Derivado al área responsable '" + ticket.getResponsibleAreaId() + "'");
+                "Derivado al área responsable '" + ticket.getResponsibleAreaId() + "'", now);
 
         TicketLocation location = locationRepository.findByTicket_Id(ticketId).orElse(null);
 
@@ -463,7 +462,8 @@ public class TicketService {
 
     private void recordActivity(Ticket ticket, ActivityType actionType, TicketStatus previousStatus,
                                  TicketStatus newStatus, AuthenticatedIdentity actor,
-                                 Priority previousPriority, Priority newPriority, String message) {
+                                 Priority previousPriority, Priority newPriority, String message,
+                                 Instant occurredAt) {
         long nextSequence = activityRepository.countByTicketId(ticket.getId()) + 1;
 
         TicketActivity activity = new TicketActivity();
@@ -482,7 +482,7 @@ public class TicketService {
         activity.setPreviousPriority(previousPriority);
         activity.setNewPriority(newPriority);
         activity.setMessage(message);
-        activity.setOccurredAt(clock.instant());
+        activity.setOccurredAt(occurredAt);
         activityRepository.save(activity);
     }
 

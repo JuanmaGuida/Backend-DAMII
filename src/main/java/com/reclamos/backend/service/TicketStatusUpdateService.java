@@ -6,6 +6,7 @@ import com.reclamos.backend.dto.UpdateTicketStatusRequest;
 import com.reclamos.backend.entity.ActivityType;
 import com.reclamos.backend.entity.ActorType;
 import com.reclamos.backend.entity.Category;
+import com.reclamos.backend.entity.CancellationReasonCode;
 import com.reclamos.backend.entity.InboxEvent;
 import com.reclamos.backend.entity.InboxStatus;
 import com.reclamos.backend.entity.RequestType;
@@ -14,6 +15,7 @@ import com.reclamos.backend.entity.SlaStatus;
 import com.reclamos.backend.entity.Subcategory;
 import com.reclamos.backend.entity.Ticket;
 import com.reclamos.backend.entity.TicketActivity;
+import com.reclamos.backend.entity.TicketCancellation;
 import com.reclamos.backend.entity.TicketLocation;
 import com.reclamos.backend.entity.TicketMessage;
 import com.reclamos.backend.entity.TicketStatus;
@@ -27,6 +29,7 @@ import com.reclamos.backend.repository.TicketActivityRepository;
 import com.reclamos.backend.repository.TicketLocationRepository;
 import com.reclamos.backend.repository.TicketMessageRepository;
 import com.reclamos.backend.repository.TicketRepository;
+import com.reclamos.backend.repository.TicketCancellationRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -78,6 +81,8 @@ public class TicketStatusUpdateService {
     private final InboxEventRepository inboxEventRepository;
     private final TicketResolutionService ticketResolutionService;
     private final TicketSlaService ticketSlaService;
+    private final InformationRequestService informationRequestService;
+    private final TicketCancellationRepository cancellationRepository;
 
     @Transactional
     public TicketResponse applyUpdate(UUID ticketId, UpdateTicketStatusEnvelope envelope) {
@@ -114,6 +119,7 @@ public class TicketStatusUpdateService {
         requireExternalActorType(actorType);
         String reasonCode = null;
         ResolutionType resolutionType = null;
+        CancellationReasonCode cancellationReason = null;
         ActivityType activityType;
         TicketStatus previousStatus = ticket.getCurrentStatus();
         TicketStatus newStatus;
@@ -185,8 +191,9 @@ public class TicketStatusUpdateService {
                 reasonCode = resolution.type().name();
             }
             case REJECTED -> {
-                requireCurrentStatus(ticket, "REJECTED sólo es válido con el ticket en ROUTED o IN_PROGRESS",
-                        TicketStatus.ROUTED, TicketStatus.IN_PROGRESS);
+                requireCurrentStatus(ticket,
+                        "REJECTED sólo es válido con el ticket en ROUTED, IN_PROGRESS o PENDING_INFORMATION",
+                        TicketStatus.ROUTED, TicketStatus.IN_PROGRESS, TicketStatus.PENDING_INFORMATION);
                 UpdateTicketStatusRequest.Cancellation cancellation = request.details() == null
                         ? null : request.details().cancellation();
                 if (cancellation == null || isBlank(cancellation.reasonCode())) {
@@ -199,6 +206,7 @@ public class TicketStatusUpdateService {
                 newStatus = TicketStatus.CANCELLED;
                 activityType = ActivityType.CANCELLED;
                 reasonCode = cancellation.reasonCode();
+                cancellationReason = mapCancellationReason(cancellation.reasonCode());
             }
             default -> throw new InvalidTicketRequestException("updateType no soportado: " + request.updateType());
         }
@@ -209,9 +217,30 @@ public class TicketStatusUpdateService {
                             resolutionType, request.publicMessage(), request.internalMessage(),
                             actorType, request.updatedBy().id(), envelope.producer().moduleId(),
                             request.updateOccurredAt(), envelope.eventId()));
+        } else if (request.updateType() == UpdateTicketStatusType.INFORMATION_REQUIRED) {
+            UpdateTicketStatusRequest.InformationRequest informationRequest = request.details().informationRequest();
+            informationRequestService.requestInformationFromExternal(ticket, envelope.producer().moduleId(),
+                    actorType, request.updatedBy().id(), informationRequest.messageForCitizen(),
+                    request.internalMessage(), request.updateOccurredAt(), informationRequest.requiredBy(),
+                    envelope.eventId());
+        } else if (request.updateType() == UpdateTicketStatusType.REJECTED) {
+            ticketSlaService.terminateActiveCycles(ticket, request.updateOccurredAt());
+            ticket.setCurrentStatus(TicketStatus.CANCELLED);
+            ticket.setStatusChangedAt(request.updateOccurredAt());
+            ticketRepository.save(ticket);
+            TicketCancellation cancellation = new TicketCancellation();
+            cancellation.setTicket(ticket);
+            cancellation.setReasonCode(cancellationReason);
+            cancellation.setPublicMessage(request.publicMessage());
+            cancellation.setInternalMessage(request.internalMessage());
+            cancellation.setCancelledByType(actorType);
+            cancellation.setCancelledById(request.updatedBy().id());
+            cancellation.setCancelledByModuleId(envelope.producer().moduleId());
+            cancellation.setCancelledAt(request.updateOccurredAt());
+            cancellationRepository.save(cancellation);
         } else {
             ticket.setCurrentStatus(newStatus);
-            ticket.setStatusChangedAt(Instant.now());
+            ticket.setStatusChangedAt(request.updateOccurredAt());
             ticketRepository.save(ticket);
         }
 
@@ -225,7 +254,8 @@ public class TicketStatusUpdateService {
                     actorType, request.updatedBy().id(), sourceModuleId));
         }
 
-        if (request.updateType() != UpdateTicketStatusType.RESOLVED) {
+        if (request.updateType() != UpdateTicketStatusType.RESOLVED
+                && request.updateType() != UpdateTicketStatusType.INFORMATION_REQUIRED) {
             recordActivity(ticket, activityType, previousStatus, newStatus, actorType, request.updatedBy().id(),
                     sourceModuleId, reasonCode,
                     !isBlank(request.internalMessage()) ? request.internalMessage() : request.publicMessage(),
@@ -326,6 +356,15 @@ public class TicketStatusUpdateService {
         if (actorType != ActorType.EXTERNAL_USER && actorType != ActorType.SYSTEM) {
             throw new InvalidTicketRequestException(
                     "updatedBy.type debe ser EXTERNAL_USER o SYSTEM para hechos de un módulo externo");
+        }
+    }
+
+    private CancellationReasonCode mapCancellationReason(String value) {
+        try {
+            return CancellationReasonCode.valueOf(value);
+        } catch (IllegalArgumentException exception) {
+            throw new InvalidTicketRequestException(
+                    "details.cancellation.reasonCode inválido: " + value);
         }
     }
 
