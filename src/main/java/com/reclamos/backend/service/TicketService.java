@@ -10,9 +10,9 @@ import com.reclamos.backend.exception.InvalidTicketRequestException;
 import com.reclamos.backend.exception.ResourceNotFoundException;
 import com.reclamos.backend.exception.TicketStateConflictException;
 import com.reclamos.backend.identity.AuthenticatedIdentity;
+import com.reclamos.backend.identity.ModuleRole;
 import com.reclamos.backend.repository.*;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -26,9 +26,9 @@ import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
@@ -39,8 +39,8 @@ import java.util.stream.Collectors;
 public class TicketService {
     /**
      * "M2" identifica gestión propia de Atención Ciudadana (Eventos v1.6 §2.1):
-     * un ticket derivado a esa "área" no tiene consumidor externo y no debe
-     * generar OutboxEvent.
+     * un ticket de esa "área" inicia gestión propia en IN_PROGRESS y nunca
+     * genera ROUTED; los identificados sí actualizan la proyección de M1.
      */
     private static final String SELF_MANAGED_AREA_ID = "M2";
 
@@ -70,18 +70,12 @@ public class TicketService {
     private final TicketSlaService ticketSlaService;
     private final FormValidationService formValidationService;
     private final RiskCalculationService riskCalculationService;
-    private final OutboxEventRepository outboxEventRepository;
+    private final TicketOutboxService ticketOutboxService;
     private final TrackingCodeService trackingCodeService;
     private final TicketPublicIdGenerator publicIdGenerator;
     private final AttachmentService attachmentService;
     private final ModuleUserRepository moduleUserRepository;
     private final Clock clock;
-
-    @Value("${app.events.producer.module-id:M2}")
-    private String producerModuleId;
-
-    @Value("${app.events.producer.service:help-center-api}")
-    private String producerService;
 
     @Transactional
     public CreateTicketResponse create(CreateTicketRequest request, AuthenticatedIdentity identity,
@@ -139,12 +133,13 @@ public class TicketService {
         ticketSlaService.startFirstResponseCycle(ticket, now);
         ticketSlaService.startInitialResolutionCycle(ticket, now);
 
-        if (!validatedAttachments.isEmpty()) {
-            attachmentService.storeForTicket(ticket, identity, validatedAttachments, now);
-        }
+        List<Attachment> storedAttachments = validatedAttachments.isEmpty()
+                ? List.of()
+                : attachmentService.storeForTicket(ticket, identity, validatedAttachments, now);
 
+        TicketLocation location = null;
         if (request.location() != null) {
-            locationRepository.save(toLocation(ticket, request.location()));
+            location = locationRepository.save(toLocation(ticket, request.location()));
         }
         TicketActivity activity = new TicketActivity();
         activity.setTicket(ticket);
@@ -157,6 +152,7 @@ public class TicketService {
         activity.setOccurredAt(now);
         activityRepository.save(activity);
         activateCriticalEscalationIfNeeded(ticket, now);
+        ticketOutboxService.ticketCreated(ticket, location, storedAttachments);
         ticketRepository.flush();
         return new CreateTicketResponse(ticket.getId(), ticket.getPublicId(), trackingCode,
                 TicketStatus.REGISTERED);
@@ -171,6 +167,7 @@ public class TicketService {
     @Transactional
     public TicketResponse startReview(UUID ticketId, AuthenticatedIdentity actor) {
         Ticket ticket = loadForUpdate(ticketId);
+        requireAdministrativeActor(ticket, actor);
 
         if (ticket.getCurrentStatus() != TicketStatus.REGISTERED) {
             throw new TicketStateConflictException(
@@ -193,7 +190,7 @@ public class TicketService {
         // lugar de dejar el ticket sin asignar silenciosamente — un agente
         // autenticado que no existe como ModuleUser es un estado inconsistente
         // que conviene visibilizar, no absorber.
-        if (actor != null && ticket.getAssignedAgent() == null) {
+        if (ticket.getAssignedAgent() == null) {
             ModuleUser agent = moduleUserRepository.findByCitizenId(actor.citizenId())
                     .orElseThrow(() -> new ResourceNotFoundException(
                             "El agente autenticado no está registrado como ModuleUser"));
@@ -203,6 +200,7 @@ public class TicketService {
 
         recordActivity(ticket, ActivityType.REVIEW_STARTED, previousStatus, TicketStatus.IN_REVIEW,
                 actor, null, null, null, reviewedAt);
+        ticketOutboxService.statusChanged(ticket, null, reviewedAt);
 
         return toResponse(ticket, locationRepository.findByTicket_Id(ticketId).orElse(null));
     }
@@ -232,6 +230,7 @@ public class TicketService {
     @Transactional
     public TicketResponse correctClassification(UUID ticketId, Long newRequestTypeId, AuthenticatedIdentity actor) {
         Ticket ticket = loadForUpdate(ticketId);
+        requireAdministrativeActor(ticket, actor);
 
         if (ticket.getCurrentStatus() != TicketStatus.IN_REVIEW || ticket.getClassificationFinalizedAt() != null) {
             throw new TicketStateConflictException(
@@ -245,9 +244,12 @@ public class TicketService {
                         "El Request Type solicitado no existe o está inactivo"));
 
         RequestType previousRequestType = ticket.getRequestType();
+        TicketLocation location = locationRepository.findByTicket_Id(ticketId).orElse(null);
+        if (Objects.equals(previousRequestType.getId(), newRequestType.getId())) {
+            return toResponse(ticket, location);
+        }
         Priority previousPriority = ticket.getCurrentPriority();
 
-        TicketLocation location = locationRepository.findByTicket_Id(ticketId).orElse(null);
         int estimatedAffectedCount = estimateAffectedCount(newRequestType, location);
         Priority newPriority = max(newRequestType.getMinimumPriority(), newRequestType.getBaseRisk());
         FormTemplate newFormTemplate = formValidationService.resolveActiveTemplate(newRequestType);
@@ -275,13 +277,14 @@ public class TicketService {
                 actor, previousPriority, newPriority, message, reclassifiedAt);
         activateCriticalEscalationIfNeeded(ticket, reclassifiedAt);
         ticketSlaService.recalculateInitialResolutionCycle(ticket, reclassifiedAt);
+        ticketOutboxService.contentUpdated(ticket, reclassifiedAt);
 
         return toResponse(ticket, location);
     }
 
     /**
-     * Story 3.3 (BE - Endpoint de derivación IN_REVIEW -&gt; ROUTED + publicación
-     * de ticketUpdated al outbox / DDA2-59).
+     * Finaliza la clasificación: inicia gestión propia M2 en IN_PROGRESS o
+     * deriva una gestión externa a ROUTED y publica su snapshot inicial.
      * <p>
      * INTERPRETACIÓN DE "SELECCIONAR UN ÁREA VÁLIDA" (AC): este endpoint no
      * recibe un área por parámetro. El área ya quedó fijada en
@@ -298,6 +301,7 @@ public class TicketService {
     @Transactional
     public TicketResponse routeToArea(UUID ticketId, AuthenticatedIdentity actor) {
         Ticket ticket = loadForUpdate(ticketId);
+        requireAdministrativeActor(ticket, actor);
 
         if (ticket.getCurrentStatus() != TicketStatus.IN_REVIEW) {
             throw new TicketStateConflictException(
@@ -308,10 +312,15 @@ public class TicketService {
             throw new TicketStateConflictException(
                     "El ticket no tiene un área responsable válida asignada; no puede derivarse");
         }
+        if (ticket.getRequestType() == null) {
+            throw new TicketStateConflictException("El ticket no tiene una clasificación válida; no puede iniciar gestión");
+        }
 
         TicketStatus previousStatus = ticket.getCurrentStatus();
         Instant now = clock.instant();
-        ticket.setCurrentStatus(TicketStatus.ROUTED);
+        boolean selfManaged = SELF_MANAGED_AREA_ID.equalsIgnoreCase(ticket.getResponsibleAreaId());
+        TicketStatus nextStatus = selfManaged ? TicketStatus.IN_PROGRESS : TicketStatus.ROUTED;
+        ticket.setCurrentStatus(nextStatus);
         ticket.setStatusChangedAt(now);
         // classificationFinalizedAt se fija sólo la primera vez que el ticket
         // sale de IN_REVIEW hacia gestión (Entidades §4.1): a partir de acá,
@@ -322,98 +331,23 @@ public class TicketService {
         }
         ticketRepository.save(ticket);
 
-        recordActivity(ticket, ActivityType.ROUTED, previousStatus, TicketStatus.ROUTED, actor, null, null,
-                "Derivado al área responsable '" + ticket.getResponsibleAreaId() + "'", now);
+        ActivityType activityType = selfManaged ? ActivityType.STATE_CHANGED : ActivityType.ROUTED;
+        String message = selfManaged
+                ? "Comenzó la gestión propia de Atención Ciudadana"
+                : "Derivado al área responsable '" + ticket.getResponsibleAreaId() + "'";
+        recordActivity(ticket, activityType, previousStatus, nextStatus, actor, null, null, message, now);
 
         TicketLocation location = locationRepository.findByTicket_Id(ticketId).orElse(null);
 
-        // Política de publicación (Eventos v1.6 §2.1): siempre se publica en
-        // ROUTED, salvo que el área responsable sea la propia M2 (gestión
-        // interna sin consumidor externo).
-        if (!SELF_MANAGED_AREA_ID.equalsIgnoreCase(ticket.getResponsibleAreaId())) {
-            writeOutboxEvent(ticket, location);
+        // La gestión externa recibe el snapshot ROUTED. En gestión propia sólo
+        // se proyecta STATUS_CHANGED para identificados; el helper omite anónimos.
+        if (selfManaged) {
+            ticketOutboxService.statusChanged(ticket, null, now);
+        } else {
+            ticketOutboxService.routed(ticket, location, now);
         }
 
         return toResponse(ticket, location);
-    }
-
-    /**
-     * Construye el envelope + data de ticketUpdated/ROUTED (Eventos v1.6 §4 y
-     * §7.4) y lo inserta como OutboxEvent PENDING en la misma transacción que
-     * el cambio de estado (Entidades v1.3 §19.2). Todavía no existe un
-     * publisher asíncrono real (Sprint 3: "sin consumidor real todavía"), así
-     * que el evento queda en PENDING hasta que se implemente ese publisher.
-     */
-    private void writeOutboxEvent(Ticket ticket, TicketLocation location) {
-        RequestType requestType = ticket.getRequestType();
-        UUID eventId = UUID.randomUUID();
-        Instant now = clock.instant();
-
-        Map<String, Object> routing = new LinkedHashMap<>();
-        routing.put("requestType", requestType.getName());
-        routing.put("ticketType", ticket.getTicketType());
-        routing.put("summary", ticket.getSummary());
-        routing.put("description", ticket.getDescription());
-        routing.put("formData", ticket.getFormData());
-        routing.put("location", toEventLocation(location));
-        routing.put("resolutionDueAt", ticket.getResolutionDueAt() != null
-                ? ticket.getResolutionDueAt().toString() : null);
-        routing.put("escalation", toEventEscalation(ticket));
-
-        Map<String, Object> details = new LinkedHashMap<>();
-        details.put("routing", routing);
-
-        Map<String, Object> data = new LinkedHashMap<>();
-        data.put("ticketId", ticket.getId());
-        data.put("publicId", ticket.getPublicId());
-        data.put("citizenId", ticket.getCitizenId());
-        data.put("isAnonymous", ticket.isAnonymous());
-        data.put("responsibleAreaId", ticket.getResponsibleAreaId());
-        data.put("updateType", TicketUpdatedType.ROUTED.name());
-        data.put("currentStatus", ticket.getCurrentStatus().name());
-        data.put("currentPriority", ticket.getCurrentPriority().name());
-        data.put("progress", ticket.getCurrentProgress());
-        data.put("publicMessage", "El ticket fue derivado al área responsable.");
-        data.put("details", details);
-        data.put("attachments", List.of());
-        data.put("updatedAt", ticket.getUpdatedAt() != null ? ticket.getUpdatedAt().toString() : now.toString());
-
-        Map<String, Object> producer = new LinkedHashMap<>();
-        producer.put("moduleId", producerModuleId);
-        producer.put("service", producerService);
-
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("specVersion", "1.0");
-        payload.put("eventId", eventId.toString());
-        payload.put("eventType", "ticketUpdated");
-        payload.put("occurredAt", now.toString());
-        payload.put("producer", producer);
-        payload.put("subject", "tickets/" + ticket.getId());
-        payload.put("data", data);
-
-        OutboxEvent event = new OutboxEvent();
-        event.setEventId(eventId);
-        event.setEventType("ticketUpdated");
-        event.setUpdateType(TicketUpdatedType.ROUTED);
-        event.setTicket(ticket);
-        event.setPayload(payload);
-        event.setStatus(OutboxStatus.PENDING);
-        event.setRetryCount(0);
-        outboxEventRepository.save(event);
-    }
-
-    private Map<String, Object> toEventLocation(TicketLocation location) {
-        if (location == null) {
-            return null;
-        }
-        Map<String, Object> eventLocation = new LinkedHashMap<>();
-        eventLocation.put("addressLine", location.getAddressLine());
-        eventLocation.put("street", location.getStreet());
-        eventLocation.put("streetNumber", location.getStreetNumber());
-        eventLocation.put("neighborhoodId", location.getNeighborhood() != null
-                ? location.getNeighborhood().getId() : null);
-        eventLocation.put("reference", location.getReference());
-        return eventLocation;
     }
 
     /**
@@ -472,13 +406,9 @@ public class TicketService {
         activity.setActionType(actionType);
         activity.setPreviousStatus(previousStatus);
         activity.setNewStatus(newStatus);
-        // TODO (a confirmar con el equipo): AGENT/SYSTEM cubre las transiciones
-        // internas de M2 (startReview, correctClassification, routeToArea), que
-        // siempre corren con un agente autenticado; SYSTEM sólo queda para el
-        // caso defensivo de actor == null ("sin actor identificado" según la
-        // Guía funcional). Evaluar si ADMIN debería usarse en algún caso acá.
-        activity.setActorType(actor != null ? ActorType.AGENT : ActorType.SYSTEM);
-        activity.setActorId(actor != null ? actor.subjectId() : null);
+        activity.setActorType(actor.role() == ModuleRole.ADMIN ? ActorType.ADMIN : ActorType.AGENT);
+        activity.setActorId(actor.citizenId().toString());
+        activity.setSourceModuleId(SELF_MANAGED_AREA_ID);
         activity.setPreviousPriority(previousPriority);
         activity.setNewPriority(newPriority);
         activity.setMessage(message);
@@ -516,16 +446,6 @@ public class TicketService {
         activityRepository.save(activity);
     }
 
-    private Map<String, Object> toEventEscalation(Ticket ticket) {
-        Map<String, Object> escalation = new LinkedHashMap<>();
-        escalation.put("active", ticket.isEscalated());
-        escalation.put("reasonCode", ticket.getEscalationReasonCode() != null
-                ? ticket.getEscalationReasonCode().name() : null);
-        escalation.put("escalatedAt", ticket.getEscalatedAt() != null
-                ? ticket.getEscalatedAt().toString() : null);
-        return escalation;
-    }
-
     private TicketResponse toResponse(Ticket ticket, TicketLocation location) {
         RequestType requestType = ticket.getRequestType();
         Subcategory subcategory = requestType.getSubcategory();
@@ -560,26 +480,6 @@ public class TicketService {
         response.setCreatedAt(ticket.getCreatedAt());
         response.setUpdatedAt(ticket.getUpdatedAt());
         return response;
-    }
-
-    /**
-     * Re-derivación (independiente de
-     * routeToArea, que cubre sólo la primera derivación IN_REVIEW -&gt; ROUTED
-     * de Story 3.3). Conserva el ciclo SLA iniciado previamente. Nota: no encontramos ningún
-     * llamador todavía en esta rama — puede ser un método pensado para una
-     * integración o story que no está visible en este merge; no lo
-     * eliminamos porque tiene su propia batería de tests ya aprobada en dev.
-     */
-    @Transactional
-    public Ticket route(UUID ticketId, String responsibleAreaId, Instant routedAt) {
-        Ticket ticket = ticketRepository.findByIdForUpdate(ticketId)
-                .orElseThrow(() -> new ResourceNotFoundException("Ticket no encontrado"));
-        if (ticket.getCurrentStatus() == TicketStatus.DUPLICATE)
-            throw new InvalidTicketRequestException("Un ticket duplicado hereda el SLA del ticket principal");
-        ticket.setResponsibleAreaId(responsibleAreaId);
-        ticket.setCurrentStatus(TicketStatus.ROUTED);
-        ticket.setStatusChangedAt(routedAt);
-        return ticketRepository.save(ticket);
     }
 
     private void applySlaSignals(TicketResponse response, Ticket ticket) {
@@ -646,6 +546,13 @@ public class TicketService {
             case HIGH -> 2;
             case CRITICAL -> 3;
         };
+    }
+
+    private void requireAdministrativeActor(Ticket ticket, AuthenticatedIdentity actor) {
+        if (actor == null || (actor.role() != ModuleRole.AGENT && actor.role() != ModuleRole.ADMIN)
+                || Objects.equals(actor.citizenId(), ticket.getCitizenId())) {
+            throw new com.reclamos.backend.exception.UnauthorizedTicketOperationException();
+        }
     }
 
 }

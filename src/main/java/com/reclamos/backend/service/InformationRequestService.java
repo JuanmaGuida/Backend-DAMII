@@ -32,6 +32,7 @@ public class InformationRequestService {
     private final InformationRequestDeadlineService deadlineService;
     private final InformationRequestExpirationService expirationService;
     private final TicketSlaService ticketSlaService;
+    private final TicketOutboxService ticketOutboxService;
 
     @Transactional
     public InformationRequestResponse requestInformation(UUID ticketId, CreateInformationRequest request,
@@ -145,6 +146,8 @@ public class InformationRequestService {
         saveActivity(ticket, ActivityType.INFORMATION_PROVIDED, TicketStatus.PENDING_INFORMATION,
                 informationRequest.getResumeStatus(), ActorType.CITIZEN, actorId,
                 MODULE_ID, null, responseMessage, answeredAt, null);
+        ticketOutboxService.informationProvided(ticket, responseMessage,
+                !MODULE_ID.equalsIgnoreCase(informationRequest.getRequestedByModuleId()), answeredAt);
         return response(informationRequest);
     }
 

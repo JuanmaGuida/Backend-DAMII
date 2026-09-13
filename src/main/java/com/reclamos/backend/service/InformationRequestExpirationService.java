@@ -35,6 +35,7 @@ public class InformationRequestExpirationService {
     private final TicketCancellationRepository cancellationRepository;
     private final TicketActivityRepository activityRepository;
     private final TicketSlaService ticketSlaService;
+    private final TicketOutboxService ticketOutboxService;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void expireIfDue(UUID requestId, UUID ticketId, Instant now) {
@@ -88,5 +89,6 @@ public class InformationRequestExpirationService {
         activity.setMessage(PUBLIC_MESSAGE);
         activity.setOccurredAt(now);
         activityRepository.save(activity);
+        ticketOutboxService.cancelled(ticket, CancellationReasonCode.INFO_TIMEOUT, PUBLIC_MESSAGE, true, now);
     }
 }

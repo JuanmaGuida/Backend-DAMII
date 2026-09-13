@@ -96,6 +96,8 @@ class TicketStatusUpdateServiceTest {
     private InformationRequestExpirationService informationRequestExpirationService;
     @Mock
     private TicketCancellationRepository cancellationRepository;
+    @Mock
+    private TicketOutboxService outbox;
 
     private TicketStatusUpdateService service;
     private TicketResolutionService resolutionService;
@@ -109,15 +111,16 @@ class TicketStatusUpdateServiceTest {
     void setUp() {
         resolutionService = new TicketResolutionService(
                 ticketRepository, resolutionRepository, activityRepository,
-                 Clock.fixed(Instant.parse("2026-09-08T12:00:00Z"), ZoneOffset.UTC), Duration.ofHours(72));
+                 Clock.fixed(Instant.parse("2026-09-08T12:00:00Z"), ZoneOffset.UTC), Duration.ofHours(72),
+                ticketSlaService, outbox);
         informationRequestService = new InformationRequestService(
                 ticketRepository, informationRequestRepository, activityRepository,
                 new InformationRequestDeadlineService(
                         Clock.fixed(Instant.parse("2026-09-08T12:00:00Z"), ZoneOffset.UTC), Duration.ofHours(72)),
-                informationRequestExpirationService, ticketSlaService);
+                informationRequestExpirationService, ticketSlaService, outbox);
         service = new TicketStatusUpdateService(ticketRepository, activityRepository, locationRepository,
                 messageRepository, inboxEventRepository, resolutionService, ticketSlaService,
-                informationRequestService, cancellationRepository);
+                informationRequestService, cancellationRepository, outbox);
         // Default para los tests que no ejercitan dedupe en sí: "eventId nunca visto".
         // Los tests de dedupe pisan este stub explícitamente.
         lenient().when(inboxEventRepository.findById(any())).thenReturn(Optional.empty());
@@ -174,6 +177,7 @@ class TicketStatusUpdateServiceTest {
         assertThat(captor.getValue().getOccurredAt()).isEqualTo(realOccurredAt);
 
         verify(inboxEventRepository).save(any());
+        verify(outbox).statusChanged(ticket, "Comenzamos a trabajar en esto.", realOccurredAt);
     }
 
     @Test
@@ -298,6 +302,7 @@ class TicketStatusUpdateServiceTest {
         ArgumentCaptor<TicketActivity> captor = ArgumentCaptor.forClass(TicketActivity.class);
         verify(activityRepository).save(captor.capture());
         assertThat(captor.getValue().getReasonCode()).isEqualTo("REQUEST_TYPE_MISMATCH");
+        verify(outbox).statusChanged(ticket, null, data.updateOccurredAt());
     }
 
     @Test
@@ -352,6 +357,8 @@ class TicketStatusUpdateServiceTest {
                         && "USR-M6-77".equals(activity.getActorId())
                         && envelope.eventId().equals(activity.getExternalEventId())
                         && resolvedAt.equals(activity.getOccurredAt())));
+        verify(outbox).resolved(ticket, ResolutionType.ACTION_COMPLETED,
+                "La luminaria fue reparada.", resolvedAt);
     }
 
     /**
@@ -452,6 +459,8 @@ class TicketStatusUpdateServiceTest {
         verify(activityRepository, times(1)).save(any());
         verify(ticketRepository, times(1)).save(any());
         verify(inboxEventRepository, times(1)).save(any());
+        verify(outbox, times(1)).resolved(ticket, ResolutionType.REQUEST_FULFILLED,
+                "Solicitud completada.", data.updateOccurredAt());
     }
 
     @Test
@@ -523,6 +532,8 @@ class TicketStatusUpdateServiceTest {
         assertThat(cancellation.getCancelledById()).isEqualTo("USR-M6-77");
         assertThat(cancellation.getCancelledAt()).isEqualTo(data.updateOccurredAt());
         verify(ticketSlaService).terminateActiveCycles(ticket, data.updateOccurredAt());
+        verify(outbox).cancelled(ticket, CancellationReasonCode.OUT_OF_SCOPE,
+                "No corresponde a esta gestión.", false, data.updateOccurredAt());
     }
 
     @Test
@@ -691,6 +702,7 @@ class TicketStatusUpdateServiceTest {
         verify(activityRepository, times(1)).save(any());
         verify(ticketRepository, times(1)).save(any());
         verify(inboxEventRepository, times(1)).save(any());
+        verify(outbox, times(1)).statusChanged(ticket, "Comenzamos a trabajar en esto.", data.updateOccurredAt());
     }
 
     @Test

@@ -29,14 +29,15 @@ class InformationRequestExpirationServiceTest {
     private final TicketCancellationRepository cancellations = mock(TicketCancellationRepository.class);
     private final TicketActivityRepository activities = mock(TicketActivityRepository.class);
     private final TicketSlaService ticketSlaService = mock(TicketSlaService.class);
+    private final TicketOutboxService outbox = mock(TicketOutboxService.class);
     private final InformationRequestExpirationService service = new InformationRequestExpirationService(
-            tickets, requests, cancellations, activities, ticketSlaService);
+            tickets, requests, cancellations, activities, ticketSlaService, outbox);
     private Ticket ticket;
     private InformationRequest request;
 
     @BeforeEach
     void setUp() {
-        reset(tickets, requests, cancellations, activities, ticketSlaService);
+        reset(tickets, requests, cancellations, activities, ticketSlaService, outbox);
         ticket = new Ticket();
         ticket.setId(UUID.randomUUID());
         ticket.setCurrentStatus(TicketStatus.PENDING_INFORMATION);
@@ -64,6 +65,8 @@ class InformationRequestExpirationServiceTest {
         verify(activities).save(argThat(value -> value.getActionType() == ActivityType.CANCELLED
                 && value.getSequence() == 1));
         verify(ticketSlaService).terminateActiveCycles(ticket, NOW);
+        verify(outbox).cancelled(ticket, CancellationReasonCode.INFO_TIMEOUT,
+                "El ticket fue cancelado por falta de respuesta dentro del plazo", true, NOW);
     }
 
     @Test
