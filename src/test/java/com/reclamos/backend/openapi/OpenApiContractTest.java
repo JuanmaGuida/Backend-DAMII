@@ -176,6 +176,8 @@ class OpenApiContractTest {
         assertTrue(map(schemas, "TicketResponse", "properties").containsKey("resolutionNearDueAt"));
         assertEquals(Set.of("CRITICAL_PRIORITY", "SLA_BREACHED", "MANUAL"),
                 Set.copyOf(list(map(schemas, "EscalationReasonCode"), "enum")));
+        assertEquals(Set.of("PENDING", "ANSWERED", "EXPIRED", "CANCELLED"),
+                Set.copyOf(list(map(schemas, "InformationRequestStatus"), "enum")));
     }
 
     @Test

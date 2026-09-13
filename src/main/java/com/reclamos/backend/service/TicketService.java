@@ -217,9 +217,9 @@ public class TicketService {
      * se recalcula el SLA inicial desde createdAt con la nueva
      * clasificación").
      * <p>
-     * Prioridad: a diferencia del recálculo periódico automático (donde, por
-     * la "REGLA DE EVOLUCIÓN" de la Guía funcional §3, currentPriority nunca
-     * baja), una corrección de RequestType durante la primera IN_REVIEW
+     * Prioridad: a diferencia del eventual recálculo periódico definido como
+     * regla futura (donde, por la "REGLA DE EVOLUCIÓN" de la Guía funcional
+     * §3, currentPriority nunca bajaría), una corrección de RequestType durante la primera IN_REVIEW
      * todavía forma parte de la clasificación inicial y sí puede recalcularla
      * libremente. Como formData se resetea a {} más abajo, el riesgo
      * recalculado da exactamente newRequestType.baseRisk sin incrementos, así
