@@ -226,6 +226,9 @@ public class TicketStatusUpdateService {
                     request.internalMessage(), request.updateOccurredAt(), informationRequest.requiredBy(),
                     envelope.eventId());
         } else if (request.updateType() == UpdateTicketStatusType.REJECTED) {
+            if (previousStatus == TicketStatus.PENDING_INFORMATION) {
+                informationRequestService.cancelPendingBecauseTicketTerminated(ticket);
+            }
             ticketSlaService.terminateActiveCycles(ticket, request.updateOccurredAt());
             ticket.setCurrentStatus(TicketStatus.CANCELLED);
             ticket.setStatusChangedAt(request.updateOccurredAt());

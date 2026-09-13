@@ -124,6 +124,10 @@ public class InformationRequestService {
     }
 
     private InformationRequestResponse answerPending(Ticket ticket, String responseMessage, String actorId) {
+        if (ticket.getCurrentStatus() != TicketStatus.PENDING_INFORMATION) {
+            throw new InformationRequestConflictException(
+                    "El ticket ya no admite respuestas a solicitudes de información");
+        }
         InformationRequest informationRequest = informationRequestRepository
                 .findByTicketIdAndStatusForUpdate(ticket.getId(), InformationRequestStatus.PENDING)
                 .orElseThrow(() -> new InformationRequestConflictException(
@@ -149,6 +153,20 @@ public class InformationRequestService {
         ticketOutboxService.informationProvided(ticket, responseMessage,
                 !MODULE_ID.equalsIgnoreCase(informationRequest.getRequestedByModuleId()), answeredAt);
         return response(informationRequest);
+    }
+
+    /**
+     * Terminaliza la solicitud que dejó de aplicar porque su Ticket fue
+     * cancelado. El llamador debe mantener el lock pesimista del Ticket para
+     * preservar el orden Ticket -&gt; InformationRequest usado por answer/expiry.
+     */
+    void cancelPendingBecauseTicketTerminated(Ticket lockedTicket) {
+        informationRequestRepository
+                .findByTicketIdAndStatusForUpdate(lockedTicket.getId(), InformationRequestStatus.PENDING)
+                .ifPresent(request -> {
+                    request.setStatus(InformationRequestStatus.CANCELLED);
+                    informationRequestRepository.save(request);
+                });
     }
 
     @Scheduled(fixedDelayString = "${ticket.information-request.expiration-scan-delay:60000}") // Revisa periódicamente las solicitudes pendientes que se les venció el plazo

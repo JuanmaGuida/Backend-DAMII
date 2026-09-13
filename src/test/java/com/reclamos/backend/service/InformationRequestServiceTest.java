@@ -142,7 +142,43 @@ class InformationRequestServiceTest {
     }
 
     @Test
+    void cancelledInformationRequestCannotReactivateCancelledTicket() {
+        ticket.setCurrentStatus(TicketStatus.CANCELLED);
+        InformationRequest cancelled = pending(ticket, NOW.plusSeconds(1));
+        cancelled.setStatus(InformationRequestStatus.CANCELLED);
+
+        assertThrows(InformationRequestConflictException.class, () -> service.answerInformation(ticket.getId(),
+                new AnswerInformationRequest("Respuesta tardía"), citizen()));
+
+        assertEquals(TicketStatus.CANCELLED, ticket.getCurrentStatus());
+        assertEquals(InformationRequestStatus.CANCELLED, cancelled.getStatus());
+        verify(requests, never()).findByTicketIdAndStatusForUpdate(any(), any());
+        verify(requests, never()).save(any());
+        verify(ticketSlaService, never()).resumeActiveResolutionCycle(any(), any());
+        verifyNoInteractions(activities, outbox);
+    }
+
+    @Test
+    void legacyPendingRequestOnCancelledTicketIsRejectedBeforeRestoringResumeStatus() {
+        ticket.setCurrentStatus(TicketStatus.CANCELLED);
+        InformationRequest inconsistentPending = pending(ticket, NOW.plusSeconds(1));
+        when(requests.findByTicketIdAndStatusForUpdate(ticket.getId(), InformationRequestStatus.PENDING))
+                .thenReturn(Optional.of(inconsistentPending));
+
+        assertThrows(InformationRequestConflictException.class, () -> service.answerInformation(ticket.getId(),
+                new AnswerInformationRequest("Respuesta tardía"), citizen()));
+
+        assertEquals(TicketStatus.CANCELLED, ticket.getCurrentStatus());
+        assertEquals(InformationRequestStatus.PENDING, inconsistentPending.getStatus());
+        verify(requests, never()).findByTicketIdAndStatusForUpdate(any(), any());
+        verify(requests, never()).save(any());
+        verify(ticketSlaService, never()).resumeActiveResolutionCycle(any(), any());
+        verifyNoInteractions(activities, outbox);
+    }
+
+    @Test
     void answeredCannotBeAnsweredAgainAndDeadlineIsInclusive() {
+        ticket.setCurrentStatus(TicketStatus.PENDING_INFORMATION);
         when(requests.findByTicketIdAndStatusForUpdate(ticket.getId(), InformationRequestStatus.PENDING))
                 .thenReturn(Optional.empty());
         assertThrows(InformationRequestConflictException.class, () -> service.answerInformation(ticket.getId(),

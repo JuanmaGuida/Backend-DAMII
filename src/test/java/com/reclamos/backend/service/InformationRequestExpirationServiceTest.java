@@ -83,4 +83,17 @@ class InformationRequestExpirationServiceTest {
         verify(tickets, never()).save(any());
         verifyNoInteractions(cancellations, activities);
     }
+
+    @Test
+    void cancelledRequestIsNotExpiredOrCancelledAgain() {
+        request.setStatus(InformationRequestStatus.CANCELLED);
+
+        service.expireIfDue(request.getId(), ticket.getId(), NOW);
+
+        assertEquals(InformationRequestStatus.CANCELLED, request.getStatus());
+        assertEquals(TicketStatus.PENDING_INFORMATION, ticket.getCurrentStatus());
+        verify(requests, never()).save(any());
+        verify(tickets, never()).save(any());
+        verifyNoInteractions(cancellations, activities, ticketSlaService, outbox);
+    }
 }
