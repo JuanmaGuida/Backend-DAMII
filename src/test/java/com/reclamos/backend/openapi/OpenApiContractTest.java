@@ -179,6 +179,15 @@ class OpenApiContractTest {
 
         assertFalse(map(schemas, "TrackingTicketResponse", "properties").containsKey("ticketId"));
         assertEquals(Set.of("name"), map(schemas, "TrackingRequestTypeSummary", "properties").keySet());
+        assertTrue(map(schemas, "TicketResponse", "properties").containsKey("escalationReasonCode"));
+        assertTrue(map(schemas, "TicketResponse", "properties").containsKey("escalatedAt"));
+        assertTrue(map(schemas, "TicketResponse", "properties").containsKey("slaNearDue"));
+        assertTrue(map(schemas, "TicketResponse", "properties").containsKey("slaBreached"));
+        assertTrue(map(schemas, "TicketResponse", "properties").containsKey("resolutionNearDueAt"));
+        assertEquals(Set.of("CRITICAL_PRIORITY", "SLA_BREACHED", "MANUAL"),
+                Set.copyOf(list(map(schemas, "EscalationReasonCode"), "enum")));
+        assertEquals(Set.of("PENDING", "ANSWERED", "EXPIRED", "CANCELLED"),
+                Set.copyOf(list(map(schemas, "InformationRequestStatus"), "enum")));
     }
 
     @Test
@@ -244,9 +253,11 @@ class OpenApiContractTest {
                 }
                 for (RequestMethod requestMethod : mapping.method()) {
                     operations.add(requestMethod.name() + normalize(prefix + firstPath(mapping)));
-                }
             }
         }
+        assertEquals("#/components/responses/Forbidden",
+                map(operation("GET /api/tickets"), "responses", "403").get("$ref"));
+    }
         return operations;
     }
 

@@ -22,6 +22,7 @@ import java.util.UUID;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -165,6 +166,28 @@ class TicketSimulationControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void simulateResolvedWithUnknownResolutionTypeReturnsControlledBadRequest() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+        String body = envelopeJson(ticketId, """
+                {
+                  "updateType": "RESOLVED",
+                  "publicMessage": "Resuelto.",
+                  "details": {"resolution": {"type": "UNKNOWN_RESOLUTION"}},
+                  "updatedBy": {"type": "EXTERNAL_USER", "id": "USR-M6-77"},
+                  "updateOccurredAt": "2026-09-02T12:00:00Z"
+                }
+                """);
+
+        mockMvc.perform(post("/api/tickets/{ticketId}/simulate-status-update", ticketId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+
+        verifyNoInteractions(ticketStatusUpdateService);
     }
 
     private String envelopeJson(UUID ticketId, String data) {

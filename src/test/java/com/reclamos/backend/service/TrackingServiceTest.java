@@ -9,6 +9,7 @@ import com.reclamos.backend.entity.TicketStatus;
 import com.reclamos.backend.exception.TrackingTicketNotFoundException;
 import com.reclamos.backend.repository.TicketRepository;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
@@ -23,13 +24,21 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.any;
 
 class TrackingServiceTest {
     private static final String CODE = "0123456789abcdefghijklmnopqrstuv";
     private static final String HASH = "secure-hash";
     private final TicketRepository tickets = mock(TicketRepository.class);
     private final TrackingCodeService trackingCodes = mock(TrackingCodeService.class);
-    private final TrackingService service = new TrackingService(tickets, trackingCodes);
+    private final TicketSlaService ticketSlas = mock(TicketSlaService.class);
+    private final TrackingService service = new TrackingService(tickets, trackingCodes, ticketSlas);
+
+    @BeforeEach
+    void setUp() {
+        when(ticketSlas.findDeadlineSnapshot(any()))
+                .thenReturn(new TicketSlaService.DeadlineSnapshot(null, null));
+    }
 
     @Test
     void validCodeReturnsOnlyWhitelistedCurrentPublicTicketData() {
@@ -99,12 +108,12 @@ class TrackingServiceTest {
     }
 
     @Test
-    void returnsBothPersistedTicketDeadlines() {
+    void returnsBothDeadlinesDerivedFromTicketSla() {
         Ticket ticket = ticket();
         Instant firstResponse = Instant.parse("2026-09-02T18:00:00Z");
         Instant resolution = Instant.parse("2026-09-18T18:00:00Z");
-        ticket.setFirstResponseDueAt(firstResponse);
-        ticket.setResolutionDueAt(resolution);
+        when(ticketSlas.findDeadlineSnapshot(ticket))
+                .thenReturn(new TicketSlaService.DeadlineSnapshot(firstResponse, resolution));
         when(trackingCodes.isValid(CODE)).thenReturn(true);
         when(trackingCodes.hash(CODE)).thenReturn(HASH);
         when(tickets.findByTrackingCodeHash(HASH)).thenReturn(Optional.of(ticket));
@@ -119,7 +128,8 @@ class TrackingServiceTest {
     void toleratesOneMissingDeadline() {
         Ticket ticket = ticket();
         Instant resolution = Instant.parse("2026-09-18T18:00:00Z");
-        ticket.setResolutionDueAt(resolution);
+        when(ticketSlas.findDeadlineSnapshot(ticket))
+                .thenReturn(new TicketSlaService.DeadlineSnapshot(null, resolution));
         when(trackingCodes.isValid(CODE)).thenReturn(true);
         when(trackingCodes.hash(CODE)).thenReturn(HASH);
         when(tickets.findByTrackingCodeHash(HASH)).thenReturn(Optional.of(ticket));
@@ -131,18 +141,16 @@ class TrackingServiceTest {
     }
 
     @Test
-    void duplicateReadsEffectiveDeadlinesFromMainTicket() {
+    void duplicateReadsDeadlinesThroughTicketSlaProjection() {
         Ticket main = ticket();
         Instant firstResponse = Instant.parse("2026-09-02T18:00:00Z");
         Instant resolution = Instant.parse("2026-09-18T18:00:00Z");
-        main.setFirstResponseDueAt(firstResponse);
-        main.setResolutionDueAt(resolution);
         Ticket duplicate = ticket();
         duplicate.setId(UUID.fromString("20000000-0000-0000-0000-000000000002"));
         duplicate.setCurrentStatus(TicketStatus.DUPLICATE);
         duplicate.setMainTicket(main);
-        duplicate.setFirstResponseDueAt(Instant.parse("2030-01-01T00:00:00Z"));
-        duplicate.setResolutionDueAt(Instant.parse("2030-01-02T00:00:00Z"));
+        when(ticketSlas.findDeadlineSnapshot(duplicate))
+                .thenReturn(new TicketSlaService.DeadlineSnapshot(firstResponse, resolution));
         when(trackingCodes.isValid(CODE)).thenReturn(true);
         when(trackingCodes.hash(CODE)).thenReturn(HASH);
         when(tickets.findByTrackingCodeHash(HASH)).thenReturn(Optional.of(duplicate));
@@ -151,6 +159,7 @@ class TrackingServiceTest {
 
         assertEquals(firstResponse, response.getSla().getFirstResponseDueAt());
         assertEquals(resolution, response.getSla().getResolutionDueAt());
+        verify(ticketSlas).findDeadlineSnapshot(duplicate);
         verify(tickets, never()).save(org.mockito.ArgumentMatchers.any());
     }
 

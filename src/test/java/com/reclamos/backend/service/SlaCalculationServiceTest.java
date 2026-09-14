@@ -4,6 +4,7 @@ import com.reclamos.backend.entity.*;
 import com.reclamos.backend.repository.SlaPolicyRepository;
 import org.junit.jupiter.api.*;
 import java.time.*;
+import java.math.BigDecimal;
 import java.util.*;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -166,6 +167,25 @@ class SlaCalculationServiceTest {
         assertEquals(Instant.parse("2026-09-07T00:00:00Z"), service.calculateDueAt(
                 Instant.parse("2026-09-06T00:00:00Z"), continuous(SlaType.RESOLUTION, 24)));
     }
+    @Test void nearDueUsesConfiguredThresholdForContinuousSla() {
+        SlaCalculationService custom = new SlaCalculationService(policies, new BigDecimal("0.75"));
+        SlaPolicy policy = continuous(SlaType.RESOLUTION, 24);
+        assertEquals(Instant.parse("2026-09-06T18:00:00Z"),
+                custom.calculateNearDueAt(Instant.parse("2026-09-06T00:00:00Z"), policy));
+    }
+    @Test void nearDueConsumesOnlyEffectiveBusinessHours() {
+        assertEquals(Instant.parse("2026-09-07T12:36:00Z"), service.calculateNearDueAt(
+                Instant.parse("2026-09-04T20:00:00Z"), business(2)));
+    }
+    @Test void nearDueForBusinessDaysUsesTheSameCalendar() {
+        calendar.getNonWorkingDays().add(LocalDate.of(2026, 9, 8));
+        assertEquals(Instant.parse("2026-09-11T21:00:00Z"), service.calculateNearDueAt(
+                Instant.parse("2026-09-07T12:00:00Z"), businessDays(5)));
+    }
+    @Test void rejectsInvalidNearDueThreshold() {
+        assertThrows(IllegalArgumentException.class, () -> new SlaCalculationService(policies, BigDecimal.ZERO));
+        assertThrows(IllegalArgumentException.class, () -> new SlaCalculationService(policies, BigDecimal.ONE));
+    }
     @Test void highResolutionSupportsSeventyTwoBusinessHours() {
         SlaPolicy policy = business(72);
         policy.setPriority(Priority.HIGH);
@@ -191,6 +211,39 @@ class SlaCalculationServiceTest {
                 service.calculateDueAt(Instant.parse("2026-09-07T12:00:00Z"), policy));
     }
     @Test void sameInputsAreDeterministic() { SlaPolicy p = business(5); Instant start = Instant.parse("2026-09-04T20:00:00Z"); assertEquals(service.calculateDueAt(start, p), service.calculateDueAt(start, p)); }
+
+    @Test void effectivePauseTimeForContinuousPolicyUsesWallClock() {
+        SlaPolicy policy = continuous(SlaType.RESOLUTION, 24);
+        assertEquals(Duration.ofHours(66).getSeconds(), service.effectiveSecondsBetween(
+                Instant.parse("2026-09-04T18:00:00Z"),
+                Instant.parse("2026-09-07T12:00:00Z"), policy));
+    }
+
+    @Test void effectivePauseTimeAcrossWeekendCountsOnlyBusinessWindow() {
+        calendar.setWorkdayEnd(LocalTime.of(17, 0));
+        SlaPolicy policy = business(8);
+        assertEquals(Duration.ofHours(2).getSeconds(), service.effectiveSecondsBetween(
+                Instant.parse("2026-09-04T18:00:00Z"),
+                Instant.parse("2026-09-07T12:00:00Z"), policy));
+    }
+
+    @Test void effectivePauseTimeSkipsConfiguredHoliday() {
+        calendar.getNonWorkingDays().add(LocalDate.of(2026, 9, 7));
+        SlaPolicy policy = business(8);
+        assertEquals(Duration.ofHours(2).getSeconds(), service.effectiveSecondsBetween(
+                Instant.parse("2026-09-04T19:00:00Z"),
+                Instant.parse("2026-09-08T12:00:00Z"), policy));
+    }
+
+    @Test void addingMeasuredBusinessTimeIsConsistentWithCalendar() {
+        SlaPolicy policy = business(8);
+        Instant friday = Instant.parse("2026-09-04T20:00:00Z");
+        Instant monday = service.addEffectiveSeconds(friday, Duration.ofHours(2).getSeconds(), policy);
+
+        assertEquals(Instant.parse("2026-09-07T13:00:00Z"), monday);
+        assertEquals(Duration.ofHours(2).getSeconds(),
+                service.effectiveSecondsBetween(friday, monday, policy));
+    }
 
     private void assertBusiness(String start, long hours, String expected) {
         assertEquals(Instant.parse(expected), service.calculateDueAt(Instant.parse(start), business(hours)));

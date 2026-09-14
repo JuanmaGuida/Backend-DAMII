@@ -72,16 +72,11 @@ public class SecurityConfiguration {
                         // hace TicketService.listMyTickets, no un rol puntual acá.
                         .requestMatchers(HttpMethod.GET, "/api/me/tickets").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/tickets").authenticated()
-                        // BE - Story 3.1: la bandeja de triage es para quienes gestionan
-                        // tickets del lado staff (Guía funcional M2 §7: AGENT, AREA_RESPONSIBLE
-                        // y ADMIN conservan acceso staff a tickets ajenos). CITIZEN sólo tiene
-                        // capacidades ciudadanas sobre sus propios tickets y queda afuera.
-                        // Pendiente (no lo cubre este cambio): la Guía también dice que
-                        // AREA_RESPONSIBLE sólo accede a tickets de su propia areaId — acá
-                        // sólo se resuelve el "quién puede entrar", no el "qué ve una vez
-                        // adentro" por área.
+                        // La bandeja global y las acciones de triage son administrativas.
+                        // AREA_RESPONSIBLE conserva lectura acotada en /api/staff/tickets/*,
+                        // pero no obtiene acceso global a la bandeja M2.
                         .requestMatchers(HttpMethod.GET, "/api/tickets")
-                        .hasAnyRole("AGENT", "AREA_RESPONSIBLE", "ADMIN")
+                        .hasAnyRole("AGENT", "ADMIN")
                         // GET /tickets/{id} (Entidades V1.49): detalle ciudadano, "Ciudadano
                         // owner". No hay rol puntual que filtrar acá — cualquier autenticado
                         // conserva capacidades ciudadanas base — el ownership real (sólo el

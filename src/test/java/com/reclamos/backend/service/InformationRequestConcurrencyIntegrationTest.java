@@ -271,6 +271,7 @@ class InformationRequestConcurrencyIntegrationTest {
     }
 
     private void cleanup(UUID ticketId) {
+        database.update("DELETE FROM outbox_events WHERE ticket_id=?", ticketId);
         database.update("DELETE FROM ticket_activities WHERE ticket_id=?", ticketId);
         database.update("DELETE FROM ticket_cancellations WHERE ticket_id=?", ticketId);
         database.update("DELETE FROM information_requests WHERE ticket_id=?", ticketId);

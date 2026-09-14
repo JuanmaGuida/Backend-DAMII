@@ -15,7 +15,6 @@ import com.reclamos.backend.identity.AuthenticatedIdentity;
 import com.reclamos.backend.identity.ModuleRole;
 import com.reclamos.backend.repository.*;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -29,9 +28,10 @@ import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
@@ -42,8 +42,8 @@ import java.util.stream.Collectors;
 public class TicketService {
     /**
      * "M2" identifica gestión propia de Atención Ciudadana (Eventos v1.6 §2.1):
-     * un ticket derivado a esa "área" no tiene consumidor externo y no debe
-     * generar OutboxEvent.
+     * un ticket de esa "área" inicia gestión propia en IN_PROGRESS y nunca
+     * genera ROUTED; los identificados sí actualizan la proyección de M1.
      */
     private static final String SELF_MANAGED_AREA_ID = "M2";
 
@@ -81,21 +81,16 @@ public class TicketService {
     private final TicketLocationRepository locationRepository;
     private final NeighborhoodRepository neighborhoodRepository;
     private final TicketCancellationRepository cancellationRepository;
-    private final SlaCalculationService slaCalculationService;
+    private final TicketSlaService ticketSlaService;
+    private final InformationRequestService informationRequestService;
     private final FormValidationService formValidationService;
     private final RiskCalculationService riskCalculationService;
-    private final OutboxEventRepository outboxEventRepository;
+    private final TicketOutboxService ticketOutboxService;
     private final TrackingCodeService trackingCodeService;
     private final TicketPublicIdGenerator publicIdGenerator;
     private final AttachmentService attachmentService;
     private final ModuleUserRepository moduleUserRepository;
     private final Clock clock;
-
-    @Value("${app.events.producer.module-id:M2}")
-    private String producerModuleId;
-
-    @Value("${app.events.producer.service:help-center-api}")
-    private String producerService;
 
     @Transactional
     public CreateTicketResponse create(CreateTicketRequest request, AuthenticatedIdentity identity,
@@ -141,10 +136,6 @@ public class TicketService {
         ticket.setCurrentStatus(TicketStatus.REGISTERED);
         ticket.setCurrentPriority(max(requestType.getMinimumPriority(), risk));
         ticket.setCreatedAt(now);
-        ticket.setFirstResponseDueAt(slaCalculationService
-                .calculateDueAt(now, ticket.getCurrentPriority(), SlaType.FIRST_RESPONSE).orElse(null));
-        ticket.setResolutionDueAt(slaCalculationService
-                .calculateResolutionDueAt(now, ticket.getCurrentPriority(), ticket.getTicketType()).orElse(null));
         ticket.setEstimatedAffectedCount(0);
         ticket.setReopenCount(0);
         ticket.setEscalated(false);
@@ -152,13 +143,16 @@ public class TicketService {
         ticket.setStatusChangedAt(now);
         ticket = ticketRepository.save(ticket);
         ticketRepository.flush();
+        ticketSlaService.startFirstResponseCycle(ticket, now);
+        Optional<TicketSla> resolutionSla = ticketSlaService.startInitialResolutionCycle(ticket, now);
 
-        if (!validatedAttachments.isEmpty()) {
-            attachmentService.storeForTicket(ticket, identity, validatedAttachments, now);
-        }
+        List<Attachment> storedAttachments = validatedAttachments.isEmpty()
+                ? List.of()
+                : attachmentService.storeForTicket(ticket, identity, validatedAttachments, now);
 
+        TicketLocation location = null;
         if (request.location() != null) {
-            locationRepository.save(toLocation(ticket, request.location()));
+            location = locationRepository.save(toLocation(ticket, request.location()));
         }
         TicketActivity activity = new TicketActivity();
         activity.setTicket(ticket);
@@ -170,6 +164,9 @@ public class TicketService {
         activity.setActorId(identity.citizenId().toString());
         activity.setOccurredAt(now);
         activityRepository.save(activity);
+        activateCriticalEscalationIfNeeded(ticket, now);
+        ticketOutboxService.ticketCreated(ticket, location, storedAttachments,
+                resolutionSla.map(TicketSla::getDueAt).orElse(null));
         ticketRepository.flush();
         return new CreateTicketResponse(ticket.getId(), ticket.getPublicId(), trackingCode,
                 TicketStatus.REGISTERED);
@@ -193,8 +190,10 @@ public class TicketService {
         }
 
         TicketStatus previousStatus = ticket.getCurrentStatus();
+        Instant reviewedAt = clock.instant();
+        ticketSlaService.completeFirstResponseCycle(ticket, reviewedAt);
         ticket.setCurrentStatus(TicketStatus.IN_REVIEW);
-        ticket.setStatusChangedAt(clock.instant());
+        ticket.setStatusChangedAt(reviewedAt);
         // Entidades V1.49 §"CONVENCIÓN DE IDENTIFICADORES DE ACTOR": a diferencia
         // de la mayoría de los actorId (que guardan citizenId), Ticket.assignedAgentId
         // es una FK real a ModuleUser.id, reservada para relaciones puramente
@@ -205,7 +204,7 @@ public class TicketService {
         // lugar de dejar el ticket sin asignar silenciosamente — un agente
         // autenticado que no existe como ModuleUser es un estado inconsistente
         // que conviene visibilizar, no absorber.
-        if (actor != null && ticket.getAssignedAgent() == null) {
+        if (ticket.getAssignedAgent() == null) {
             ModuleUser agent = moduleUserRepository.findByCitizenId(actor.citizenId())
                     .orElseThrow(() -> new ResourceNotFoundException(
                             "El agente autenticado no está registrado como ModuleUser"));
@@ -214,7 +213,8 @@ public class TicketService {
         ticketRepository.save(ticket);
 
         recordActivity(ticket, ActivityType.REVIEW_STARTED, previousStatus, TicketStatus.IN_REVIEW,
-                actor, null, null, null);
+                actor, null, null, null, reviewedAt);
+        ticketOutboxService.statusChanged(ticket, null, reviewedAt);
 
         return toResponse(ticket, locationRepository.findByTicket_Id(ticketId).orElse(null));
     }
@@ -231,9 +231,9 @@ public class TicketService {
      * se recalcula el SLA inicial desde createdAt con la nueva
      * clasificación").
      * <p>
-     * Prioridad: a diferencia del recálculo periódico automático (donde, por
-     * la "REGLA DE EVOLUCIÓN" de la Guía funcional §3, currentPriority nunca
-     * baja), una corrección de RequestType durante la primera IN_REVIEW
+     * Prioridad: a diferencia del eventual recálculo periódico definido como
+     * regla futura (donde, por la "REGLA DE EVOLUCIÓN" de la Guía funcional
+     * §3, currentPriority nunca bajaría), una corrección de RequestType durante la primera IN_REVIEW
      * todavía forma parte de la clasificación inicial y sí puede recalcularla
      * libremente. Como formData se resetea a {} más abajo, el riesgo
      * recalculado da exactamente newRequestType.baseRisk sin incrementos, así
@@ -258,9 +258,12 @@ public class TicketService {
                         "El Request Type solicitado no existe o está inactivo"));
 
         RequestType previousRequestType = ticket.getRequestType();
+        TicketLocation location = locationRepository.findByTicket_Id(ticketId).orElse(null);
+        if (Objects.equals(previousRequestType.getId(), newRequestType.getId())) {
+            return toResponse(ticket, location);
+        }
         Priority previousPriority = ticket.getCurrentPriority();
 
-        TicketLocation location = locationRepository.findByTicket_Id(ticketId).orElse(null);
         int estimatedAffectedCount = estimateAffectedCount(newRequestType, location);
         Priority newPriority = max(newRequestType.getMinimumPriority(), newRequestType.getBaseRisk());
         FormTemplate newFormTemplate = formValidationService.resolveActiveTemplate(newRequestType);
@@ -279,34 +282,24 @@ public class TicketService {
         // Guía funcional §5 / Decisiones #2: la corrección de clasificación
         // durante la primera IN_REVIEW recalcula el SLA inicial desde
         // createdAt (no desde "ahora") con la nueva prioridad.
-        ticket.setFirstResponseDueAt(slaCalculationService
-                .calculateDueAt(ticket.getCreatedAt(), newPriority, SlaType.FIRST_RESPONSE).orElse(null));
-        ticket.setResolutionDueAt(slaCalculationService
-                .calculateResolutionDueAt(ticket.getCreatedAt(), newPriority, ticket.getTicketType()).orElse(null));
         ticketRepository.save(ticket);
 
         String message = "RequestType corregido de '" + previousRequestType.getCode()
                 + "' a '" + newRequestType.getCode() + "' durante la revisión inicial";
+        Instant reclassifiedAt = clock.instant();
         recordActivity(ticket, ActivityType.REQUEST_TYPE_CHANGED, ticket.getCurrentStatus(), ticket.getCurrentStatus(),
-                actor, previousPriority, newPriority, message);
+                actor, previousPriority, newPriority, message, reclassifiedAt);
+        activateCriticalEscalationIfNeeded(ticket, reclassifiedAt);
+        Optional<TicketSla> resolutionSla = ticketSlaService.recalculateInitialResolutionCycle(ticket, reclassifiedAt);
+        ticketOutboxService.contentUpdated(ticket,
+                resolutionSla.map(TicketSla::getDueAt).orElse(null), reclassifiedAt);
 
-        // Eventos V1.69 §7.2/§7.7: tickets identificados publican
-        // ticketUpdated/CONTENT_UPDATED al corregir la clasificación durante
-        // la primera revisión, para que M1 actualice su proyección. A
-        // diferencia de ROUTED, acá NO se excluye SELF_MANAGED_AREA_ID: el
-        // consumidor es M1 (tabla §2.1 "Identificado · cambios
-        // posteriores"), no el área responsable, así que se publica sin
-        // importar a qué área haya quedado asignado el ticket.
-        if (!ticket.isAnonymous()) {
-            writeContentUpdatedEvent(ticket);
-        }
-
-        return toResponse(ticket, location);
+        return toResponse(ticket, location, resolutionSla.orElse(null));
     }
 
     /**
-     * Story 3.3 (BE - Endpoint de derivación IN_REVIEW -&gt; ROUTED + publicación
-     * de ticketUpdated al outbox / DDA2-59).
+     * Finaliza la clasificación: inicia gestión propia M2 en IN_PROGRESS o
+     * deriva una gestión externa a ROUTED y publica su snapshot inicial.
      * <p>
      * INTERPRETACIÓN DE "SELECCIONAR UN ÁREA VÁLIDA" (AC): este endpoint no
      * recibe un área por parámetro. El área ya quedó fijada en
@@ -334,10 +327,15 @@ public class TicketService {
             throw new TicketStateConflictException(
                     "El ticket no tiene un área responsable válida asignada; no puede derivarse");
         }
+        if (ticket.getRequestType() == null) {
+            throw new TicketStateConflictException("El ticket no tiene una clasificación válida; no puede iniciar gestión");
+        }
 
         TicketStatus previousStatus = ticket.getCurrentStatus();
         Instant now = clock.instant();
-        ticket.setCurrentStatus(TicketStatus.ROUTED);
+        boolean selfManaged = SELF_MANAGED_AREA_ID.equalsIgnoreCase(ticket.getResponsibleAreaId());
+        TicketStatus nextStatus = selfManaged ? TicketStatus.IN_PROGRESS : TicketStatus.ROUTED;
+        ticket.setCurrentStatus(nextStatus);
         ticket.setStatusChangedAt(now);
         // classificationFinalizedAt se fija sólo la primera vez que el ticket
         // sale de IN_REVIEW hacia gestión (Entidades §4.1): a partir de acá,
@@ -348,19 +346,25 @@ public class TicketService {
         }
         ticketRepository.save(ticket);
 
-        recordActivity(ticket, ActivityType.ROUTED, previousStatus, TicketStatus.ROUTED, actor, null, null,
-                "Derivado al área responsable '" + ticket.getResponsibleAreaId() + "'");
+        ActivityType activityType = selfManaged ? ActivityType.STATE_CHANGED : ActivityType.ROUTED;
+        String message = selfManaged
+                ? "Comenzó la gestión propia de Atención Ciudadana"
+                : "Derivado al área responsable '" + ticket.getResponsibleAreaId() + "'";
+        recordActivity(ticket, activityType, previousStatus, nextStatus, actor, null, null, message, now);
 
         TicketLocation location = locationRepository.findByTicket_Id(ticketId).orElse(null);
+        TicketSla resolutionSla = ticketSlaService.findLatestResolutionCycle(ticket).orElse(null);
 
-        // Política de publicación (Eventos v1.6 §2.1): siempre se publica en
-        // ROUTED, salvo que el área responsable sea la propia M2 (gestión
-        // interna sin consumidor externo).
-        if (!SELF_MANAGED_AREA_ID.equalsIgnoreCase(ticket.getResponsibleAreaId())) {
-            writeOutboxEvent(ticket, location);
+        // La gestión externa recibe el snapshot ROUTED. En gestión propia sólo
+        // se proyecta STATUS_CHANGED para identificados; el helper omite anónimos.
+        if (selfManaged) {
+            ticketOutboxService.statusChanged(ticket, null, now);
+        } else {
+            ticketOutboxService.routed(ticket, location,
+                    resolutionSla == null ? null : resolutionSla.getDueAt(), now);
         }
 
-        return toResponse(ticket, location);
+        return toResponse(ticket, location, resolutionSla);
     }
 
     /**
@@ -404,26 +408,29 @@ public class TicketService {
         cancellation.setPublicMessage(request.getPublicMessage());
         cancellation.setInternalMessage(request.getInternalMessage());
         cancellation.setCancelledByType(actorType);
-        cancellation.setCancelledById(actor.subjectId());
+        cancellation.setCancelledById(actor.citizenId().toString());
+        cancellation.setCancelledByModuleId(SELF_MANAGED_AREA_ID);
         cancellation.setCancelledAt(now);
         cancellationRepository.save(cancellation);
 
         TicketStatus previousStatus = ticket.getCurrentStatus();
+        if (previousStatus == TicketStatus.PENDING_INFORMATION) {
+            informationRequestService.cancelPendingBecauseTicketTerminated(ticket);
+        }
+        ticketSlaService.terminateActiveCycles(ticket, now);
         ticket.setCurrentStatus(TicketStatus.CANCELLED);
         ticket.setStatusChangedAt(now);
         ticketRepository.save(ticket);
 
         recordCancellationActivity(ticket, previousStatus, actorType, actor, request.getReasonCode(),
-                request.getPublicMessage() != null ? request.getPublicMessage() : request.getInternalMessage());
+                request.getPublicMessage() != null ? request.getPublicMessage() : request.getInternalMessage(), now);
 
         // Eventos V1.69 §2.1/§7.7: sólo tickets identificados publican
         // ticketUpdated/CANCELLED acá. En este punto (pre-ROUTED) nunca hubo
         // un área externa involucrada, así que a diferencia de routeToArea
         // no hay ningún gate por SELF_MANAGED_AREA_ID — lo único que importa
         // es si M1 tiene que actualizar su proyección.
-        if (!ticket.isAnonymous()) {
-            writeCancelledEvent(ticket, request.getReasonCode(), request.getPublicMessage());
-        }
+        ticketOutboxService.cancelled(ticket, request.getReasonCode(), request.getPublicMessage(), true, now);
 
         return toResponse(ticket, locationRepository.findByTicket_Id(ticketId).orElse(null));
     }
@@ -440,7 +447,7 @@ public class TicketService {
 
     private void recordCancellationActivity(Ticket ticket, TicketStatus previousStatus, ActorType actorType,
                                              AuthenticatedIdentity actor, CancellationReasonCode reasonCode,
-                                             String message) {
+                                             String message, Instant occurredAt) {
         TicketActivity activity = new TicketActivity();
         activity.setTicket(ticket);
         activity.setSequence((int) activityRepository.countByTicketId(ticket.getId()) + 1);
@@ -448,156 +455,12 @@ public class TicketService {
         activity.setPreviousStatus(previousStatus);
         activity.setNewStatus(TicketStatus.CANCELLED);
         activity.setActorType(actorType);
-        activity.setActorId(actor.subjectId());
+        activity.setActorId(actor.citizenId().toString());
+        activity.setSourceModuleId(SELF_MANAGED_AREA_ID);
         activity.setReasonCode(reasonCode.name());
         activity.setMessage(message);
-        activity.setOccurredAt(clock.instant());
+        activity.setOccurredAt(occurredAt);
         activityRepository.save(activity);
-    }
-
-    /**
-     * Arma details.cancellation (Eventos V1.69 §7.7: "reasonCode
-     * obligatorio. publicMessage contiene la explicación pública cuando
-     * corresponda") y publica ticketUpdated/CANCELLED vía
-     * {@link #publishTicketUpdated}.
-     */
-    private void writeCancelledEvent(Ticket ticket, CancellationReasonCode reasonCode, String publicMessage) {
-        Map<String, Object> cancellation = new LinkedHashMap<>();
-        cancellation.put("reasonCode", reasonCode.name());
-
-        Map<String, Object> details = new LinkedHashMap<>();
-        details.put("cancellation", cancellation);
-
-        publishTicketUpdated(ticket, TicketUpdatedType.CANCELLED, publicMessage, details);
-    }
-
-    /**
-     * Arma details.routing (Eventos v1.6 §7.4) y publica ticketUpdated/ROUTED
-     * vía {@link #publishTicketUpdated}.
-     */
-    private void writeOutboxEvent(Ticket ticket, TicketLocation location) {
-        RequestType requestType = ticket.getRequestType();
-
-        Map<String, Object> routing = new LinkedHashMap<>();
-        routing.put("requestType", requestType.getName());
-        routing.put("ticketType", ticket.getTicketType());
-        routing.put("summary", ticket.getSummary());
-        routing.put("description", ticket.getDescription());
-        routing.put("formData", ticket.getFormData());
-        routing.put("location", toEventLocation(location));
-        routing.put("resolutionDueAt", ticket.getResolutionDueAt() != null
-                ? ticket.getResolutionDueAt().toString() : null);
-        routing.put("escalation", null); // Escalamiento no implementado todavía (Sprint 4)
-
-        Map<String, Object> details = new LinkedHashMap<>();
-        details.put("routing", routing);
-
-        publishTicketUpdated(ticket, TicketUpdatedType.ROUTED,
-                "El ticket fue derivado al área responsable.", details);
-    }
-
-    /**
-     * Arma details.content (Eventos V1.69 §7.7: "Puede incluir requestType,
-     * category, subcategory, ticketType, summary, description, formData y
-     * resolutionDueAt actualizados. Se usa, entre otros casos, cuando M2
-     * corrige RequestType durante la revisión inicial") y publica
-     * ticketUpdated/CONTENT_UPDATED vía {@link #publishTicketUpdated}.
-     * currentPriority y responsibleAreaId ya viajan en los campos comunes de
-     * data, no se repiten acá.
-     */
-    private void writeContentUpdatedEvent(Ticket ticket) {
-        RequestType requestType = ticket.getRequestType();
-        Subcategory subcategory = requestType.getSubcategory();
-        Category category = subcategory.getCategory();
-
-        Map<String, Object> content = new LinkedHashMap<>();
-        content.put("requestType", requestType.getName());
-        content.put("category", category.getName());
-        content.put("subcategory", subcategory.getName());
-        content.put("ticketType", ticket.getTicketType());
-        content.put("summary", ticket.getSummary());
-        content.put("description", ticket.getDescription());
-        content.put("formData", ticket.getFormData());
-        content.put("resolutionDueAt", ticket.getResolutionDueAt() != null
-                ? ticket.getResolutionDueAt().toString() : null);
-
-        Map<String, Object> details = new LinkedHashMap<>();
-        details.put("content", content);
-
-        publishTicketUpdated(ticket, TicketUpdatedType.CONTENT_UPDATED,
-                "Se actualizó la clasificación del ticket.", details);
-    }
-
-    /**
-     * Construye el envelope + data comunes de ticketUpdated (Eventos v1.6 §4
-     * y §7.1) y lo inserta como OutboxEvent PENDING en la misma transacción
-     * que el cambio de negocio (Entidades v1.3 §19.2). Todavía no existe un
-     * publisher asíncrono real (Sprint 3: "sin consumidor real todavía"), así
-     * que el evento queda en PENDING hasta que se implemente ese publisher.
-     */
-    private void publishTicketUpdated(Ticket ticket, TicketUpdatedType updateType, String publicMessage,
-                                      Map<String, Object> details) {
-        UUID eventId = UUID.randomUUID();
-        Instant now = clock.instant();
-
-        Map<String, Object> data = new LinkedHashMap<>();
-        data.put("ticketId", ticket.getId());
-        data.put("publicId", ticket.getPublicId());
-        data.put("citizenId", ticket.getCitizenId());
-        data.put("isAnonymous", ticket.isAnonymous());
-        data.put("responsibleAreaId", ticket.getResponsibleAreaId());
-        data.put("updateType", updateType.name());
-        data.put("currentStatus", ticket.getCurrentStatus().name());
-        data.put("currentPriority", ticket.getCurrentPriority().name());
-        data.put("progress", ticket.getCurrentProgress());
-        data.put("publicMessage", publicMessage);
-        data.put("details", details);
-        data.put("attachments", List.of());
-        // No usar ticket.getUpdatedAt(): es @UpdateTimestamp (Hibernate) y sólo
-        // se completa en el flush, que todavía no ocurrió acá (estamos en la
-        // misma transacción, justo después del save()) — leerlo en este punto
-        // devuelve el valor viejo persistido antes de este cambio, no el que
-        // se va a persistir. "now" es el mismo instante que ya se usa para
-        // occurredAt y para el resto de los campos de auditoría de este
-        // método, así que es la fuente correcta para "cuándo pasó esto".
-        data.put("updatedAt", now.toString());
-
-        Map<String, Object> producer = new LinkedHashMap<>();
-        producer.put("moduleId", producerModuleId);
-        producer.put("service", producerService);
-
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("specVersion", "1.0");
-        payload.put("eventId", eventId.toString());
-        payload.put("eventType", "ticketUpdated");
-        payload.put("occurredAt", now.toString());
-        payload.put("producer", producer);
-        payload.put("subject", "tickets/" + ticket.getId());
-        payload.put("data", data);
-
-        OutboxEvent event = new OutboxEvent();
-        event.setEventId(eventId);
-        event.setEventType("ticketUpdated");
-        event.setUpdateType(updateType);
-        event.setTicket(ticket);
-        event.setPayload(payload);
-        event.setStatus(OutboxStatus.PENDING);
-        event.setRetryCount(0);
-        outboxEventRepository.save(event);
-    }
-
-    private Map<String, Object> toEventLocation(TicketLocation location) {
-        if (location == null) {
-            return null;
-        }
-        Map<String, Object> eventLocation = new LinkedHashMap<>();
-        eventLocation.put("addressLine", location.getAddressLine());
-        eventLocation.put("street", location.getStreet());
-        eventLocation.put("streetNumber", location.getStreetNumber());
-        eventLocation.put("neighborhoodId", location.getNeighborhood() != null
-                ? location.getNeighborhood().getId() : null);
-        eventLocation.put("reference", location.getReference());
-        return eventLocation;
     }
 
     /**
@@ -615,8 +478,10 @@ public class TicketService {
         Map<UUID, TicketLocation> locationsByTicket = locationRepository
                 .findAllByTicket_IdIn(ticketIds).stream()
                 .collect(Collectors.toMap(location -> location.getTicket().getId(), Function.identity()));
+        Map<UUID, TicketSla> latestResolutionByTicket =
+                ticketSlaService.findLatestResolutionCycles(page.getContent());
 
-        return page.map(ticket -> toResponse(ticket, locationsByTicket.get(ticket.getId())));
+        return mapPage(page, locationsByTicket, latestResolutionByTicket);
     }
 
     /**
@@ -637,7 +502,9 @@ public class TicketService {
                 .findAllByTicket_IdIn(ticketIds).stream()
                 .collect(Collectors.toMap(location -> location.getTicket().getId(), Function.identity()));
 
-        return page.map(ticket -> toResponse(ticket, locationsByTicket.get(ticket.getId())));
+        Map<UUID, TicketSla> latestResolutionByTicket =
+                ticketSlaService.findLatestResolutionCycles(page.getContent());
+        return mapPage(page, locationsByTicket, latestResolutionByTicket);
     }
 
     /**
@@ -683,7 +550,9 @@ public class TicketService {
     }
 
     private void requireStaffAccess(Ticket ticket, AuthenticatedIdentity identity) {
-        if (identity == null) {
+        if (identity == null || (identity.role() != ModuleRole.AGENT
+                && identity.role() != ModuleRole.ADMIN
+                && identity.role() != ModuleRole.AREA_RESPONSIBLE)) {
             throw new UnauthorizedTicketOperationException();
         }
         boolean isOwnTicket = !ticket.isAnonymous() && ticket.getCitizenId() != null
@@ -709,7 +578,7 @@ public class TicketService {
      * puede triagear su propio ticket.
      */
     private void requireTriageAuthority(Ticket ticket, AuthenticatedIdentity actor) {
-        if (actor == null) {
+        if (actor == null || (actor.role() != ModuleRole.AGENT && actor.role() != ModuleRole.ADMIN)) {
             throw new UnauthorizedTicketOperationException();
         }
         boolean isOwnTicket = !ticket.isAnonymous() && ticket.getCitizenId() != null
@@ -766,7 +635,8 @@ public class TicketService {
 
     private void recordActivity(Ticket ticket, ActivityType actionType, TicketStatus previousStatus,
                                  TicketStatus newStatus, AuthenticatedIdentity actor,
-                                 Priority previousPriority, Priority newPriority, String message) {
+                                 Priority previousPriority, Priority newPriority, String message,
+                                 Instant occurredAt) {
         long nextSequence = activityRepository.countByTicketId(ticket.getId()) + 1;
 
         TicketActivity activity = new TicketActivity();
@@ -775,26 +645,51 @@ public class TicketService {
         activity.setActionType(actionType);
         activity.setPreviousStatus(previousStatus);
         activity.setNewStatus(newStatus);
-        // QA: la actividad tiene que reflejar la capacidad efectiva del actor,
-        // no siempre AGENT (Entidades V1.49 §"REGLA DE CLASIFICACIÓN DEL
-        // ACTOR"). Este método sólo lo usan startReview/correctClassification/
-        // routeToArea, y desde el fix de Story 2.3 esas tres acciones sólo son
-        // alcanzables por AGENT o ADMIN (CITIZEN/AREA_RESPONSIBLE quedan afuera
-        // en SecurityConfiguration) y nunca sobre el propio ticket (lo bloquea
-        // requireTriageAuthority antes de llegar acá) — por eso no hace falta
-        // una rama CITIZEN como en cancelTicket. SYSTEM queda como fallback
-        // defensivo si algún día se llama con actor == null.
-        activity.setActorType(actor == null ? ActorType.SYSTEM
-                : (actor.role() == ModuleRole.ADMIN ? ActorType.ADMIN : ActorType.AGENT));
-        activity.setActorId(actor != null ? actor.subjectId() : null);
+        activity.setActorType(actor.role() == ModuleRole.ADMIN ? ActorType.ADMIN : ActorType.AGENT);
+        activity.setActorId(actor.citizenId().toString());
+        activity.setSourceModuleId(SELF_MANAGED_AREA_ID);
         activity.setPreviousPriority(previousPriority);
         activity.setNewPriority(newPriority);
         activity.setMessage(message);
-        activity.setOccurredAt(clock.instant());
+        activity.setOccurredAt(occurredAt);
+        activityRepository.save(activity);
+    }
+
+    /**
+     * Activa una sola vez el escalamiento automático por prioridad crítica.
+     * La marca es independiente del estado y la actividad representa una
+     * decisión del sistema, incluso cuando la prioridad surgió de una
+     * reclasificación iniciada por un agente.
+     */
+    private void activateCriticalEscalationIfNeeded(Ticket ticket, Instant activatedAt) {
+        if (ticket.getCurrentPriority() != Priority.CRITICAL || ticket.isEscalated()) {
+            return;
+        }
+
+        ticket.setEscalated(true);
+        ticket.setEscalationReasonCode(EscalationReasonCode.CRITICAL_PRIORITY);
+        ticket.setEscalatedAt(activatedAt);
+        ticketRepository.save(ticket);
+
+        TicketActivity activity = new TicketActivity();
+        activity.setTicket(ticket);
+        activity.setSequence(activityRepository.countByTicketId(ticket.getId()) + 1);
+        activity.setActionType(ActivityType.ESCALATED);
+        activity.setPreviousStatus(ticket.getCurrentStatus());
+        activity.setNewStatus(ticket.getCurrentStatus());
+        activity.setActorType(ActorType.SYSTEM);
+        activity.setActorId(null);
+        activity.setReasonCode(EscalationReasonCode.CRITICAL_PRIORITY.name());
+        activity.setMessage("Escalamiento automático por prioridad crítica");
+        activity.setOccurredAt(activatedAt);
         activityRepository.save(activity);
     }
 
     private TicketResponse toResponse(Ticket ticket, TicketLocation location) {
+        return toResponse(ticket, location, ticketSlaService.findLatestResolutionCycle(ticket).orElse(null));
+    }
+
+    private TicketResponse toResponse(Ticket ticket, TicketLocation location, TicketSla resolutionSla) {
         RequestType requestType = ticket.getRequestType();
         Subcategory subcategory = requestType.getSubcategory();
         Category category = subcategory.getCategory();
@@ -816,6 +711,9 @@ public class TicketService {
         response.setAnonymous(ticket.isAnonymous());
         response.setEstimatedAffectedCount(ticket.getEstimatedAffectedCount());
         response.setEscalated(ticket.isEscalated());
+        response.setEscalationReasonCode(ticket.getEscalationReasonCode());
+        response.setEscalatedAt(ticket.getEscalatedAt());
+        applySlaSignals(response, resolutionSla);
         if (location != null && location.getNeighborhood() != null) {
             response.setNeighborhoodId(location.getNeighborhood().getId());
             response.setNeighborhoodName(location.getNeighborhood().getName());
@@ -827,27 +725,23 @@ public class TicketService {
         return response;
     }
 
-    /**
-     * Re-derivación / recálculo de SLA de derivación (independiente de
-     * routeToArea, que cubre sólo la primera derivación IN_REVIEW -&gt; ROUTED
-     * de Story 3.3). Recalcula resolutionDueAt desde createdAt cada vez que
-     * se invoca. Nota (a confirmar con el equipo dev): no encontramos ningún
-     * llamador todavía en esta rama — puede ser un método pensado para una
-     * integración o story que no está visible en este merge; no lo
-     * eliminamos porque tiene su propia batería de tests ya aprobada en dev.
-     */
-    @Transactional
-    public Ticket route(UUID ticketId, String responsibleAreaId, Instant routedAt) {
-        Ticket ticket = ticketRepository.findByIdForUpdate(ticketId)
-                .orElseThrow(() -> new ResourceNotFoundException("Ticket no encontrado"));
-        if (ticket.getCurrentStatus() == TicketStatus.DUPLICATE)
-            throw new InvalidTicketRequestException("Un ticket duplicado hereda el SLA del ticket principal");
-        ticket.setResolutionDueAt(slaCalculationService.calculateResolutionDueAt(
-                ticket.getCreatedAt(), ticket.getCurrentPriority(), ticket.getTicketType()).orElse(null));
-        ticket.setResponsibleAreaId(responsibleAreaId);
-        ticket.setCurrentStatus(TicketStatus.ROUTED);
-        ticket.setStatusChangedAt(routedAt);
-        return ticketRepository.save(ticket);
+    private void applySlaSignals(TicketResponse response, TicketSla resolutionSla) {
+        if (resolutionSla == null) {
+            response.setSlaNearDue(false);
+            response.setSlaBreached(false);
+            response.setResolutionNearDueAt(null);
+            return;
+        }
+        response.setSlaNearDue(resolutionSla.getStatus() == SlaStatus.NEAR_DUE);
+        response.setSlaBreached(resolutionSla.getStatus() == SlaStatus.BREACHED);
+        response.setResolutionNearDueAt(resolutionSla.getNearDueAt());
+    }
+
+    private Page<TicketResponse> mapPage(Page<Ticket> page,
+                                         Map<UUID, TicketLocation> locationsByTicket,
+                                         Map<UUID, TicketSla> latestResolutionByTicket) {
+        return page.map(ticket -> toResponse(ticket, locationsByTicket.get(ticket.getId()),
+                latestResolutionByTicket.get(ticket.getId())));
     }
 
     private void validateLocation(RequestType type, CreateTicketRequest.LocationData location) {

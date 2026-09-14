@@ -16,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class TrackingService {
     private final TicketRepository ticketRepository;
     private final TrackingCodeService trackingCodeService;
+    private final TicketSlaService ticketSlaService;
 
     @Transactional(readOnly = true)
     public TrackingTicketResponse findByTrackingCode(String trackingCode) {
@@ -32,6 +33,7 @@ public class TrackingService {
         RequestType requestType = ticket.getRequestType();
         Subcategory subcategory = requestType.getSubcategory();
         Category category = subcategory.getCategory();
+        TicketSlaService.DeadlineSnapshot deadlines = ticketSlaService.findDeadlineSnapshot(ticket);
         return new TrackingTicketResponse(
                 ticket.getPublicId(),
                 ticket.getCurrentStatus(),
@@ -42,8 +44,8 @@ public class TrackingService {
                 new TrackingTicketResponse.CategorySummary(category.getName()),
                 new TrackingTicketResponse.SubcategorySummary(subcategory.getName()),
                 new TrackingTicketResponse.SlaSummary(
-                        ticket.getEffectiveFirstResponseDueAt(),
-                        ticket.getEffectiveResolutionDueAt())
+                        deadlines.firstResponseDueAt(),
+                        deadlines.resolutionDueAt())
         );
     }
 }
