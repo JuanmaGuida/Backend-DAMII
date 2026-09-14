@@ -3,7 +3,9 @@ package com.reclamos.backend.controller;
 import com.reclamos.backend.config.SecurityConfiguration;
 import com.reclamos.backend.dto.TicketFilter;
 import com.reclamos.backend.dto.TicketResponse;
+import com.reclamos.backend.dto.request.CancelTicketRequest;
 import com.reclamos.backend.dto.response.CreateTicketResponse;
+import com.reclamos.backend.entity.CancellationReasonCode;
 import com.reclamos.backend.entity.TicketStatus;
 import com.reclamos.backend.exception.InvalidTicketRequestException;
 import com.reclamos.backend.exception.ResourceNotFoundException;
@@ -315,5 +317,80 @@ class TicketControllerTest {
                         .with(authentication(AGENT_AUTHENTICATION)))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.message").value("El ticket no está IN_REVIEW"));
+    }
+
+    // ---- cancel (Entidades V1.49 §24) ----
+
+    /**
+     * Ciudadano owner o AGENT/ADMIN. El controller sólo delega; el
+     * ownership/rol real lo valida TicketService.requireCancelAuthority.
+     */
+    @Test
+    void cancelDelegatesToServiceAndReturnsOk() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+        TicketResponse response = new TicketResponse();
+        response.setId(ticketId);
+        response.setCurrentStatus(TicketStatus.CANCELLED);
+        when(ticketService.cancelTicket(eq(ticketId), any(CancelTicketRequest.class), eq(AGENT)))
+                .thenReturn(response);
+
+        mockMvc.perform(post("/api/tickets/{ticketId}/cancel", ticketId)
+                        .with(authentication(AGENT_AUTHENTICATION))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reasonCode\":\"" + CancellationReasonCode.OUT_OF_SCOPE + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.currentStatus").value("CANCELLED"));
+    }
+
+    @Test
+    void cancelOnNonOwnerReturnsForbidden() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+        when(ticketService.cancelTicket(eq(ticketId), any(CancelTicketRequest.class), eq(CITIZEN)))
+                .thenThrow(new UnauthorizedTicketOperationException());
+
+        mockMvc.perform(post("/api/tickets/{ticketId}/cancel", ticketId)
+                        .with(authentication(CITIZEN_AUTHENTICATION))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reasonCode\":\"" + CancellationReasonCode.WITHDRAWN_BY_CITIZEN + "\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+    }
+
+    @Test
+    void cancelOnWrongStateReturnsConflict() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+        when(ticketService.cancelTicket(eq(ticketId), any(CancelTicketRequest.class), eq(AGENT)))
+                .thenThrow(new TicketStateConflictException(
+                        "El ticket está en estado ROUTED y no puede cancelarse por este endpoint"));
+
+        mockMvc.perform(post("/api/tickets/{ticketId}/cancel", ticketId)
+                        .with(authentication(AGENT_AUTHENTICATION))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reasonCode\":\"" + CancellationReasonCode.OTHER + "\"}"))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    void cancelOnMissingTicketReturnsNotFound() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+        when(ticketService.cancelTicket(eq(ticketId), any(CancelTicketRequest.class), eq(AGENT)))
+                .thenThrow(new ResourceNotFoundException("El ticket solicitado no existe"));
+
+        mockMvc.perform(post("/api/tickets/{ticketId}/cancel", ticketId)
+                        .with(authentication(AGENT_AUTHENTICATION))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reasonCode\":\"" + CancellationReasonCode.OTHER + "\"}"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void cancelRequiresReasonCode() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+
+        mockMvc.perform(post("/api/tickets/{ticketId}/cancel", ticketId)
+                        .with(authentication(AGENT_AUTHENTICATION))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest());
     }
 }

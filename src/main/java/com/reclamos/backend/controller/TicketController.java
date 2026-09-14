@@ -156,4 +156,18 @@ public class TicketController {
             @AuthenticationPrincipal AuthenticatedIdentity identity) {
         return ticketResolutionService.reopen(ticketId, request, identity);
     }
+
+    /**
+     * POST /tickets/{id}/cancel (Entidades V1.49 §24): cancelación temprana
+     * (REGISTERED/IN_REVIEW/PENDING_INFORMATION -&gt; CANCELLED) por el
+     * ciudadano owner o AGENT/ADMIN. El ownership/rol real lo valida
+     * TicketService.requireCancelAuthority.
+     */
+    @PostMapping(path = "/{ticketId}/cancel", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public TicketResponse cancel(
+            @PathVariable UUID ticketId,
+            @Valid @RequestBody CancelTicketRequest request,
+            @AuthenticationPrincipal AuthenticatedIdentity identity) {
+        return ticketService.cancelTicket(ticketId, request, identity);
+    }
 }

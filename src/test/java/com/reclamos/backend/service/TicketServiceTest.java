@@ -2,6 +2,7 @@ package com.reclamos.backend.service;
 
 import com.reclamos.backend.dto.TicketFilter;
 import com.reclamos.backend.dto.TicketResponse;
+import com.reclamos.backend.dto.request.CancelTicketRequest;
 import com.reclamos.backend.dto.request.CreateTicketRequest;
 import com.reclamos.backend.dto.response.CreateTicketResponse;
 import com.reclamos.backend.entity.*;
@@ -84,6 +85,8 @@ class TicketServiceTest {
     private RiskCalculationService risks;
     @Mock
     private OutboxEventRepository outboxEventRepository;
+    @Mock
+    private TicketCancellationRepository cancellationRepository;
     @Mock
     private ModuleUserRepository moduleUsers;
     @Spy
@@ -878,6 +881,12 @@ class TicketServiceTest {
     void correctClassificationPublishesContentUpdatedEventForIdentifiedTicket() {
         Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.LOW);
         String originalPublicId = ticket.getPublicId();
+        // QA: data.updatedAt no puede salir de ticket.getUpdatedAt() — es
+        // @UpdateTimestamp (Hibernate) y todavía tiene el valor viejo en este
+        // punto de la transacción (recién se refresca en el flush). Se fija
+        // un valor viejo a propósito para que el test falle si se vuelve a
+        // leer ese campo en vez de usar "now".
+        ticket.setUpdatedAt(Instant.parse("2020-01-01T00:00:00Z"));
         RequestType newRequestType = requestTypeSprint2(20L, "FLOODING", "obras-hidraulicas",
                 Priority.MEDIUM, new BigDecimal("0.1000"));
 
@@ -901,6 +910,9 @@ class TicketServiceTest {
         assertThat(data.get("publicId")).isEqualTo(originalPublicId);
         assertThat(data.get("updateType")).isEqualTo("CONTENT_UPDATED");
         assertThat(data.get("responsibleAreaId")).isEqualTo("obras-hidraulicas");
+        // QA: tiene que ser el "now" de la reclasificación, no el updatedAt
+        // viejo que quedó fijado arriba a propósito.
+        assertThat(data.get("updatedAt")).isEqualTo(NOW.toString());
 
         @SuppressWarnings("unchecked")
         Map<String, Object> details = (Map<String, Object>) data.get("details");
@@ -945,6 +957,10 @@ class TicketServiceTest {
         Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.HIGH);
         ticket.setResponsibleAreaId("M6");
         String originalPublicId = ticket.getPublicId();
+        // QA (smoke ROUTED): mismo caso que en CONTENT_UPDATED — data.updatedAt
+        // no puede salir de ticket.getUpdatedAt() (@UpdateTimestamp, todavía
+        // sin refrescar en este punto de la transacción).
+        ticket.setUpdatedAt(Instant.parse("2020-01-01T00:00:00Z"));
 
         when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
         when(activities.countByTicketId(ticketId)).thenReturn(0);
@@ -973,6 +989,7 @@ class TicketServiceTest {
         assertThat(data.get("updateType")).isEqualTo("ROUTED");
         assertThat(data.get("responsibleAreaId")).isEqualTo("M6");
         assertThat(event.getPayload().get("subject")).isEqualTo("tickets/" + ticketId);
+        assertThat(data.get("updatedAt")).isEqualTo(NOW.toString());
     }
 
     @Test
@@ -1031,6 +1048,168 @@ class TicketServiceTest {
         service.routeToArea(ticketId, actor);
 
         assertThat(ticket.getClassificationFinalizedAt()).isEqualTo(firstFinalization);
+    }
+
+    // ==================================================================
+    // ---- cancelTicket ----
+    // ==================================================================
+
+    /**
+     * Work item de equipo: "el único CANCELLED que funciona es el de la
+     * simulación" — este endpoint cubre la cancelación temprana directa
+     * (Entidades V1.49 §24: "Ciudadano owner / propietario anónimo
+     * acreditado / AGENT / ADMIN"), antes de que el ticket llegue a
+     * gestión externa.
+     */
+    @Test
+    void cancelTicketByOwnerFromRegisteredPersistsCancellationAndPublishesOutboxEvent() {
+        AuthenticatedIdentity owner = new AuthenticatedIdentity(
+                "citizen-1", UUID.randomUUID(), "Vecino Uno", null, ModuleRole.CITIZEN);
+        Ticket ticket = ticket(TicketStatus.REGISTERED, Priority.LOW);
+        ticket.setCitizenId(owner.citizenId());
+        ticket.setAnonymous(false);
+        // QA (mismo gap detectado en CONTENT_UPDATED/ROUTED): data.updatedAt
+        // no puede salir de ticket.getUpdatedAt().
+        ticket.setUpdatedAt(Instant.parse("2020-01-01T00:00:00Z"));
+
+        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+        when(activities.countByTicketId(ticketId)).thenReturn(0);
+
+        CancelTicketRequest request = new CancelTicketRequest();
+        request.setReasonCode(CancellationReasonCode.WITHDRAWN_BY_CITIZEN);
+        request.setPublicMessage("Ya no es necesario");
+
+        TicketResponse response = service.cancelTicket(ticketId, request, owner);
+
+        assertThat(response.getCurrentStatus()).isEqualTo(TicketStatus.CANCELLED);
+        assertThat(ticket.getCurrentStatus()).isEqualTo(TicketStatus.CANCELLED);
+
+        ArgumentCaptor<TicketCancellation> cancellationCaptor = ArgumentCaptor.forClass(TicketCancellation.class);
+        verify(cancellationRepository).save(cancellationCaptor.capture());
+        TicketCancellation cancellation = cancellationCaptor.getValue();
+        assertThat(cancellation.getReasonCode()).isEqualTo(CancellationReasonCode.WITHDRAWN_BY_CITIZEN);
+        assertThat(cancellation.getCancelledByType()).isEqualTo(ActorType.CITIZEN);
+        assertThat(cancellation.getPublicMessage()).isEqualTo("Ya no es necesario");
+
+        ArgumentCaptor<TicketActivity> activityCaptor = ArgumentCaptor.forClass(TicketActivity.class);
+        verify(activities).save(activityCaptor.capture());
+        assertThat(activityCaptor.getValue().getActionType()).isEqualTo(ActivityType.CANCELLED);
+        assertThat(activityCaptor.getValue().getActorType()).isEqualTo(ActorType.CITIZEN);
+
+        ArgumentCaptor<OutboxEvent> eventCaptor = ArgumentCaptor.forClass(OutboxEvent.class);
+        verify(outboxEventRepository).save(eventCaptor.capture());
+        OutboxEvent event = eventCaptor.getValue();
+        assertThat(event.getUpdateType()).isEqualTo(TicketUpdatedType.CANCELLED);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> data = (Map<String, Object>) event.getPayload().get("data");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> details = (Map<String, Object>) data.get("details");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> cancellationDetails = (Map<String, Object>) details.get("cancellation");
+        assertThat(cancellationDetails.get("reasonCode")).isEqualTo("WITHDRAWN_BY_CITIZEN");
+        assertThat(data.get("updatedAt")).isEqualTo(NOW.toString());
+    }
+
+    @Test
+    void cancelTicketByAgentOnOthersTicketFromPendingInformationSucceeds() {
+        Ticket ticket = ticket(TicketStatus.PENDING_INFORMATION, Priority.LOW);
+        ticket.setCitizenId(UUID.randomUUID());
+
+        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+        when(activities.countByTicketId(ticketId)).thenReturn(0);
+
+        CancelTicketRequest request = new CancelTicketRequest();
+        request.setReasonCode(CancellationReasonCode.OUT_OF_SCOPE);
+
+        TicketResponse response = service.cancelTicket(ticketId, request, actor);
+
+        assertThat(response.getCurrentStatus()).isEqualTo(TicketStatus.CANCELLED);
+        ArgumentCaptor<TicketCancellation> cancellationCaptor = ArgumentCaptor.forClass(TicketCancellation.class);
+        verify(cancellationRepository).save(cancellationCaptor.capture());
+        assertThat(cancellationCaptor.getValue().getCancelledByType()).isEqualTo(ActorType.AGENT);
+    }
+
+    @Test
+    void cancelTicketRejectsNonOwnerCitizen() {
+        AuthenticatedIdentity otherCitizen = new AuthenticatedIdentity(
+                "citizen-2", UUID.randomUUID(), "Vecino Dos", null, ModuleRole.CITIZEN);
+        Ticket ticket = ticket(TicketStatus.REGISTERED, Priority.LOW);
+        ticket.setCitizenId(UUID.randomUUID());
+
+        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+
+        CancelTicketRequest request = new CancelTicketRequest();
+        request.setReasonCode(CancellationReasonCode.WITHDRAWN_BY_CITIZEN);
+
+        assertThatThrownBy(() -> service.cancelTicket(ticketId, request, otherCitizen))
+                .isInstanceOf(UnauthorizedTicketOperationException.class);
+        verify(cancellationRepository, never()).save(any());
+    }
+
+    /**
+     * AREA_RESPONSIBLE no está en la lista de roles habilitados por
+     * Entidades V1.49 §24 ("Ciudadano owner / propietario anónimo
+     * acreditado / AGENT / ADMIN") a diferencia de GET /staff/tickets/{id}
+     * — no hereda acceso staff a este endpoint sobre un ticket ajeno.
+     */
+    @Test
+    void cancelTicketRejectsAreaResponsibleOnOthersTicket() {
+        AuthenticatedIdentity areaResponsible = new AuthenticatedIdentity(
+                "area-1", UUID.randomUUID(), "Responsable Uno", "obras-viales", ModuleRole.AREA_RESPONSIBLE);
+        Ticket ticket = ticket(TicketStatus.REGISTERED, Priority.LOW);
+        ticket.setCitizenId(UUID.randomUUID());
+
+        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+
+        CancelTicketRequest request = new CancelTicketRequest();
+        request.setReasonCode(CancellationReasonCode.OUT_OF_SCOPE);
+
+        assertThatThrownBy(() -> service.cancelTicket(ticketId, request, areaResponsible))
+                .isInstanceOf(UnauthorizedTicketOperationException.class);
+    }
+
+    /**
+     * ROUTED/IN_PROGRESS quedan afuera a propósito: esa cancelación llega
+     * por el flujo de integración (updateTicketStatus/REJECTED), no por
+     * este endpoint — ver TicketStatusUpdateService.
+     */
+    @Test
+    void cancelTicketRejectsWhenTicketAlreadyRouted() {
+        Ticket ticket = ticket(TicketStatus.ROUTED, Priority.LOW);
+        ticket.setCitizenId(UUID.randomUUID());
+
+        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+
+        CancelTicketRequest request = new CancelTicketRequest();
+        request.setReasonCode(CancellationReasonCode.OUT_OF_SCOPE);
+
+        assertThatThrownBy(() -> service.cancelTicket(ticketId, request, actor))
+                .isInstanceOf(TicketStateConflictException.class);
+        verify(cancellationRepository, never()).save(any());
+    }
+
+    /**
+     * Eventos V1.69 §2.1: en este punto (pre-ROUTED) nunca hubo un área
+     * externa involucrada, así que un ticket anónimo no publica
+     * ticketUpdated/CANCELLED — no hay a quién avisar del otro lado.
+     */
+    @Test
+    void cancelTicketSkipsOutboxEventForAnonymousTicket() {
+        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.LOW);
+        ticket.setAnonymous(true);
+
+        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+        when(activities.countByTicketId(ticketId)).thenReturn(0);
+
+        CancelTicketRequest request = new CancelTicketRequest();
+        request.setReasonCode(CancellationReasonCode.OUT_OF_SCOPE);
+
+        service.cancelTicket(ticketId, request, actor);
+
+        verify(outboxEventRepository, never()).save(any());
     }
 
     // ==================================================================
