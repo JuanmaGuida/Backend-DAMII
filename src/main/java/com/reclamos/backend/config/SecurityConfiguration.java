@@ -101,9 +101,21 @@ public class SecurityConfiguration {
                         // getStaffDetail).
                         .requestMatchers(HttpMethod.GET, "/api/staff/tickets/*/citizen-view")
                         .hasAnyRole("AGENT", "AREA_RESPONSIBLE", "ADMIN")
-                        .requestMatchers(HttpMethod.POST, "/api/tickets/*/review").authenticated()
-                        .requestMatchers(HttpMethod.PATCH, "/api/tickets/*/classification").authenticated()
-                        .requestMatchers(HttpMethod.POST, "/api/tickets/*/route").authenticated()
+                        // POST /review, PATCH /classification, POST /route (Story 2.3 -
+                        // Enforcement de permisos por rol en backend): son acciones de
+                        // triage. Guía funcional M2 §7 dice que la capacidad staff de
+                        // AREA_RESPONSIBLE se limita a "leer y enviar mensajes PUBLIC/
+                        // INTERNAL" — no incluye tomar, reclasificar ni derivar tickets,
+                        // ni siquiera los de su propia área. Por eso NO va en este
+                        // hasAnyRole, a diferencia de la bandeja/staff-detail (sólo
+                        // lectura). El bloqueo de "acción staff en ticket propio" (Entidades
+                        // §3.3: "la vista staff queda completamente read-only, incluso para
+                        // ADMIN") no se resuelve acá por rol — lo valida
+                        // TicketService.requireTriageAuthority.
+                        .requestMatchers(HttpMethod.POST, "/api/tickets/*/review").hasAnyRole("AGENT", "ADMIN")
+                        .requestMatchers(HttpMethod.PATCH, "/api/tickets/*/classification")
+                        .hasAnyRole("AGENT", "ADMIN")
+                        .requestMatchers(HttpMethod.POST, "/api/tickets/*/route").hasAnyRole("AGENT", "ADMIN")
                         .requestMatchers(HttpMethod.POST, "/api/tickets/*/information-request").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/tickets/*/information-response").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/tickets/*/resolution").authenticated()

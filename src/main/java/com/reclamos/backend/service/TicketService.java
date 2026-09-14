@@ -184,6 +184,7 @@ public class TicketService {
     @Transactional
     public TicketResponse startReview(UUID ticketId, AuthenticatedIdentity actor) {
         Ticket ticket = loadForUpdate(ticketId);
+        requireTriageAuthority(ticket, actor);
 
         if (ticket.getCurrentStatus() != TicketStatus.REGISTERED) {
             throw new TicketStateConflictException(
@@ -243,6 +244,7 @@ public class TicketService {
     @Transactional
     public TicketResponse correctClassification(UUID ticketId, Long newRequestTypeId, AuthenticatedIdentity actor) {
         Ticket ticket = loadForUpdate(ticketId);
+        requireTriageAuthority(ticket, actor);
 
         if (ticket.getCurrentStatus() != TicketStatus.IN_REVIEW || ticket.getClassificationFinalizedAt() != null) {
             throw new TicketStateConflictException(
@@ -321,6 +323,7 @@ public class TicketService {
     @Transactional
     public TicketResponse routeToArea(UUID ticketId, AuthenticatedIdentity actor) {
         Ticket ticket = loadForUpdate(ticketId);
+        requireTriageAuthority(ticket, actor);
 
         if (ticket.getCurrentStatus() != TicketStatus.IN_REVIEW) {
             throw new TicketStateConflictException(
@@ -687,6 +690,31 @@ public class TicketService {
                 && ticket.getCitizenId().equals(identity.citizenId());
         if (identity.role() == ModuleRole.AREA_RESPONSIBLE && !isOwnTicket
                 && !ticket.getResponsibleAreaId().equals(identity.areaId())) {
+            throw new UnauthorizedTicketOperationException();
+        }
+    }
+
+    /**
+     * Story 2.3 (Enforcement de permisos por rol en backend): autorización
+     * para las acciones de triage (startReview/correctClassification/
+     * routeToArea). El filtro de rol (sólo AGENT/ADMIN llegan hasta acá; ver
+     * SecurityConfiguration — AREA_RESPONSIBLE queda afuera de estas tres
+     * acciones porque la Guía funcional M2 §7 limita su capacidad staff a
+     * "leer y enviar mensajes PUBLIC/INTERNAL", sin triage, ni siquiera sobre
+     * tickets de su propia área) ya se resolvió antes de entrar acá. Lo que
+     * falta y no se puede expresar en el filtro es el bloqueo de "acción
+     * staff en ticket propio": Entidades V1.49 §3.3 dice que si
+     * currentUser.citizenId = ticket.citizenId, "la vista staff queda
+     * completamente read-only, incluso para ADMIN" — ningún AGENT/ADMIN
+     * puede triagear su propio ticket.
+     */
+    private void requireTriageAuthority(Ticket ticket, AuthenticatedIdentity actor) {
+        if (actor == null) {
+            throw new UnauthorizedTicketOperationException();
+        }
+        boolean isOwnTicket = !ticket.isAnonymous() && ticket.getCitizenId() != null
+                && ticket.getCitizenId().equals(actor.citizenId());
+        if (isOwnTicket) {
             throw new UnauthorizedTicketOperationException();
         }
     }
