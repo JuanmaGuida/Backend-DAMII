@@ -25,11 +25,11 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.mock.web.MockMultipartFile;
-import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 
@@ -38,12 +38,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
@@ -57,7 +59,7 @@ import static org.mockito.Mockito.when;
 /**
  * Suite fusionada tras el merge feature-nico -&gt; dev: cubre tanto Sprint 2
  * (startReview/correctClassification/routeToArea/listTickets, con AssertJ)
- * como create()/route() con SLA y adjuntos (con JUnit Assertions), sobre el
+ * como create() con SLA y adjuntos (con JUnit Assertions), sobre el
  * TicketService ya reconciliado. Un test de validación de ubicación
  * requerida ("falta la ubicación cuando el RequestType la exige") no se
  * pudo recuperar con su nombre/firma original de dev por cómo git fragmentó
@@ -84,7 +86,7 @@ class TicketServiceTest {
     @Mock
     private RiskCalculationService risks;
     @Mock
-    private OutboxEventRepository outboxEventRepository;
+    private TicketOutboxService ticketOutboxService;
     @Mock
     private TicketCancellationRepository cancellationRepository;
     @Mock
@@ -94,7 +96,9 @@ class TicketServiceTest {
     @Mock
     private TicketPublicIdGenerator publicIds;
     @Mock
-    private SlaCalculationService sla;
+    private TicketSlaService ticketSlaService;
+    @Mock
+    private InformationRequestService informationRequestService;
     private final AttachmentService attachments = mock(AttachmentService.class);
     @Mock
     private Clock clock;
@@ -110,20 +114,8 @@ class TicketServiceTest {
 
     @BeforeEach
     void setUp() {
-        ReflectionTestUtils.setField(service, "producerModuleId", "M2");
-        ReflectionTestUtils.setField(service, "producerService", "help-center-api");
-
         lenient().when(clock.instant()).thenReturn(NOW);
         lenient().when(publicIds.generate(NOW)).thenReturn("TK-2026-000123");
-
-        lenient().when(
-                sla.calculateDueAt(any(), any(Priority.class), eq(SlaType.FIRST_RESPONSE))
-        ).thenReturn(Optional.empty());
-
-        lenient().when(
-                sla.calculateResolutionDueAt(any(), any(Priority.class), any(TicketType.class))
-        ).thenReturn(Optional.empty());
-
         requestType = requestType(true);
 
         lenient().when(requestTypes.findById(1L)).thenReturn(Optional.of(requestType));
@@ -200,6 +192,22 @@ class TicketServiceTest {
                         && !citizen.subjectId().equals(activity.getActorId())
                         && activity.getSourceModuleId() == null
         ));
+        verify(ticketOutboxService).ticketCreated(argThat(ticket ->
+                ticket.getCurrentStatus() == TicketStatus.REGISTERED
+                        && citizen.citizenId().equals(ticket.getCitizenId())),
+                nullable(TicketLocation.class), eq(List.of()), nullable(Instant.class));
+    }
+
+    @Test
+    void identifiedSelfManagedCreationAlsoPublishesTicketCreated() {
+        requestType.setResponsibleAreaId("M2");
+        allowLowRisk();
+
+        service.create(request(), identity(), null);
+
+        verify(ticketOutboxService).ticketCreated(argThat(ticket ->
+                "M2".equals(ticket.getResponsibleAreaId())), nullable(TicketLocation.class), eq(List.of()),
+                nullable(Instant.class));
     }
 
     @Test
@@ -222,6 +230,54 @@ class TicketServiceTest {
         assertNotNull(service.create(request(), identity(), new MockMultipartFile[]{evidence}).ticketId());
 
         verify(attachments, times(2)).storeForTicket(any(), any(), argThat(items -> items.size() == 1), any());
+    }
+
+    @Test
+    void criticalPriorityCreatesRegisteredEscalatedTicketAndOrderedActivities() {
+        MockMultipartFile evidence = new MockMultipartFile(
+                "evidence", "photo.jpg", "image/jpeg", new byte[]{1});
+        when(risks.calculateRisk(any(RequestType.class), any(ResolvedForm.class)))
+                .thenReturn(new RiskAssessment(100, Risk.CRITICAL));
+        when(activities.countByTicketId(any())).thenReturn(1);
+
+        CreateTicketResponse response = service.create(
+                request(), identity(), new MockMultipartFile[]{evidence});
+
+        assertThat(response.status()).isEqualTo(TicketStatus.REGISTERED);
+        ArgumentCaptor<Ticket> ticketCaptor = ArgumentCaptor.forClass(Ticket.class);
+        verify(tickets, times(2)).save(ticketCaptor.capture());
+        Ticket ticket = ticketCaptor.getValue();
+        assertThat(ticket.getCurrentStatus()).isEqualTo(TicketStatus.REGISTERED);
+        assertThat(ticket.isEscalated()).isTrue();
+        assertThat(ticket.getEscalationReasonCode()).isEqualTo(EscalationReasonCode.CRITICAL_PRIORITY);
+        assertThat(ticket.getEscalatedAt()).isEqualTo(NOW);
+
+        ArgumentCaptor<TicketActivity> activityCaptor = ArgumentCaptor.forClass(TicketActivity.class);
+        verify(activities, times(2)).save(activityCaptor.capture());
+        assertThat(activityCaptor.getAllValues()).extracting(TicketActivity::getActionType)
+                .containsExactly(ActivityType.TICKET_CREATED, ActivityType.ESCALATED);
+        TicketActivity escalation = activityCaptor.getAllValues().get(1);
+        assertThat(escalation.getSequence()).isEqualTo(2);
+        assertThat(escalation.getActorType()).isEqualTo(ActorType.SYSTEM);
+        assertThat(escalation.getActorId()).isNull();
+        assertThat(escalation.getReasonCode()).isEqualTo("CRITICAL_PRIORITY");
+        assertThat(escalation.getPreviousStatus()).isEqualTo(TicketStatus.REGISTERED);
+        assertThat(escalation.getNewStatus()).isEqualTo(TicketStatus.REGISTERED);
+    }
+
+    @Test
+    void highPriorityDoesNotActivateAutomaticEscalation() {
+        MockMultipartFile evidence = new MockMultipartFile(
+                "evidence", "photo.jpg", "image/jpeg", new byte[]{1});
+        when(risks.calculateRisk(any(RequestType.class), any(ResolvedForm.class)))
+                .thenReturn(new RiskAssessment(62, Risk.HIGH));
+
+        service.create(request(), identity(), new MockMultipartFile[]{evidence});
+
+        verify(tickets).save(argThat(ticket -> !ticket.isEscalated()
+                && ticket.getEscalationReasonCode() == null
+                && ticket.getEscalatedAt() == null));
+        verify(activities).save(argThat(activity -> activity.getActionType() == ActivityType.TICKET_CREATED));
     }
 
     @Test
@@ -290,8 +346,11 @@ class TicketServiceTest {
 
         when(tickets.findByTrackingCodeHash(trackingCodes.hash(created.trackingCode())))
                 .thenReturn(Optional.of(ticket));
+        when(ticketSlaService.findDeadlineSnapshot(ticket))
+                .thenReturn(new TicketSlaService.DeadlineSnapshot(null, null));
 
-        var tracked = new TrackingService(tickets, trackingCodes).findByTrackingCode(created.trackingCode());
+        var tracked = new TrackingService(tickets, trackingCodes, ticketSlaService)
+                .findByTrackingCode(created.trackingCode());
 
         assertEquals(created.publicId(), tracked.getPublicId());
         assertEquals(created.status(), tracked.getStatus());
@@ -405,177 +464,57 @@ class TicketServiceTest {
     @Test
     void creationStoresCalculatedResolutionDueAt() {
         allowLowRisk();
-
-        Instant dueAt = Instant.parse("2026-09-04T18:00:00Z");
-        when(sla.calculateResolutionDueAt(clock.instant(), Priority.LOW, TicketType.REQUEST))
-                .thenReturn(Optional.of(dueAt));
-
-        service.create(request(), identity(), null);
-
-        verify(tickets).save(argThat(ticket -> dueAt.equals(ticket.getResolutionDueAt())));
-    }
-
-    @Test
-    void creationStoresFirstResponseDueAtFromCreatedAt() {
-        allowLowRisk();
-
-        Instant dueAt = Instant.parse("2026-09-04T14:00:00Z");
-        when(sla.calculateDueAt(clock.instant(), Priority.LOW, SlaType.FIRST_RESPONSE))
-                .thenReturn(Optional.of(dueAt));
+        TicketSla resolutionSla = new TicketSla();
+        Instant dueAt = NOW.plus(Duration.ofHours(12));
+        resolutionSla.setDueAt(dueAt);
+        when(ticketSlaService.startInitialResolutionCycle(any(Ticket.class), eq(NOW)))
+                .thenReturn(Optional.of(resolutionSla));
 
         service.create(request(), identity(), null);
 
-        verify(tickets).save(argThat(ticket -> dueAt.equals(ticket.getFirstResponseDueAt())));
+        verify(ticketSlaService).startInitialResolutionCycle(any(Ticket.class), eq(NOW));
+        verify(ticketOutboxService).ticketCreated(any(), any(), any(), eq(dueAt));
     }
 
     @Test
-    void creationWithoutPolicyStoresNullResolutionDueAt() {
+    void creationStoresNearDueDeadlineWithCleanMilestoneMarkers() {
         allowLowRisk();
 
         service.create(request(), identity(), null);
 
-        verify(tickets).save(argThat(ticket -> ticket.getResolutionDueAt() == null));
+        verify(ticketSlaService).startInitialResolutionCycle(any(Ticket.class), eq(NOW));
     }
 
     @Test
-    void criticalCreationUsesTheCriticalPolicyResult() {
+    void creationStartsFirstResponseCycleFromCreatedAt() {
+        allowLowRisk();
+
+        service.create(request(), identity(), null);
+
+        verify(ticketSlaService).startFirstResponseCycle(any(Ticket.class), eq(NOW));
+    }
+
+    @Test
+    void creationWithoutResolutionPolicyPublishesNullDerivedDeadline() {
+        allowLowRisk();
+
+        service.create(request(), identity(), null);
+
+        verify(ticketOutboxService).ticketCreated(any(), any(), any(), isNull());
+    }
+
+    @Test
+    void criticalCreationStartsResolutionCycleAndKeepsCriticalEscalation() {
         MockMultipartFile evidence = new MockMultipartFile(
                 "evidence", "photo.jpg", "image/jpeg", new byte[]{1});
-
-        Instant dueAt = Instant.parse("2026-09-04T16:00:00Z");
 
         when(risks.calculateRisk(any(RequestType.class), any(ResolvedForm.class)))
                 .thenReturn(new RiskAssessment(0, Risk.CRITICAL));
 
-        when(sla.calculateResolutionDueAt(clock.instant(), Priority.CRITICAL, TicketType.REQUEST))
-                .thenReturn(Optional.of(dueAt));
-
         service.create(request(), identity(), new MockMultipartFile[]{evidence});
 
-        verify(tickets).save(argThat(ticket ->
-                ticket.getCurrentPriority() == Priority.CRITICAL && dueAt.equals(ticket.getResolutionDueAt())
-        ));
-    }
-
-    // ==================================================================
-    // ---- route() ----
-    // ==================================================================
-
-    @Test
-    void routingRecalculatesWhenPolicyRequiresIt() {
-        UUID id = UUID.randomUUID();
-
-        Ticket ticket = new Ticket();
-        ticket.setCurrentPriority(Priority.CRITICAL);
-        ticket.setTicketType(TicketType.REQUEST);
-        ticket.setResolutionDueAt(Instant.parse("2026-09-04T13:00:00Z"));
-
-        Instant routedAt = Instant.parse("2026-09-05T12:00:00Z");
-        Instant dueAt = Instant.parse("2026-09-05T14:00:00Z");
-
-        ticket.setCreatedAt(clock.instant());
-
-        when(tickets.findByIdForUpdate(id)).thenReturn(Optional.of(ticket));
-        when(sla.calculateResolutionDueAt(clock.instant(), Priority.CRITICAL, TicketType.REQUEST))
-                .thenReturn(Optional.of(dueAt));
-        when(tickets.save(ticket)).thenReturn(ticket);
-
-        Ticket routed = service.route(id, "AREA-2", routedAt);
-
-        assertEquals(dueAt, routed.getResolutionDueAt());
-        assertEquals(TicketStatus.ROUTED, routed.getCurrentStatus());
-    }
-
-    @Test
-    void routingRecalculatesFromCreatedAtAndPreservesTheSameResult() {
-        UUID id = UUID.randomUUID();
-        Instant originalDueAt = Instant.parse("2026-09-06T12:00:00Z");
-        Ticket ticket = routedTicket(Priority.HIGH, originalDueAt);
-        ticket.setCreatedAt(clock.instant());
-
-        when(tickets.findByIdForUpdate(id)).thenReturn(Optional.of(ticket));
-        when(sla.calculateResolutionDueAt(clock.instant(), Priority.HIGH, TicketType.REQUEST))
-                .thenReturn(Optional.of(originalDueAt));
-        when(tickets.save(ticket)).thenReturn(ticket);
-
-        assertEquals(originalDueAt, service.route(id, "AREA-2", clock.instant()).getResolutionDueAt());
-
-        verify(sla).calculateResolutionDueAt(clock.instant(), Priority.HIGH, TicketType.REQUEST);
-    }
-
-    @Test
-    void routingSetsMissingDueAtFromCreatedAt() {
-        UUID id = UUID.randomUUID();
-        Ticket ticket = routedTicket(Priority.MEDIUM, null);
-        Instant dueAt = Instant.parse("2026-09-07T12:00:00Z");
-        ticket.setCreatedAt(clock.instant());
-
-        when(tickets.findByIdForUpdate(id)).thenReturn(Optional.of(ticket));
-        when(sla.calculateResolutionDueAt(clock.instant(), Priority.MEDIUM, TicketType.REQUEST))
-                .thenReturn(Optional.of(dueAt));
-        when(tickets.save(ticket)).thenReturn(ticket);
-
-        assertEquals(dueAt, service.route(id, "AREA-2", clock.instant()).getResolutionDueAt());
-    }
-
-    @Test
-    void routingAfterPriorityChangeStillUsesOriginalCreatedAt() {
-        UUID id = UUID.randomUUID();
-        Ticket ticket = routedTicket(Priority.HIGH, Instant.parse("2026-09-10T12:00:00Z"));
-        ticket.setCreatedAt(Instant.parse("2026-09-01T12:00:00Z"));
-
-        Instant recalculated = Instant.parse("2026-09-04T12:00:00Z");
-
-        when(tickets.findByIdForUpdate(id)).thenReturn(Optional.of(ticket));
-        when(sla.calculateResolutionDueAt(ticket.getCreatedAt(), Priority.HIGH, TicketType.REQUEST))
-                .thenReturn(Optional.of(recalculated));
-        when(tickets.save(ticket)).thenReturn(ticket);
-
-        assertEquals(recalculated, service.route(id, "AREA-2", clock.instant()).getResolutionDueAt());
-
-        verify(sla).calculateResolutionDueAt(ticket.getCreatedAt(), Priority.HIGH, TicketType.REQUEST);
-    }
-
-    @Test
-    void routingPreservesFirstResponseDueAt() {
-        UUID id = UUID.randomUUID();
-        Instant firstResponseDueAt = Instant.parse("2026-09-02T12:00:00Z");
-        Ticket ticket = routedTicket(Priority.MEDIUM, Instant.parse("2026-09-05T12:00:00Z"));
-        ticket.setCreatedAt(Instant.parse("2026-09-01T12:00:00Z"));
-        ticket.setFirstResponseDueAt(firstResponseDueAt);
-
-        when(tickets.findByIdForUpdate(id)).thenReturn(Optional.of(ticket));
-        when(sla.calculateResolutionDueAt(ticket.getCreatedAt(), Priority.MEDIUM, TicketType.REQUEST))
-                .thenReturn(Optional.of(ticket.getResolutionDueAt()));
-        when(tickets.save(ticket)).thenReturn(ticket);
-
-        Ticket routed = service.route(id, "AREA-2", clock.instant());
-
-        assertEquals(firstResponseDueAt, routed.getFirstResponseDueAt());
-        verify(sla, never()).calculateDueAt(any(), any(Priority.class), eq(SlaType.FIRST_RESPONSE));
-    }
-
-    @Test
-    void duplicateCannotBeRoutedOrReceiveAnIndependentSla() {
-        UUID id = UUID.randomUUID();
-        Ticket duplicate = routedTicket(Priority.HIGH, null);
-        duplicate.setCurrentStatus(TicketStatus.DUPLICATE);
-        duplicate.setCreatedAt(Instant.parse("2026-09-01T12:00:00Z"));
-
-        when(tickets.findByIdForUpdate(id)).thenReturn(Optional.of(duplicate));
-
-        assertThrows(InvalidTicketRequestException.class, () -> service.route(id, "AREA-2", clock.instant()));
-
-        verifyNoInteractions(sla);
-        verify(tickets, never()).save(any());
-    }
-
-    private Ticket routedTicket(Priority priority, Instant dueAt) {
-        Ticket ticket = new Ticket();
-        ticket.setCurrentPriority(priority);
-        ticket.setTicketType(TicketType.REQUEST);
-        ticket.setResolutionDueAt(dueAt);
-        return ticket;
+        verify(ticketSlaService).startInitialResolutionCycle(
+                argThat(ticket -> ticket.getCurrentPriority() == Priority.CRITICAL), eq(NOW));
     }
 
     // ==================================================================
@@ -715,17 +654,15 @@ class TicketServiceTest {
         assertThat(activity.getPreviousStatus()).isEqualTo(TicketStatus.REGISTERED);
         assertThat(activity.getNewStatus()).isEqualTo(TicketStatus.IN_REVIEW);
         assertThat(activity.getSequence()).isEqualTo(1);
-        // QA: la actividad tiene que reflejar la capacidad efectiva del actor
-        // (acá AGENT), no quedar hardcodeada.
+        assertThat(activity.getOccurredAt()).isEqualTo(NOW);
         assertThat(activity.getActorType()).isEqualTo(ActorType.AGENT);
+        assertThat(activity.getActorId()).isEqualTo(actor.citizenId().toString());
+        assertThat(activity.getActorId()).isNotEqualTo(actor.subjectId());
+        assertThat(ticket.getStatusChangedAt()).isEqualTo(NOW);
+        verify(ticketSlaService).completeFirstResponseCycle(ticket, NOW);
+        verify(ticketOutboxService).statusChanged(ticket, null, NOW);
     }
 
-    /**
-     * QA: recordActivity tenía ActorType.AGENT hardcodeado sin mirar el rol
-     * real del actor. Después del fix de Story 2.3, startReview sólo es
-     * alcanzable por AGENT o ADMIN (CITIZEN/AREA_RESPONSIBLE quedan afuera en
-     * SecurityConfiguration) — este test cubre el caso ADMIN.
-     */
     @Test
     void startReviewRecordsAdminAsActorTypeWhenActorIsAdmin() {
         Ticket ticket = ticket(TicketStatus.REGISTERED, Priority.MEDIUM);
@@ -744,6 +681,29 @@ class TicketServiceTest {
         ArgumentCaptor<TicketActivity> activityCaptor = ArgumentCaptor.forClass(TicketActivity.class);
         verify(activities).save(activityCaptor.capture());
         assertThat(activityCaptor.getValue().getActorType()).isEqualTo(ActorType.ADMIN);
+        assertThat(activityCaptor.getValue().getActorId()).isEqualTo(admin.citizenId().toString());
+    }
+
+    @Test
+    void startReviewPreservesCriticalEscalation() {
+        Ticket ticket = ticket(TicketStatus.REGISTERED, Priority.CRITICAL);
+        Instant escalatedAt = NOW.minusSeconds(60);
+        ticket.setEscalated(true);
+        ticket.setEscalationReasonCode(EscalationReasonCode.CRITICAL_PRIORITY);
+        ticket.setEscalatedAt(escalatedAt);
+        ModuleUser agentUser = new ModuleUser();
+        agentUser.setId(42L);
+        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+        when(moduleUsers.findByCitizenId(actor.citizenId())).thenReturn(Optional.of(agentUser));
+
+        TicketResponse response = service.startReview(ticketId, actor);
+
+        assertThat(response.getCurrentStatus()).isEqualTo(TicketStatus.IN_REVIEW);
+        assertThat(response.isEscalated()).isTrue();
+        assertThat(response.getEscalationReasonCode()).isEqualTo(EscalationReasonCode.CRITICAL_PRIORITY);
+        assertThat(response.getEscalatedAt()).isEqualTo(escalatedAt);
+        assertThat(ticket.getEscalatedAt()).isEqualTo(escalatedAt);
     }
 
     @Test
@@ -781,24 +741,38 @@ class TicketServiceTest {
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 
-    /**
-     * QA - Story 2.3: Entidades V1.49 §3.3 ("la vista staff queda
-     * completamente read-only, incluso para ADMIN" cuando currentUser.citizenId
-     * = ticket.citizenId) bloquea el triage de un AGENT/ADMIN sobre su propio
-     * ticket, aunque el estado sea válido.
-     */
     @Test
-    void startReviewRejectsTriageOnActorsOwnTicket() {
-        Ticket ticket = ticket(TicketStatus.REGISTERED, Priority.MEDIUM);
-        ticket.setCitizenId(actor.citizenId());
-        ticket.setAnonymous(false);
-        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+    void administrativeLifecycleRejectsCitizenAreaResponsibleAndStaffOwnerWithoutMutating() {
+        for (ModuleRole role : List.of(ModuleRole.CITIZEN, ModuleRole.AREA_RESPONSIBLE)) {
+            Ticket ticket = ticket(TicketStatus.REGISTERED, Priority.MEDIUM);
+            AuthenticatedIdentity unauthorized = new AuthenticatedIdentity(
+                    "subject-" + role, UUID.randomUUID(), role.name(), "M6", role);
+            when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
 
-        assertThatThrownBy(() -> service.startReview(ticketId, actor))
-                .isInstanceOf(UnauthorizedTicketOperationException.class);
+            assertThatThrownBy(() -> service.startReview(ticketId, unauthorized))
+                    .isInstanceOf(UnauthorizedTicketOperationException.class);
 
-        verify(activities, never()).save(any());
+            ticket.setCurrentStatus(TicketStatus.IN_REVIEW);
+            assertThatThrownBy(() -> service.correctClassification(ticketId, 20L, unauthorized))
+                    .isInstanceOf(UnauthorizedTicketOperationException.class);
+            assertThatThrownBy(() -> service.routeToArea(ticketId, unauthorized))
+                    .isInstanceOf(UnauthorizedTicketOperationException.class);
+        }
+
+        Ticket owned = ticket(TicketStatus.REGISTERED, Priority.MEDIUM);
+        UUID ownerId = UUID.randomUUID();
+        owned.setCitizenId(ownerId);
+        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(owned));
+        for (ModuleRole role : List.of(ModuleRole.AGENT, ModuleRole.ADMIN)) {
+            AuthenticatedIdentity owner = new AuthenticatedIdentity(
+                    "owner-" + role, ownerId, role.name(), null, role);
+            assertThatThrownBy(() -> service.startReview(ticketId, owner))
+                    .isInstanceOf(UnauthorizedTicketOperationException.class);
+        }
+
         verify(tickets, never()).save(any());
+        verify(activities, never()).save(any());
+        verifyNoInteractions(ticketOutboxService);
     }
 
     // ==================================================================
@@ -808,6 +782,8 @@ class TicketServiceTest {
     @Test
     void correctClassificationRecalculatesAreaAffectedCountFormTemplateAndPriorityFromNewRequestType() {
         Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.LOW);
+        Instant slaStart = NOW.minus(Duration.ofHours(1));
+        ticket.setCreatedAt(slaStart);
         String originalPublicId = ticket.getPublicId();
         // formData del RequestType viejo no debe sobrevivir a la reclasificación
         // — ver assertion de formData al final del test.
@@ -832,6 +808,11 @@ class TicketServiceTest {
         when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.of(location));
         when(activities.countByTicketId(ticketId)).thenReturn(0);
         when(forms.resolveActiveTemplate(newRequestType)).thenReturn(newFormTemplate);
+        TicketSla resolutionSla = new TicketSla();
+        Instant dueAt = NOW.plus(Duration.ofHours(24));
+        resolutionSla.setDueAt(dueAt);
+        when(ticketSlaService.recalculateInitialResolutionCycle(ticket, NOW))
+                .thenReturn(Optional.of(resolutionSla));
 
         TicketResponse response = service.correctClassification(ticketId, 20L, actor);
 
@@ -842,18 +823,16 @@ class TicketServiceTest {
         assertThat(ticket.getFormTemplateId()).isEqualTo(99L);
         assertThat(response.getRequestTypeCode()).isEqualTo("FLOODING");
         assertThat(ticket.getFormData()).isEmpty();
-
-        // QA: la actividad tiene que reflejar la capacidad efectiva del actor
-        // (acá AGENT), no quedar hardcodeada.
         ArgumentCaptor<TicketActivity> activityCaptor = ArgumentCaptor.forClass(TicketActivity.class);
         verify(activities).save(activityCaptor.capture());
         assertThat(activityCaptor.getValue().getActorType()).isEqualTo(ActorType.AGENT);
+        assertThat(activityCaptor.getValue().getActorId()).isEqualTo(actor.citizenId().toString());
+        verify(ticketSlaService).recalculateInitialResolutionCycle(ticket, NOW);
+        verify(ticketSlaService, never()).startFirstResponseCycle(any(), any());
+        verify(ticketSlaService, never()).completeFirstResponseCycle(any(), any());
+        verify(ticketOutboxService).contentUpdated(ticket, dueAt, NOW);
     }
 
-    /**
-     * QA: mismo caso que startReviewRecordsAdminAsActorTypeWhenActorIsAdmin,
-     * acá para correctClassification.
-     */
     @Test
     void correctClassificationRecordsAdminAsActorTypeWhenActorIsAdmin() {
         Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.LOW);
@@ -872,6 +851,23 @@ class TicketServiceTest {
         ArgumentCaptor<TicketActivity> activityCaptor = ArgumentCaptor.forClass(TicketActivity.class);
         verify(activities).save(activityCaptor.capture());
         assertThat(activityCaptor.getValue().getActorType()).isEqualTo(ActorType.ADMIN);
+        assertThat(activityCaptor.getValue().getActorId()).isEqualTo(admin.citizenId().toString());
+    }
+
+    @Test
+    void sameClassificationDoesNotWriteOrPublishContentUpdated() {
+        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.LOW);
+        RequestType current = ticket.getRequestType();
+        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+        when(requestTypes.findById(current.getId())).thenReturn(Optional.of(current));
+        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+
+        service.correctClassification(ticketId, current.getId(), actor);
+
+        verify(tickets, never()).save(any());
+        verify(activities, never()).save(any());
+        verify(ticketOutboxService, never()).contentUpdated(any(), any(), any());
+        verify(ticketSlaService, never()).recalculateInitialResolutionCycle(any(), any());
     }
 
     /**
@@ -883,6 +879,10 @@ class TicketServiceTest {
     @Test
     void correctClassificationCanLowerPriorityWhenNewRequestTypeHasLowerMinimumAndBaseRisk() {
         Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.CRITICAL);
+        Instant originalEscalatedAt = NOW.minusSeconds(1800);
+        ticket.setEscalated(true);
+        ticket.setEscalationReasonCode(EscalationReasonCode.CRITICAL_PRIORITY);
+        ticket.setEscalatedAt(originalEscalatedAt);
         RequestType newRequestType = requestTypeSprint2(20L, "FLOODING", "obras-hidraulicas",
                 Priority.LOW, Risk.LOW, new BigDecimal("0.1000"));
 
@@ -894,6 +894,55 @@ class TicketServiceTest {
         service.correctClassification(ticketId, 20L, actor);
 
         assertThat(ticket.getCurrentPriority()).isEqualTo(Priority.LOW);
+        assertThat(ticket.isEscalated()).isTrue();
+        assertThat(ticket.getEscalationReasonCode()).isEqualTo(EscalationReasonCode.CRITICAL_PRIORITY);
+        assertThat(ticket.getEscalatedAt()).isEqualTo(originalEscalatedAt);
+    }
+
+    @Test
+    void correctClassificationActivatesCriticalEscalationOnceWithoutChangingStatus() {
+        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.LOW);
+        RequestType newRequestType = requestTypeSprint2(20L, "CRITICAL_TYPE", "M6",
+                Priority.CRITICAL, Risk.CRITICAL, new BigDecimal("0.1000"));
+        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+        when(requestTypes.findById(20L)).thenReturn(Optional.of(newRequestType));
+        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+        when(activities.countByTicketId(ticketId)).thenReturn(3, 4);
+
+        TicketResponse response = service.correctClassification(ticketId, 20L, actor);
+
+        assertThat(response.getCurrentStatus()).isEqualTo(TicketStatus.IN_REVIEW);
+        assertThat(ticket.isEscalated()).isTrue();
+        assertThat(ticket.getEscalationReasonCode()).isEqualTo(EscalationReasonCode.CRITICAL_PRIORITY);
+        assertThat(ticket.getEscalatedAt()).isEqualTo(NOW);
+        ArgumentCaptor<TicketActivity> captor = ArgumentCaptor.forClass(TicketActivity.class);
+        verify(activities, times(2)).save(captor.capture());
+        assertThat(captor.getAllValues()).extracting(TicketActivity::getActionType)
+                .containsExactly(ActivityType.REQUEST_TYPE_CHANGED, ActivityType.ESCALATED);
+        assertThat(captor.getAllValues().get(1).getSequence()).isEqualTo(5);
+        assertThat(captor.getAllValues().get(1).getActorType()).isEqualTo(ActorType.SYSTEM);
+        assertThat(captor.getAllValues().get(1).getActorId()).isNull();
+    }
+
+    @Test
+    void correctClassificationDoesNotRestartExistingCriticalEscalation() {
+        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.CRITICAL);
+        Instant originalEscalatedAt = NOW.minusSeconds(3600);
+        ticket.setEscalated(true);
+        ticket.setEscalationReasonCode(EscalationReasonCode.CRITICAL_PRIORITY);
+        ticket.setEscalatedAt(originalEscalatedAt);
+        RequestType newRequestType = requestTypeSprint2(20L, "CRITICAL_TYPE", "M6",
+                Priority.CRITICAL, Risk.CRITICAL, new BigDecimal("0.1000"));
+        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+        when(requestTypes.findById(20L)).thenReturn(Optional.of(newRequestType));
+        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+
+        service.correctClassification(ticketId, 20L, actor);
+
+        assertThat(ticket.getEscalatedAt()).isEqualTo(originalEscalatedAt);
+        assertThat(ticket.getEscalationReasonCode()).isEqualTo(EscalationReasonCode.CRITICAL_PRIORITY);
+        verify(activities).save(argThat(activity -> activity.getActionType() == ActivityType.REQUEST_TYPE_CHANGED));
+        verify(activities, never()).save(argThat(activity -> activity.getActionType() == ActivityType.ESCALATED));
     }
 
     @Test
@@ -994,31 +1043,8 @@ class TicketServiceTest {
 
         service.correctClassification(ticketId, 20L, actor);
 
-        ArgumentCaptor<OutboxEvent> eventCaptor = ArgumentCaptor.forClass(OutboxEvent.class);
-        verify(outboxEventRepository).save(eventCaptor.capture());
-        OutboxEvent event = eventCaptor.getValue();
-        assertThat(event.getEventType()).isEqualTo("ticketUpdated");
-        assertThat(event.getUpdateType()).isEqualTo(TicketUpdatedType.CONTENT_UPDATED);
-        assertThat(event.getTicket()).isSameAs(ticket);
-
-        @SuppressWarnings("unchecked")
-        Map<String, Object> data = (Map<String, Object>) event.getPayload().get("data");
-        assertThat(data.get("ticketId")).isEqualTo(ticketId);
-        assertThat(data.get("publicId")).isEqualTo(originalPublicId);
-        assertThat(data.get("updateType")).isEqualTo("CONTENT_UPDATED");
-        assertThat(data.get("responsibleAreaId")).isEqualTo("obras-hidraulicas");
-        // QA: tiene que ser el "now" de la reclasificación, no el updatedAt
-        // viejo que quedó fijado arriba a propósito.
-        assertThat(data.get("updatedAt")).isEqualTo(NOW.toString());
-
-        @SuppressWarnings("unchecked")
-        Map<String, Object> details = (Map<String, Object>) data.get("details");
-        @SuppressWarnings("unchecked")
-        Map<String, Object> content = (Map<String, Object>) details.get("content");
-        assertThat(content.get("requestType")).isEqualTo("FLOODING");
-        assertThat(content.get("summary")).isEqualTo(ticket.getSummary());
-        assertThat(content.get("description")).isEqualTo(ticket.getDescription());
-        assertThat(content.get("formData")).isEqualTo(Map.of());
+        assertThat(ticket.getPublicId()).isEqualTo(originalPublicId);
+        verify(ticketOutboxService, times(1)).contentUpdated(ticket, null, NOW);
     }
 
     /**
@@ -1042,7 +1068,7 @@ class TicketServiceTest {
 
         service.correctClassification(ticketId, 20L, actor);
 
-        verify(outboxEventRepository, never()).save(any());
+        verify(ticketOutboxService, times(1)).contentUpdated(ticket, null, NOW);
     }
 
     // ==================================================================
@@ -1050,18 +1076,18 @@ class TicketServiceTest {
     // ==================================================================
 
     @Test
-    void routeToAreaMovesInReviewTicketToRoutedAndWritesOutboxEvent() {
+    void routeToAreaMovesInReviewTicketToRoutedAndWritesRoutedEvent() {
         Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.HIGH);
         ticket.setResponsibleAreaId("M6");
         String originalPublicId = ticket.getPublicId();
-        // QA (smoke ROUTED): mismo caso que en CONTENT_UPDATED — data.updatedAt
-        // no puede salir de ticket.getUpdatedAt() (@UpdateTimestamp, todavía
-        // sin refrescar en este punto de la transacción).
-        ticket.setUpdatedAt(Instant.parse("2020-01-01T00:00:00Z"));
 
         when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
         when(activities.countByTicketId(ticketId)).thenReturn(0);
         when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+        TicketSla resolutionSla = new TicketSla();
+        Instant dueAt = NOW.plus(Duration.ofHours(36));
+        resolutionSla.setDueAt(dueAt);
+        when(ticketSlaService.findLatestResolutionCycle(ticket)).thenReturn(Optional.of(resolutionSla));
 
         TicketResponse response = service.routeToArea(ticketId, actor);
 
@@ -1073,27 +1099,34 @@ class TicketServiceTest {
         ArgumentCaptor<TicketActivity> activityCaptor = ArgumentCaptor.forClass(TicketActivity.class);
         verify(activities).save(activityCaptor.capture());
         assertThat(activityCaptor.getValue().getActionType()).isEqualTo(ActivityType.ROUTED);
-        // QA: la actividad tiene que reflejar la capacidad efectiva del actor
-        // (acá AGENT), no quedar hardcodeada.
         assertThat(activityCaptor.getValue().getActorType()).isEqualTo(ActorType.AGENT);
+        assertThat(activityCaptor.getValue().getActorId()).isEqualTo(actor.citizenId().toString());
 
-        ArgumentCaptor<OutboxEvent> eventCaptor = ArgumentCaptor.forClass(OutboxEvent.class);
-        verify(outboxEventRepository).save(eventCaptor.capture());
-        OutboxEvent event = eventCaptor.getValue();
-        assertThat(event.getEventType()).isEqualTo("ticketUpdated");
-        assertThat(event.getTicket()).isSameAs(ticket);
-        @SuppressWarnings("unchecked")
-        Map<String, Object> data = (Map<String, Object>) event.getPayload().get("data");
-        assertThat(data.get("ticketId")).isEqualTo(ticketId);
-        assertThat(data.get("publicId")).isEqualTo(originalPublicId);
-        assertThat(data.get("updateType")).isEqualTo("ROUTED");
-        assertThat(data.get("responsibleAreaId")).isEqualTo("M6");
-        assertThat(event.getPayload().get("subject")).isEqualTo("tickets/" + ticketId);
-        assertThat(data.get("updatedAt")).isEqualTo(NOW.toString());
+        verify(ticketOutboxService).routed(ticket, null, dueAt, NOW);
+        verify(ticketOutboxService, never()).statusChanged(any(), any(), any());
     }
 
     @Test
-    void routeToAreaSkipsOutboxWhenAreaIsSelfManaged() {
+    void routeToAreaPreservesEscalationAndIncludesItInOutboxSnapshot() {
+        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.CRITICAL);
+        Instant escalatedAt = NOW.minusSeconds(600);
+        ticket.setResponsibleAreaId("M6");
+        ticket.setEscalated(true);
+        ticket.setEscalationReasonCode(EscalationReasonCode.CRITICAL_PRIORITY);
+        ticket.setEscalatedAt(escalatedAt);
+        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+
+        TicketResponse response = service.routeToArea(ticketId, actor);
+
+        assertThat(response.getCurrentStatus()).isEqualTo(TicketStatus.ROUTED);
+        assertThat(response.isEscalated()).isTrue();
+        assertThat(response.getEscalatedAt()).isEqualTo(escalatedAt);
+        verify(ticketOutboxService).routed(ticket, null, null, NOW);
+    }
+
+    @Test
+    void routeToAreaStartsSelfManagedWorkWithoutRoutedActivityOrEvent() {
         Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.LOW);
         ticket.setResponsibleAreaId("M2");
 
@@ -1101,9 +1134,14 @@ class TicketServiceTest {
         when(activities.countByTicketId(ticketId)).thenReturn(0);
         when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
 
-        service.routeToArea(ticketId, actor);
+        TicketResponse response = service.routeToArea(ticketId, actor);
 
-        verify(outboxEventRepository, never()).save(any());
+        assertThat(response.getCurrentStatus()).isEqualTo(TicketStatus.IN_PROGRESS);
+        assertThat(ticket.getCurrentStatus()).isNotEqualTo(TicketStatus.ROUTED);
+        verify(activities).save(argThat(activity -> activity.getActionType() == ActivityType.STATE_CHANGED
+                && activity.getNewStatus() == TicketStatus.IN_PROGRESS));
+        verify(ticketOutboxService, never()).routed(any(), any(), any(), any());
+        verify(ticketOutboxService).statusChanged(ticket, null, NOW);
     }
 
     @Test
@@ -1114,7 +1152,7 @@ class TicketServiceTest {
         assertThatThrownBy(() -> service.routeToArea(ticketId, actor))
                 .isInstanceOf(TicketStateConflictException.class);
 
-        verify(outboxEventRepository, never()).save(any());
+        verifyNoInteractions(ticketOutboxService);
     }
 
     /**
@@ -1132,7 +1170,7 @@ class TicketServiceTest {
         assertThatThrownBy(() -> service.routeToArea(ticketId, actor))
                 .isInstanceOf(UnauthorizedTicketOperationException.class);
 
-        verify(outboxEventRepository, never()).save(any());
+        verifyNoInteractions(ticketOutboxService);
         verify(tickets, never()).save(any());
     }
 
@@ -1190,6 +1228,22 @@ class TicketServiceTest {
         assertThat(ticket.getClassificationFinalizedAt()).isEqualTo(firstFinalization);
     }
 
+    @Test
+    void routeToAreaAuditsAdminCapabilityAndCitizenId() {
+        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.LOW);
+        ticket.setResponsibleAreaId("M6");
+        AuthenticatedIdentity admin = new AuthenticatedIdentity(
+                "admin-subject", UUID.randomUUID(), "Admin", null, ModuleRole.ADMIN);
+        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+
+        service.routeToArea(ticketId, admin);
+
+        verify(activities).save(argThat(activity -> activity.getActorType() == ActorType.ADMIN
+                && admin.citizenId().toString().equals(activity.getActorId())
+                && !admin.subjectId().equals(activity.getActorId())));
+    }
+
     // ==================================================================
     // ---- cancelTicket ----
     // ==================================================================
@@ -1237,18 +1291,11 @@ class TicketServiceTest {
         assertThat(activityCaptor.getValue().getActionType()).isEqualTo(ActivityType.CANCELLED);
         assertThat(activityCaptor.getValue().getActorType()).isEqualTo(ActorType.CITIZEN);
 
-        ArgumentCaptor<OutboxEvent> eventCaptor = ArgumentCaptor.forClass(OutboxEvent.class);
-        verify(outboxEventRepository).save(eventCaptor.capture());
-        OutboxEvent event = eventCaptor.getValue();
-        assertThat(event.getUpdateType()).isEqualTo(TicketUpdatedType.CANCELLED);
-        @SuppressWarnings("unchecked")
-        Map<String, Object> data = (Map<String, Object>) event.getPayload().get("data");
-        @SuppressWarnings("unchecked")
-        Map<String, Object> details = (Map<String, Object>) data.get("details");
-        @SuppressWarnings("unchecked")
-        Map<String, Object> cancellationDetails = (Map<String, Object>) details.get("cancellation");
-        assertThat(cancellationDetails.get("reasonCode")).isEqualTo("WITHDRAWN_BY_CITIZEN");
-        assertThat(data.get("updatedAt")).isEqualTo(NOW.toString());
+        assertThat(cancellation.getCancelledById()).isEqualTo(owner.citizenId().toString());
+        assertThat(activityCaptor.getValue().getActorId()).isEqualTo(owner.citizenId().toString());
+        verify(ticketSlaService).terminateActiveCycles(ticket, NOW);
+        verify(ticketOutboxService, times(1)).cancelled(ticket,
+                CancellationReasonCode.WITHDRAWN_BY_CITIZEN, "Ya no es necesario", true, NOW);
     }
 
     @Test
@@ -1269,6 +1316,10 @@ class TicketServiceTest {
         ArgumentCaptor<TicketCancellation> cancellationCaptor = ArgumentCaptor.forClass(TicketCancellation.class);
         verify(cancellationRepository).save(cancellationCaptor.capture());
         assertThat(cancellationCaptor.getValue().getCancelledByType()).isEqualTo(ActorType.AGENT);
+        assertThat(cancellationCaptor.getValue().getCancelledById()).isEqualTo(actor.citizenId().toString());
+        verify(informationRequestService).cancelPendingBecauseTicketTerminated(ticket);
+        verify(ticketSlaService).terminateActiveCycles(ticket, NOW);
+        verify(ticketOutboxService).cancelled(ticket, CancellationReasonCode.OUT_OF_SCOPE, null, true, NOW);
     }
 
     @Test
@@ -1349,7 +1400,7 @@ class TicketServiceTest {
 
         service.cancelTicket(ticketId, request, actor);
 
-        verify(outboxEventRepository, never()).save(any());
+        verify(ticketOutboxService).cancelled(ticket, CancellationReasonCode.OUT_OF_SCOPE, null, true, NOW);
     }
 
     // ==================================================================
@@ -1373,11 +1424,14 @@ class TicketServiceTest {
 
         when(tickets.findAll(any(Specification.class), any(Pageable.class))).thenReturn(page);
         when(locations.findAllByTicket_IdIn(anyList())).thenReturn(List.of(location));
+        when(ticketSlaService.findLatestResolutionCycles(page.getContent())).thenReturn(Map.of());
 
         Page<TicketResponse> result = service.listTickets(filter, pageable);
 
         assertThat(result.getContent()).hasSize(1);
         assertThat(result.getContent().get(0).getNeighborhoodName()).isEqualTo("Recoleta");
+        verify(ticketSlaService).findLatestResolutionCycles(page.getContent());
+        verify(ticketSlaService, never()).findLatestResolutionCycle(any());
     }
 
     @Test
@@ -1390,6 +1444,7 @@ class TicketServiceTest {
 
         when(tickets.findAll(any(Specification.class), any(Pageable.class))).thenReturn(page);
         when(locations.findAllByTicket_IdIn(anyList())).thenReturn(List.of());
+        when(ticketSlaService.findLatestResolutionCycles(page.getContent())).thenReturn(Map.of());
 
         Page<TicketResponse> result = service.listTickets(filter, pageable);
 

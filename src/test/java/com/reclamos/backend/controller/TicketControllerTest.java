@@ -37,6 +37,7 @@ import java.util.UUID;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -160,7 +161,7 @@ class TicketControllerTest {
     }
 
     @Test
-    void listIsReachableForEveryStaffRole() throws Exception {
+    void listIsReachableOnlyForGlobalAdministrativeRoles() throws Exception {
         TicketResponse response = new TicketResponse();
         response.setId(UUID.randomUUID());
         Page<TicketResponse> page = new PageImpl<>(List.of(response));
@@ -169,7 +170,7 @@ class TicketControllerTest {
         mockMvc.perform(get("/api/tickets").with(authentication(AGENT_AUTHENTICATION)))
                 .andExpect(status().isOk());
         mockMvc.perform(get("/api/tickets").with(authentication(AREA_RESPONSIBLE_AUTHENTICATION)))
-                .andExpect(status().isOk());
+                .andExpect(status().isForbidden());
         mockMvc.perform(get("/api/tickets").with(authentication(ADMIN_AUTHENTICATION)))
                 .andExpect(status().isOk());
     }
@@ -439,5 +440,30 @@ class TicketControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void citizenAndAreaResponsibleCannotUseAdministrativeLifecycleEndpoints() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+        for (ModuleRole role : List.of(ModuleRole.CITIZEN, ModuleRole.AREA_RESPONSIBLE)) {
+            UsernamePasswordAuthenticationToken authentication = authenticationFor(role);
+            mockMvc.perform(post("/api/tickets/{ticketId}/review", ticketId).with(authentication(authentication)))
+                    .andExpect(status().isForbidden());
+            mockMvc.perform(patch("/api/tickets/{ticketId}/classification", ticketId)
+                            .with(authentication(authentication))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"requestTypeId\":20}"))
+                    .andExpect(status().isForbidden());
+            mockMvc.perform(post("/api/tickets/{ticketId}/route", ticketId).with(authentication(authentication)))
+                    .andExpect(status().isForbidden());
+        }
+        verifyNoInteractions(ticketService);
+    }
+
+    private UsernamePasswordAuthenticationToken authenticationFor(ModuleRole role) {
+        AuthenticatedIdentity identity = new AuthenticatedIdentity(
+                "subject-" + role, UUID.randomUUID(), role.name(), "M6", role);
+        return new UsernamePasswordAuthenticationToken(identity, null,
+                List.of(new SimpleGrantedAuthority("ROLE_" + role.name())));
     }
 }

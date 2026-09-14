@@ -13,11 +13,13 @@ import com.reclamos.backend.repository.TicketRepository;
 import com.reclamos.backend.repository.TicketResolutionRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -30,14 +32,16 @@ class TicketResolutionServiceTest {
     private final TicketRepository tickets = mock(TicketRepository.class);
     private final TicketResolutionRepository resolutions = mock(TicketResolutionRepository.class);
     private final TicketActivityRepository activities = mock(TicketActivityRepository.class);
+    private final TicketOutboxService outbox = mock(TicketOutboxService.class);
+    private final TicketSlaService ticketSlaService = mock(TicketSlaService.class);
     private TicketResolutionService service;
     private Ticket ticket;
 
     @BeforeEach
     void setUp() {
-        reset(tickets, resolutions, activities);
+        reset(tickets, resolutions, activities, outbox, ticketSlaService);
         service = new TicketResolutionService(tickets, resolutions, activities,
-                Clock.fixed(NOW, ZoneOffset.UTC), Duration.ofDays(3));
+                Clock.fixed(NOW, ZoneOffset.UTC), Duration.ofDays(3), ticketSlaService, outbox);
         ticket = new Ticket();
         ticket.setId(UUID.randomUUID());
         ticket.setCitizenId(UUID.randomUUID());
@@ -72,6 +76,7 @@ class TicketResolutionServiceTest {
                 && "M2".equals(value.getSourceModuleId())
                 && "CITIZEN_CONFIRMED".equals(value.getReasonCode())
                 && NOW.equals(value.getOccurredAt())));
+        verify(resolutions, never()).save(any());
     }
 
     @Test
@@ -96,6 +101,8 @@ class TicketResolutionServiceTest {
                 && value.getReasonCode() == null
                 && "El problema continúa".equals(value.getMessage())
                 && NOW.equals(value.getOccurredAt())));
+        verify(outbox).reopened(ticket, "El problema continúa", NOW);
+        verify(resolutions, never()).save(any());
     }
 
     @Test
@@ -167,6 +174,7 @@ class TicketResolutionServiceTest {
         assertEquals(NOW, ticket.getStatusChangedAt());
         assertEquals(NOW.plus(Duration.ofDays(3)), ticket.getResolutionConfirmationDueAt());
         verify(resolutions).save(argThat(value -> value.getTicket() == ticket
+                && value.getResolutionNumber() == 1
                 && value.getType() == ResolutionType.ACTION_COMPLETED
                 && "Trabajo finalizado".equals(value.getPublicMessage())
                 && "Verificado".equals(value.getInternalMessage())
@@ -175,6 +183,7 @@ class TicketResolutionServiceTest {
                 && !identity.subjectId().equals(value.getResolvedById())
                 && "M2".equals(value.getResolvedByModuleId())
                 && NOW.equals(value.getResolvedAt())));
+        verify(resolutions).findMaxResolutionNumber(ticket.getId());
         verify(activities).save(argThat(value -> value.getActionType() == ActivityType.RESOLVED
                 && value.getPreviousStatus() == TicketStatus.IN_PROGRESS
                 && value.getNewStatus() == TicketStatus.RESOLVED
@@ -184,6 +193,55 @@ class TicketResolutionServiceTest {
                 && "ACTION_COMPLETED".equals(value.getReasonCode())
                 && "Trabajo finalizado".equals(value.getMessage())
                 && NOW.equals(value.getOccurredAt())));
+        verify(outbox).resolved(ticket, ResolutionType.ACTION_COMPLETED, "Trabajo finalizado", NOW);
+    }
+
+    @Test
+    void resolutionNumberAdvancesIndependentlyThroughSecondAndThirdResolution() {
+        when(resolutions.findMaxResolutionNumber(ticket.getId()))
+                .thenReturn(Optional.empty(), Optional.of(1), Optional.of(2));
+        AuthenticatedIdentity owner = identity(ModuleRole.CITIZEN, ticket.getCitizenId());
+
+        service.resolveManually(ticket.getId(), request(), agent());
+        service.reopen(ticket.getId(), new ReopenTicketRequest("Primera reapertura"), owner);
+        service.resolveManually(ticket.getId(), request(), agent());
+        service.reopen(ticket.getId(), new ReopenTicketRequest("Segunda reapertura"), owner);
+        service.resolveManually(ticket.getId(), request(), agent());
+
+        ArgumentCaptor<TicketResolution> captor = ArgumentCaptor.forClass(TicketResolution.class);
+        verify(resolutions, times(3)).save(captor.capture());
+        assertEquals(List.of(1, 2, 3), captor.getAllValues().stream()
+                .map(TicketResolution::getResolutionNumber).toList());
+        verify(ticketSlaService, times(3)).completeActiveResolutionCycle(ticket, NOW);
+        verify(ticketSlaService, times(2)).startReopenedResolutionCycle(ticket, NOW);
+    }
+
+    @Test
+    void differentTicketsEachStartAtResolutionNumberOne() {
+        Ticket other = new Ticket();
+        other.setId(UUID.randomUUID());
+        other.setCitizenId(UUID.randomUUID());
+        other.setResponsibleAreaId("M2");
+        other.setCurrentStatus(TicketStatus.IN_PROGRESS);
+        when(tickets.findByIdForUpdate(other.getId())).thenReturn(Optional.of(other));
+
+        service.resolveManually(ticket.getId(), request(), agent());
+        service.resolveManually(other.getId(), request(), agent());
+
+        ArgumentCaptor<TicketResolution> captor = ArgumentCaptor.forClass(TicketResolution.class);
+        verify(resolutions, times(2)).save(captor.capture());
+        assertEquals(List.of(1, 1), captor.getAllValues().stream()
+                .map(TicketResolution::getResolutionNumber).toList());
+    }
+
+    @Test
+    void resolutionNumberUsesResolutionHistoryWhenReopenCountHasDiverged() {
+        ticket.setReopenCount(41);
+        when(resolutions.findMaxResolutionNumber(ticket.getId())).thenReturn(Optional.of(7));
+
+        service.resolveManually(ticket.getId(), request(), agent());
+
+        verify(resolutions).save(argThat(value -> value.getResolutionNumber() == 8));
     }
 
     @Test
@@ -192,6 +250,31 @@ class TicketResolutionServiceTest {
         service.resolveManually(ticket.getId(), request(), identity);
         verify(resolutions).save(argThat(value -> value.getResolvedByType() == ActorType.ADMIN));
         verify(activities).save(argThat(value -> value.getActorType() == ActorType.ADMIN));
+    }
+
+    @Test
+    void resolutionProcessesPendingSlaUsingTheEffectiveResolutionTime() {
+        service = new TicketResolutionService(tickets, resolutions, activities,
+                Clock.fixed(NOW, ZoneOffset.UTC), Duration.ofDays(3), ticketSlaService, outbox);
+
+        service.resolveManually(ticket.getId(), request(), agent());
+
+        verify(ticketSlaService).completeActiveResolutionCycle(ticket, NOW);
+    }
+
+    @Test
+    void reopenStartsANewResolutionSlaCycle() {
+        TicketSlaService ticketSlaService = mock(TicketSlaService.class);
+        ticket.setCurrentStatus(TicketStatus.RESOLVED);
+        ticket.setCurrentPriority(Priority.HIGH);
+        ticket.setTicketType(TicketType.REQUEST);
+        service = new TicketResolutionService(tickets, resolutions, activities,
+                Clock.fixed(NOW, ZoneOffset.UTC), Duration.ofDays(3), ticketSlaService, outbox);
+
+        service.reopen(ticket.getId(), new ReopenTicketRequest("El problema continúa"),
+                identity(ModuleRole.CITIZEN, ticket.getCitizenId()));
+
+        verify(ticketSlaService).startReopenedResolutionCycle(ticket, NOW);
     }
 
     @Test
@@ -246,9 +329,9 @@ class TicketResolutionServiceTest {
         Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
 
         assertThrows(IllegalArgumentException.class, () -> new TicketResolutionService(
-                tickets, resolutions, activities, clock, Duration.ZERO));
+                tickets, resolutions, activities, clock, Duration.ZERO, ticketSlaService, outbox));
         assertThrows(IllegalArgumentException.class, () -> new TicketResolutionService(
-                tickets, resolutions, activities, clock, Duration.ofSeconds(-1)));
+                tickets, resolutions, activities, clock, Duration.ofSeconds(-1), ticketSlaService, outbox));
     }
 
     private void verifyNoPersistenceAndUnchanged(TicketStatus status) {

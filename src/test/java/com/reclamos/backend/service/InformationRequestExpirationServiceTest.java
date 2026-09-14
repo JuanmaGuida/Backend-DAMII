@@ -28,14 +28,16 @@ class InformationRequestExpirationServiceTest {
     private final InformationRequestRepository requests = mock(InformationRequestRepository.class);
     private final TicketCancellationRepository cancellations = mock(TicketCancellationRepository.class);
     private final TicketActivityRepository activities = mock(TicketActivityRepository.class);
+    private final TicketSlaService ticketSlaService = mock(TicketSlaService.class);
+    private final TicketOutboxService outbox = mock(TicketOutboxService.class);
     private final InformationRequestExpirationService service = new InformationRequestExpirationService(
-            tickets, requests, cancellations, activities);
+            tickets, requests, cancellations, activities, ticketSlaService, outbox);
     private Ticket ticket;
     private InformationRequest request;
 
     @BeforeEach
     void setUp() {
-        reset(tickets, requests, cancellations, activities);
+        reset(tickets, requests, cancellations, activities, ticketSlaService, outbox);
         ticket = new Ticket();
         ticket.setId(UUID.randomUUID());
         ticket.setCurrentStatus(TicketStatus.PENDING_INFORMATION);
@@ -62,6 +64,9 @@ class InformationRequestExpirationServiceTest {
                 && value.getCancelledByType() == ActorType.SYSTEM));
         verify(activities).save(argThat(value -> value.getActionType() == ActivityType.CANCELLED
                 && value.getSequence() == 1));
+        verify(ticketSlaService).terminateActiveCycles(ticket, NOW);
+        verify(outbox).cancelled(ticket, CancellationReasonCode.INFO_TIMEOUT,
+                "El ticket fue cancelado por falta de respuesta dentro del plazo", true, NOW);
     }
 
     @Test
@@ -77,5 +82,18 @@ class InformationRequestExpirationServiceTest {
         verify(requests, never()).save(any());
         verify(tickets, never()).save(any());
         verifyNoInteractions(cancellations, activities);
+    }
+
+    @Test
+    void cancelledRequestIsNotExpiredOrCancelledAgain() {
+        request.setStatus(InformationRequestStatus.CANCELLED);
+
+        service.expireIfDue(request.getId(), ticket.getId(), NOW);
+
+        assertEquals(InformationRequestStatus.CANCELLED, request.getStatus());
+        assertEquals(TicketStatus.PENDING_INFORMATION, ticket.getCurrentStatus());
+        verify(requests, never()).save(any());
+        verify(tickets, never()).save(any());
+        verifyNoInteractions(cancellations, activities, ticketSlaService, outbox);
     }
 }

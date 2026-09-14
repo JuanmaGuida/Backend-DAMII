@@ -295,6 +295,8 @@ paths:
           $ref: '#/components/responses/InvalidRequest'
         '401':
           $ref: '#/components/responses/InvalidToken'
+        '403':
+          $ref: '#/components/responses/Forbidden'
     post:
       tags: [Tickets]
       summary: Crear un ticket
@@ -486,7 +488,9 @@ paths:
       summary: Tomar un ticket a revisión
       description: |
         Transición REGISTERED -> IN_REVIEW; asigna el agente autenticado como
-        assignedAgent si el ticket todavía no tiene uno asignado (Story 3.2).
+        assignedAgent si el ticket todavía no tiene uno asignado. Requiere rol
+        AGENT o ADMIN y no permite usar capacidad administrativa sobre un ticket
+        propio (Story 3.2).
       operationId: startTicketReview
       security:
         - bearerAuth: [ ]
@@ -501,6 +505,8 @@ paths:
                 $ref: '#/components/schemas/TicketResponse'
         '401':
           $ref: '#/components/responses/InvalidToken'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
@@ -513,7 +519,8 @@ paths:
         Permite reclasificar el RequestType durante la primera revisión del
         ticket (antes de derivarlo a un área), recalculando área responsable,
         cantidad estimada de afectados, plantilla de formulario, prioridad y
-        el SLA inicial (Story 3.2).
+        el SLA inicial (Story 3.2). Requiere rol AGENT o ADMIN y no permite
+        usar capacidad administrativa sobre un ticket propio.
       operationId: correctTicketClassification
       security:
         - bearerAuth: [ ]
@@ -536,6 +543,8 @@ paths:
           $ref: '#/components/responses/InvalidRequest'
         '401':
           $ref: '#/components/responses/InvalidToken'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
@@ -543,11 +552,13 @@ paths:
   /api/tickets/{ticketId}/route:
     post:
       tags: [ Tickets ]
-      summary: Derivar un ticket al área responsable
+      summary: Finalizar clasificación y comenzar o derivar la gestión
       description: |
-        Transición IN_REVIEW -> ROUTED; publica el evento ticketUpdated al
-        outbox salvo que el área responsable sea la propia gestión interna de
-        M2 (Story 3.3 / DDA2-59).
+        Requiere rol AGENT o ADMIN y no permite usar capacidad administrativa
+        sobre un ticket propio. Si responsibleAreaId=M2, realiza la transición
+        IN_REVIEW -> IN_PROGRESS e inicia la gestión propia sin evento ROUTED.
+        Si el área es externa, realiza IN_REVIEW -> ROUTED y publica el snapshot
+        ticketUpdated/ROUTED (Story 3.3 / DDA2-59).
       operationId: routeTicketToArea
       security:
         - bearerAuth: [ ]
@@ -555,13 +566,15 @@ paths:
         - $ref: '#/components/parameters/TicketId'
       responses:
         '200':
-          description: Ticket derivado.
+          description: Clasificación finalizada y gestión iniciada o derivada.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/TicketResponse'
         '401':
           $ref: '#/components/responses/InvalidToken'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
@@ -1132,7 +1145,9 @@ components:
       required: [id, publicId, requestTypeCode, requestTypeName, categoryName, subcategoryName,
                  ticketType, summary, currentStatus, currentPriority, responsibleAreaId,
                  assignedAgentId, anonymous, estimatedAffectedCount, escalated, neighborhoodId,
-                 neighborhoodName, classificationFinalizedAt, statusChangedAt, createdAt, updatedAt]
+                 escalationReasonCode, escalatedAt, slaNearDue, slaBreached, resolutionNearDueAt,
+                 neighborhoodName, classificationFinalizedAt,
+                 statusChangedAt, createdAt, updatedAt]
       properties:
         id:
           type: string
@@ -1168,6 +1183,25 @@ components:
           format: int32
         escalated:
           type: boolean
+        escalationReasonCode:
+          allOf:
+            - $ref: '#/components/schemas/EscalationReasonCode'
+          nullable: true
+        escalatedAt:
+          type: string
+          format: date-time
+          nullable: true
+        slaNearDue:
+          type: boolean
+          description: El ciclo de resolución más reciente se encuentra actualmente en estado NEAR_DUE.
+        slaBreached:
+          type: boolean
+          description: El ciclo de resolución incumplió su SLA.
+        resolutionNearDueAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Instante calculado con calendario para el umbral preventivo del ciclo de resolución actual o más reciente.
         neighborhoodId:
           type: string
           format: uuid
@@ -1440,9 +1474,12 @@ components:
     Priority:
       type: string
       enum: [LOW, MEDIUM, HIGH, CRITICAL]
+    EscalationReasonCode:
+      type: string
+      enum: [CRITICAL_PRIORITY, SLA_BREACHED, MANUAL]
     InformationRequestStatus:
       type: string
-      enum: [PENDING, ANSWERED, EXPIRED]
+      enum: [PENDING, ANSWERED, EXPIRED, CANCELLED]
     ResolutionType:
       type: string
       enum: [ ACTION_COMPLETED, REQUEST_FULFILLED, INQUIRY_ANSWERED, ACKNOWLEDGED, NO_FURTHER_ACTION_REQUIRED ]

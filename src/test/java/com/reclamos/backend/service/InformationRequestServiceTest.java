@@ -24,15 +24,17 @@ class InformationRequestServiceTest {
     private final TicketActivityRepository activities = mock(TicketActivityRepository.class);
     private final InformationRequestExpirationService expirationService =
             mock(InformationRequestExpirationService.class);
+    private final TicketSlaService ticketSlaService = mock(TicketSlaService.class);
+    private final TicketOutboxService outbox = mock(TicketOutboxService.class);
     private InformationRequestService service;
     private Ticket ticket;
 
     @BeforeEach
     void setUp() {
-        reset(tickets, requests, activities, expirationService);
+        reset(tickets, requests, activities, expirationService, ticketSlaService, outbox);
         service = new InformationRequestService(tickets, requests, activities,
                 new InformationRequestDeadlineService(Clock.fixed(NOW, ZoneOffset.UTC), Duration.ofHours(72)),
-                expirationService);
+                expirationService, ticketSlaService, outbox);
         ticket = ticket(TicketStatus.IN_PROGRESS, false);
         when(tickets.findByIdForUpdate(ticket.getId())).thenReturn(Optional.of(ticket));
         when(requests.save(any())).thenAnswer(invocation -> {
@@ -63,6 +65,7 @@ class InformationRequestServiceTest {
                 && value.getActorType() == ActorType.AGENT
                 && actor.citizenId().toString().equals(value.getActorId())
                 && "M2".equals(value.getSourceModuleId())));
+        verify(ticketSlaService).pauseActiveResolutionCycle(ticket, NOW);
     }
 
     @Test
@@ -115,6 +118,7 @@ class InformationRequestServiceTest {
     @Test
     void citizenAnswersBeforeDeadlineAndResumeStatusIsRestored() {
         InformationRequest pending = pending(ticket, NOW.plusSeconds(1));
+        pending.setRequestedByModuleId("M2");
         ticket.setCurrentStatus(TicketStatus.PENDING_INFORMATION);
         when(requests.findByTicketIdAndStatusForUpdate(ticket.getId(), InformationRequestStatus.PENDING))
                 .thenReturn(Optional.of(pending));
@@ -133,10 +137,48 @@ class InformationRequestServiceTest {
                 && value.getActorType() == ActorType.CITIZEN
                 && actor.citizenId().toString().equals(value.getActorId())
                 && "M2".equals(value.getSourceModuleId())));
+        verify(ticketSlaService).resumeActiveResolutionCycle(ticket, NOW);
+        verify(outbox).informationProvided(ticket, "Respuesta", false, NOW);
+    }
+
+    @Test
+    void cancelledInformationRequestCannotReactivateCancelledTicket() {
+        ticket.setCurrentStatus(TicketStatus.CANCELLED);
+        InformationRequest cancelled = pending(ticket, NOW.plusSeconds(1));
+        cancelled.setStatus(InformationRequestStatus.CANCELLED);
+
+        assertThrows(InformationRequestConflictException.class, () -> service.answerInformation(ticket.getId(),
+                new AnswerInformationRequest("Respuesta tardía"), citizen()));
+
+        assertEquals(TicketStatus.CANCELLED, ticket.getCurrentStatus());
+        assertEquals(InformationRequestStatus.CANCELLED, cancelled.getStatus());
+        verify(requests, never()).findByTicketIdAndStatusForUpdate(any(), any());
+        verify(requests, never()).save(any());
+        verify(ticketSlaService, never()).resumeActiveResolutionCycle(any(), any());
+        verifyNoInteractions(activities, outbox);
+    }
+
+    @Test
+    void legacyPendingRequestOnCancelledTicketIsRejectedBeforeRestoringResumeStatus() {
+        ticket.setCurrentStatus(TicketStatus.CANCELLED);
+        InformationRequest inconsistentPending = pending(ticket, NOW.plusSeconds(1));
+        when(requests.findByTicketIdAndStatusForUpdate(ticket.getId(), InformationRequestStatus.PENDING))
+                .thenReturn(Optional.of(inconsistentPending));
+
+        assertThrows(InformationRequestConflictException.class, () -> service.answerInformation(ticket.getId(),
+                new AnswerInformationRequest("Respuesta tardía"), citizen()));
+
+        assertEquals(TicketStatus.CANCELLED, ticket.getCurrentStatus());
+        assertEquals(InformationRequestStatus.PENDING, inconsistentPending.getStatus());
+        verify(requests, never()).findByTicketIdAndStatusForUpdate(any(), any());
+        verify(requests, never()).save(any());
+        verify(ticketSlaService, never()).resumeActiveResolutionCycle(any(), any());
+        verifyNoInteractions(activities, outbox);
     }
 
     @Test
     void answeredCannotBeAnsweredAgainAndDeadlineIsInclusive() {
+        ticket.setCurrentStatus(TicketStatus.PENDING_INFORMATION);
         when(requests.findByTicketIdAndStatusForUpdate(ticket.getId(), InformationRequestStatus.PENDING))
                 .thenReturn(Optional.empty());
         assertThrows(InformationRequestConflictException.class, () -> service.answerInformation(ticket.getId(),
@@ -167,12 +209,14 @@ class InformationRequestServiceTest {
     void anonymousTicketCanUsePreparedTrackingBusinessEntryPointWithoutCitizenId() {
         ticket = ticket(TicketStatus.PENDING_INFORMATION, true);
         InformationRequest pending = pending(ticket, NOW.plusSeconds(1));
+        pending.setRequestedByModuleId("M6");
         when(tickets.findByIdForUpdate(ticket.getId())).thenReturn(Optional.of(ticket));
         when(requests.findByTicketIdAndStatusForUpdate(ticket.getId(), InformationRequestStatus.PENDING))
                 .thenReturn(Optional.of(pending));
 
         assertDoesNotThrow(() -> service.answerAnonymousFromTracking(ticket.getId(), "Respuesta", "tracking"));
         assertEquals(InformationRequestStatus.ANSWERED, pending.getStatus());
+        verify(outbox).informationProvided(ticket, "Respuesta", true, NOW);
     }
 
     private InformationRequest pending(Ticket owner, Instant dueAt) {
