@@ -742,6 +742,45 @@ paths:
           $ref: '#/components/responses/TicketResolutionConflict'
         '415':
           $ref: '#/components/responses/UnsupportedMediaType'
+  /api/tickets/{ticketId}/cancel:
+    post:
+      tags: [ Tickets ]
+      summary: Cancelar un ticket antes de su derivación
+      description: |
+        Transición REGISTERED/IN_REVIEW/PENDING_INFORMATION -> CANCELLED.
+        Permitida al ciudadano propietario del ticket o a AGENT/ADMIN. Un
+        ticket ya derivado (ROUTED/IN_PROGRESS) se cancela por el flujo de
+        integración (updateTicketStatus/REJECTED), no por este endpoint.
+      operationId: cancelTicket
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - $ref: '#/components/parameters/TicketId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelTicketRequest'
+      responses:
+        '200':
+          description: Ticket cancelado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketResponse'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/InvalidToken'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/TicketStateConflict'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
   /api/tracking/access:
     post:
       tags: [Tracking]
@@ -1295,6 +1334,19 @@ components:
           type: string
           minLength: 1
       additionalProperties: false
+    CancelTicketRequest:
+      type: object
+      required: [ reasonCode ]
+      properties:
+        reasonCode:
+          $ref: '#/components/schemas/CancellationReasonCode'
+        publicMessage:
+          type: string
+          nullable: true
+        internalMessage:
+          type: string
+          nullable: true
+      additionalProperties: false
     TicketResolutionActionResponse:
       type: object
       required: [ ticketId, status, statusChangedAt, reopenCount ]
@@ -1394,6 +1446,9 @@ components:
     ResolutionType:
       type: string
       enum: [ ACTION_COMPLETED, REQUEST_FULFILLED, INQUIRY_ANSWERED, ACKNOWLEDGED, NO_FURTHER_ACTION_REQUIRED ]
+    CancellationReasonCode:
+      type: string
+      enum: [ INFO_TIMEOUT, OUT_OF_SCOPE, DOES_NOT_APPLY, INVALID_REQUEST_TYPE, INVALID_DATA, REJECTED_BY_AREA, WITHDRAWN_BY_CITIZEN, DATA_ENTRY_ERROR, OTHER ]
     FormFieldType:
       type: string
       enum: [TEXT, TEXTAREA, SELECT, BOOLEAN, NUMBER, DATE]

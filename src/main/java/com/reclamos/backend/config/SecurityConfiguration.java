@@ -109,6 +109,12 @@ public class SecurityConfiguration {
                         .requestMatchers(HttpMethod.POST, "/api/tickets/*/resolution").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/tickets/*/resolution/confirm").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/tickets/*/resolution/reopen").authenticated()
+                        // POST /tickets/{id}/cancel (Entidades V1.49 §24): "Ciudadano owner
+                        // / propietario anónimo acreditado / AGENT / ADMIN". Igual que el
+                        // resto de las acciones sobre un ticket puntual, alcanza con estar
+                        // autenticado acá — el ownership (dueño) o el rol staff (AGENT/ADMIN,
+                        // sin AREA_RESPONSIBLE) lo valida TicketService.requireCancelAuthority.
+                        .requestMatchers(HttpMethod.POST, "/api/tickets/*/cancel").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/tracking/access").permitAll()
                         // BE - Story 3.4/DDA2-61: el simulador de updateTicketStatus simula
                         // una llamada de un sistema externo (llegaría por bus de eventos, no

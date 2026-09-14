@@ -2,6 +2,7 @@ package com.reclamos.backend.service;
 
 import com.reclamos.backend.dto.TicketFilter;
 import com.reclamos.backend.dto.TicketResponse;
+import com.reclamos.backend.dto.request.CancelTicketRequest;
 import com.reclamos.backend.dto.request.CreateTicketRequest;
 import com.reclamos.backend.dto.response.CreateTicketResponse;
 import com.reclamos.backend.entity.*;
@@ -64,11 +65,22 @@ public class TicketService {
             "currentProgress", "createdAt", "updatedAt"
     );
 
+    /**
+     * Estados desde los que POST /tickets/{id}/cancel permite cancelar
+     * (Entidades V1.49 §24: cancelación temprana, antes de la derivación).
+     * ROUTED/IN_PROGRESS quedan afuera a propósito: ahí el área externa ya
+     * está involucrada y esa cancelación llega por el flujo de integración
+     * (updateTicketStatus/REJECTED, ver TicketStatusUpdateService).
+     */
+    private static final Set<TicketStatus> CANCELLABLE_STATUSES = Set.of(
+            TicketStatus.REGISTERED, TicketStatus.IN_REVIEW, TicketStatus.PENDING_INFORMATION);
+
     private final RequestTypeRepository requestTypeRepository;
     private final TicketRepository ticketRepository;
     private final TicketActivityRepository activityRepository;
     private final TicketLocationRepository locationRepository;
     private final NeighborhoodRepository neighborhoodRepository;
+    private final TicketCancellationRepository cancellationRepository;
     private final SlaCalculationService slaCalculationService;
     private final FormValidationService formValidationService;
     private final RiskCalculationService riskCalculationService;
@@ -349,6 +361,114 @@ public class TicketService {
     }
 
     /**
+     * POST /tickets/{id}/cancel (Entidades V1.49 §24: "Ciudadano owner /
+     * propietario anónimo acreditado / AGENT / ADMIN"). Cancelación
+     * TEMPRANA, antes de que el ticket llegue a gestión externa: sólo cubre
+     * {@link #CANCELLABLE_STATUSES} -&gt; CANCELLED. ROUTED/IN_PROGRESS se
+     * cancelan por el flujo de integración (updateTicketStatus/REJECTED),
+     * no por acá. La cancelación de un ticket DUPLICATE (Entidades §14: "se
+     * agrega la transición DUPLICATE -&gt; CANCELLED por
+     * WITHDRAWN_BY_CITIZEN") queda pendiente de Story 7.2 (Sprint 5):
+     * DUPLICATE todavía no es un estado alcanzable en el sistema.
+     * <p>
+     * ALCANCE REDUCIDO A PROPÓSITO: el "propietario anónimo acreditado" de
+     * la tabla de endpoints no está cubierto acá — requiere el mecanismo de
+     * acreditación por trackingAccessCode + contraseña (POST
+     * /tracking/access) que todavía no expone una AuthenticatedIdentity
+     * utilizable en este endpoint.
+     */
+    @Transactional
+    public TicketResponse cancelTicket(UUID ticketId, CancelTicketRequest request, AuthenticatedIdentity actor) {
+        Ticket ticket = loadForUpdate(ticketId);
+        boolean isOwnTicket = actor != null && !ticket.isAnonymous() && ticket.getCitizenId() != null
+                && ticket.getCitizenId().equals(actor.citizenId());
+        requireCancelAuthority(actor, isOwnTicket);
+
+        if (!CANCELLABLE_STATUSES.contains(ticket.getCurrentStatus())) {
+            throw new TicketStateConflictException(
+                    "El ticket está en estado " + ticket.getCurrentStatus()
+                            + " y no puede cancelarse por este endpoint; sólo se puede cancelar antes de la"
+                            + " derivación (REGISTERED, IN_REVIEW o PENDING_INFORMATION)");
+        }
+
+        Instant now = clock.instant();
+        ActorType actorType = isOwnTicket ? ActorType.CITIZEN
+                : (actor.role() == ModuleRole.ADMIN ? ActorType.ADMIN : ActorType.AGENT);
+
+        TicketCancellation cancellation = new TicketCancellation();
+        cancellation.setTicket(ticket);
+        cancellation.setReasonCode(request.getReasonCode());
+        cancellation.setPublicMessage(request.getPublicMessage());
+        cancellation.setInternalMessage(request.getInternalMessage());
+        cancellation.setCancelledByType(actorType);
+        cancellation.setCancelledById(actor.subjectId());
+        cancellation.setCancelledAt(now);
+        cancellationRepository.save(cancellation);
+
+        TicketStatus previousStatus = ticket.getCurrentStatus();
+        ticket.setCurrentStatus(TicketStatus.CANCELLED);
+        ticket.setStatusChangedAt(now);
+        ticketRepository.save(ticket);
+
+        recordCancellationActivity(ticket, previousStatus, actorType, actor, request.getReasonCode(),
+                request.getPublicMessage() != null ? request.getPublicMessage() : request.getInternalMessage());
+
+        // Eventos V1.69 §2.1/§7.7: sólo tickets identificados publican
+        // ticketUpdated/CANCELLED acá. En este punto (pre-ROUTED) nunca hubo
+        // un área externa involucrada, así que a diferencia de routeToArea
+        // no hay ningún gate por SELF_MANAGED_AREA_ID — lo único que importa
+        // es si M1 tiene que actualizar su proyección.
+        if (!ticket.isAnonymous()) {
+            writeCancelledEvent(ticket, request.getReasonCode(), request.getPublicMessage());
+        }
+
+        return toResponse(ticket, locationRepository.findByTicket_Id(ticketId).orElse(null));
+    }
+
+    private void requireCancelAuthority(AuthenticatedIdentity actor, boolean isOwnTicket) {
+        if (actor == null) {
+            throw new UnauthorizedTicketOperationException();
+        }
+        boolean isStaff = actor.role() == ModuleRole.AGENT || actor.role() == ModuleRole.ADMIN;
+        if (!isOwnTicket && !isStaff) {
+            throw new UnauthorizedTicketOperationException();
+        }
+    }
+
+    private void recordCancellationActivity(Ticket ticket, TicketStatus previousStatus, ActorType actorType,
+                                             AuthenticatedIdentity actor, CancellationReasonCode reasonCode,
+                                             String message) {
+        TicketActivity activity = new TicketActivity();
+        activity.setTicket(ticket);
+        activity.setSequence((int) activityRepository.countByTicketId(ticket.getId()) + 1);
+        activity.setActionType(ActivityType.CANCELLED);
+        activity.setPreviousStatus(previousStatus);
+        activity.setNewStatus(TicketStatus.CANCELLED);
+        activity.setActorType(actorType);
+        activity.setActorId(actor.subjectId());
+        activity.setReasonCode(reasonCode.name());
+        activity.setMessage(message);
+        activity.setOccurredAt(clock.instant());
+        activityRepository.save(activity);
+    }
+
+    /**
+     * Arma details.cancellation (Eventos V1.69 §7.7: "reasonCode
+     * obligatorio. publicMessage contiene la explicación pública cuando
+     * corresponda") y publica ticketUpdated/CANCELLED vía
+     * {@link #publishTicketUpdated}.
+     */
+    private void writeCancelledEvent(Ticket ticket, CancellationReasonCode reasonCode, String publicMessage) {
+        Map<String, Object> cancellation = new LinkedHashMap<>();
+        cancellation.put("reasonCode", reasonCode.name());
+
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("cancellation", cancellation);
+
+        publishTicketUpdated(ticket, TicketUpdatedType.CANCELLED, publicMessage, details);
+    }
+
+    /**
      * Arma details.routing (Eventos v1.6 §7.4) y publica ticketUpdated/ROUTED
      * vía {@link #publishTicketUpdated}.
      */
@@ -430,7 +550,14 @@ public class TicketService {
         data.put("publicMessage", publicMessage);
         data.put("details", details);
         data.put("attachments", List.of());
-        data.put("updatedAt", ticket.getUpdatedAt() != null ? ticket.getUpdatedAt().toString() : now.toString());
+        // No usar ticket.getUpdatedAt(): es @UpdateTimestamp (Hibernate) y sólo
+        // se completa en el flush, que todavía no ocurrió acá (estamos en la
+        // misma transacción, justo después del save()) — leerlo en este punto
+        // devuelve el valor viejo persistido antes de este cambio, no el que
+        // se va a persistir. "now" es el mismo instante que ya se usa para
+        // occurredAt y para el resto de los campos de auditoría de este
+        // método, así que es la fuente correcta para "cuándo pasó esto".
+        data.put("updatedAt", now.toString());
 
         Map<String, Object> producer = new LinkedHashMap<>();
         producer.put("moduleId", producerModuleId);
