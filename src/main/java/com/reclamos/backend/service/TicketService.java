@@ -775,12 +775,17 @@ public class TicketService {
         activity.setActionType(actionType);
         activity.setPreviousStatus(previousStatus);
         activity.setNewStatus(newStatus);
-        // TODO (a confirmar con el equipo): AGENT/SYSTEM cubre las transiciones
-        // internas de M2 (startReview, correctClassification, routeToArea), que
-        // siempre corren con un agente autenticado; SYSTEM sólo queda para el
-        // caso defensivo de actor == null ("sin actor identificado" según la
-        // Guía funcional). Evaluar si ADMIN debería usarse en algún caso acá.
-        activity.setActorType(actor != null ? ActorType.AGENT : ActorType.SYSTEM);
+        // QA: la actividad tiene que reflejar la capacidad efectiva del actor,
+        // no siempre AGENT (Entidades V1.49 §"REGLA DE CLASIFICACIÓN DEL
+        // ACTOR"). Este método sólo lo usan startReview/correctClassification/
+        // routeToArea, y desde el fix de Story 2.3 esas tres acciones sólo son
+        // alcanzables por AGENT o ADMIN (CITIZEN/AREA_RESPONSIBLE quedan afuera
+        // en SecurityConfiguration) y nunca sobre el propio ticket (lo bloquea
+        // requireTriageAuthority antes de llegar acá) — por eso no hace falta
+        // una rama CITIZEN como en cancelTicket. SYSTEM queda como fallback
+        // defensivo si algún día se llama con actor == null.
+        activity.setActorType(actor == null ? ActorType.SYSTEM
+                : (actor.role() == ModuleRole.ADMIN ? ActorType.ADMIN : ActorType.AGENT));
         activity.setActorId(actor != null ? actor.subjectId() : null);
         activity.setPreviousPriority(previousPriority);
         activity.setNewPriority(newPriority);

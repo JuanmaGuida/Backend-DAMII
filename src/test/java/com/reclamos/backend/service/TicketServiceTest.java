@@ -715,6 +715,35 @@ class TicketServiceTest {
         assertThat(activity.getPreviousStatus()).isEqualTo(TicketStatus.REGISTERED);
         assertThat(activity.getNewStatus()).isEqualTo(TicketStatus.IN_REVIEW);
         assertThat(activity.getSequence()).isEqualTo(1);
+        // QA: la actividad tiene que reflejar la capacidad efectiva del actor
+        // (acá AGENT), no quedar hardcodeada.
+        assertThat(activity.getActorType()).isEqualTo(ActorType.AGENT);
+    }
+
+    /**
+     * QA: recordActivity tenía ActorType.AGENT hardcodeado sin mirar el rol
+     * real del actor. Después del fix de Story 2.3, startReview sólo es
+     * alcanzable por AGENT o ADMIN (CITIZEN/AREA_RESPONSIBLE quedan afuera en
+     * SecurityConfiguration) — este test cubre el caso ADMIN.
+     */
+    @Test
+    void startReviewRecordsAdminAsActorTypeWhenActorIsAdmin() {
+        Ticket ticket = ticket(TicketStatus.REGISTERED, Priority.MEDIUM);
+        ticket.setAssignedAgent(null);
+        AuthenticatedIdentity admin = new AuthenticatedIdentity(
+                "admin-1", UUID.randomUUID(), "Admin Uno", null, ModuleRole.ADMIN);
+        ModuleUser adminUser = new ModuleUser();
+        adminUser.setId(99L);
+        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+        when(activities.countByTicketId(ticketId)).thenReturn(0);
+        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+        when(moduleUsers.findByCitizenId(admin.citizenId())).thenReturn(Optional.of(adminUser));
+
+        service.startReview(ticketId, admin);
+
+        ArgumentCaptor<TicketActivity> activityCaptor = ArgumentCaptor.forClass(TicketActivity.class);
+        verify(activities).save(activityCaptor.capture());
+        assertThat(activityCaptor.getValue().getActorType()).isEqualTo(ActorType.ADMIN);
     }
 
     @Test
@@ -813,6 +842,36 @@ class TicketServiceTest {
         assertThat(ticket.getFormTemplateId()).isEqualTo(99L);
         assertThat(response.getRequestTypeCode()).isEqualTo("FLOODING");
         assertThat(ticket.getFormData()).isEmpty();
+
+        // QA: la actividad tiene que reflejar la capacidad efectiva del actor
+        // (acá AGENT), no quedar hardcodeada.
+        ArgumentCaptor<TicketActivity> activityCaptor = ArgumentCaptor.forClass(TicketActivity.class);
+        verify(activities).save(activityCaptor.capture());
+        assertThat(activityCaptor.getValue().getActorType()).isEqualTo(ActorType.AGENT);
+    }
+
+    /**
+     * QA: mismo caso que startReviewRecordsAdminAsActorTypeWhenActorIsAdmin,
+     * acá para correctClassification.
+     */
+    @Test
+    void correctClassificationRecordsAdminAsActorTypeWhenActorIsAdmin() {
+        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.LOW);
+        AuthenticatedIdentity admin = new AuthenticatedIdentity(
+                "admin-1", UUID.randomUUID(), "Admin Uno", null, ModuleRole.ADMIN);
+        RequestType newRequestType = requestTypeSprint2(20L, "FLOODING", "obras-hidraulicas",
+                Priority.MEDIUM, new BigDecimal("0.1000"));
+
+        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+        when(requestTypes.findById(20L)).thenReturn(Optional.of(newRequestType));
+        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+        when(activities.countByTicketId(ticketId)).thenReturn(0);
+
+        service.correctClassification(ticketId, 20L, admin);
+
+        ArgumentCaptor<TicketActivity> activityCaptor = ArgumentCaptor.forClass(TicketActivity.class);
+        verify(activities).save(activityCaptor.capture());
+        assertThat(activityCaptor.getValue().getActorType()).isEqualTo(ActorType.ADMIN);
     }
 
     /**
@@ -1014,6 +1073,9 @@ class TicketServiceTest {
         ArgumentCaptor<TicketActivity> activityCaptor = ArgumentCaptor.forClass(TicketActivity.class);
         verify(activities).save(activityCaptor.capture());
         assertThat(activityCaptor.getValue().getActionType()).isEqualTo(ActivityType.ROUTED);
+        // QA: la actividad tiene que reflejar la capacidad efectiva del actor
+        // (acá AGENT), no quedar hardcodeada.
+        assertThat(activityCaptor.getValue().getActorType()).isEqualTo(ActorType.AGENT);
 
         ArgumentCaptor<OutboxEvent> eventCaptor = ArgumentCaptor.forClass(OutboxEvent.class);
         verify(outboxEventRepository).save(eventCaptor.capture());
@@ -1072,6 +1134,27 @@ class TicketServiceTest {
 
         verify(outboxEventRepository, never()).save(any());
         verify(tickets, never()).save(any());
+    }
+
+    /**
+     * QA: mismo caso que startReviewRecordsAdminAsActorTypeWhenActorIsAdmin,
+     * acá para routeToArea.
+     */
+    @Test
+    void routeToAreaRecordsAdminAsActorTypeWhenActorIsAdmin() {
+        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.LOW);
+        ticket.setResponsibleAreaId("M6");
+        AuthenticatedIdentity admin = new AuthenticatedIdentity(
+                "admin-1", UUID.randomUUID(), "Admin Uno", null, ModuleRole.ADMIN);
+        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+        when(activities.countByTicketId(ticketId)).thenReturn(0);
+        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+
+        service.routeToArea(ticketId, admin);
+
+        ArgumentCaptor<TicketActivity> activityCaptor = ArgumentCaptor.forClass(TicketActivity.class);
+        verify(activities).save(activityCaptor.capture());
+        assertThat(activityCaptor.getValue().getActorType()).isEqualTo(ActorType.ADMIN);
     }
 
     @Test
