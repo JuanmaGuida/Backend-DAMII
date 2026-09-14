@@ -276,6 +276,17 @@ public class TicketService {
         recordActivity(ticket, ActivityType.REQUEST_TYPE_CHANGED, ticket.getCurrentStatus(), ticket.getCurrentStatus(),
                 actor, previousPriority, newPriority, message);
 
+        // Eventos V1.69 §7.2/§7.7: tickets identificados publican
+        // ticketUpdated/CONTENT_UPDATED al corregir la clasificación durante
+        // la primera revisión, para que M1 actualice su proyección. A
+        // diferencia de ROUTED, acá NO se excluye SELF_MANAGED_AREA_ID: el
+        // consumidor es M1 (tabla §2.1 "Identificado · cambios
+        // posteriores"), no el área responsable, así que se publica sin
+        // importar a qué área haya quedado asignado el ticket.
+        if (!ticket.isAnonymous()) {
+            writeContentUpdatedEvent(ticket);
+        }
+
         return toResponse(ticket, location);
     }
 
@@ -338,16 +349,11 @@ public class TicketService {
     }
 
     /**
-     * Construye el envelope + data de ticketUpdated/ROUTED (Eventos v1.6 §4 y
-     * §7.4) y lo inserta como OutboxEvent PENDING en la misma transacción que
-     * el cambio de estado (Entidades v1.3 §19.2). Todavía no existe un
-     * publisher asíncrono real (Sprint 3: "sin consumidor real todavía"), así
-     * que el evento queda en PENDING hasta que se implemente ese publisher.
+     * Arma details.routing (Eventos v1.6 §7.4) y publica ticketUpdated/ROUTED
+     * vía {@link #publishTicketUpdated}.
      */
     private void writeOutboxEvent(Ticket ticket, TicketLocation location) {
         RequestType requestType = ticket.getRequestType();
-        UUID eventId = UUID.randomUUID();
-        Instant now = clock.instant();
 
         Map<String, Object> routing = new LinkedHashMap<>();
         routing.put("requestType", requestType.getName());
@@ -363,17 +369,65 @@ public class TicketService {
         Map<String, Object> details = new LinkedHashMap<>();
         details.put("routing", routing);
 
+        publishTicketUpdated(ticket, TicketUpdatedType.ROUTED,
+                "El ticket fue derivado al área responsable.", details);
+    }
+
+    /**
+     * Arma details.content (Eventos V1.69 §7.7: "Puede incluir requestType,
+     * category, subcategory, ticketType, summary, description, formData y
+     * resolutionDueAt actualizados. Se usa, entre otros casos, cuando M2
+     * corrige RequestType durante la revisión inicial") y publica
+     * ticketUpdated/CONTENT_UPDATED vía {@link #publishTicketUpdated}.
+     * currentPriority y responsibleAreaId ya viajan en los campos comunes de
+     * data, no se repiten acá.
+     */
+    private void writeContentUpdatedEvent(Ticket ticket) {
+        RequestType requestType = ticket.getRequestType();
+        Subcategory subcategory = requestType.getSubcategory();
+        Category category = subcategory.getCategory();
+
+        Map<String, Object> content = new LinkedHashMap<>();
+        content.put("requestType", requestType.getName());
+        content.put("category", category.getName());
+        content.put("subcategory", subcategory.getName());
+        content.put("ticketType", ticket.getTicketType());
+        content.put("summary", ticket.getSummary());
+        content.put("description", ticket.getDescription());
+        content.put("formData", ticket.getFormData());
+        content.put("resolutionDueAt", ticket.getResolutionDueAt() != null
+                ? ticket.getResolutionDueAt().toString() : null);
+
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("content", content);
+
+        publishTicketUpdated(ticket, TicketUpdatedType.CONTENT_UPDATED,
+                "Se actualizó la clasificación del ticket.", details);
+    }
+
+    /**
+     * Construye el envelope + data comunes de ticketUpdated (Eventos v1.6 §4
+     * y §7.1) y lo inserta como OutboxEvent PENDING en la misma transacción
+     * que el cambio de negocio (Entidades v1.3 §19.2). Todavía no existe un
+     * publisher asíncrono real (Sprint 3: "sin consumidor real todavía"), así
+     * que el evento queda en PENDING hasta que se implemente ese publisher.
+     */
+    private void publishTicketUpdated(Ticket ticket, TicketUpdatedType updateType, String publicMessage,
+                                      Map<String, Object> details) {
+        UUID eventId = UUID.randomUUID();
+        Instant now = clock.instant();
+
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("ticketId", ticket.getId());
         data.put("publicId", ticket.getPublicId());
         data.put("citizenId", ticket.getCitizenId());
         data.put("isAnonymous", ticket.isAnonymous());
         data.put("responsibleAreaId", ticket.getResponsibleAreaId());
-        data.put("updateType", TicketUpdatedType.ROUTED.name());
+        data.put("updateType", updateType.name());
         data.put("currentStatus", ticket.getCurrentStatus().name());
         data.put("currentPriority", ticket.getCurrentPriority().name());
         data.put("progress", ticket.getCurrentProgress());
-        data.put("publicMessage", "El ticket fue derivado al área responsable.");
+        data.put("publicMessage", publicMessage);
         data.put("details", details);
         data.put("attachments", List.of());
         data.put("updatedAt", ticket.getUpdatedAt() != null ? ticket.getUpdatedAt().toString() : now.toString());
@@ -394,7 +448,7 @@ public class TicketService {
         OutboxEvent event = new OutboxEvent();
         event.setEventId(eventId);
         event.setEventType("ticketUpdated");
-        event.setUpdateType(TicketUpdatedType.ROUTED);
+        event.setUpdateType(updateType);
         event.setTicket(ticket);
         event.setPayload(payload);
         event.setStatus(OutboxStatus.PENDING);

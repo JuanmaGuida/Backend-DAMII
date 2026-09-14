@@ -869,6 +869,73 @@ class TicketServiceTest {
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 
+    /**
+     * QA FAIL (Sprint 2): la corrección de clasificación no publicaba
+     * ticketUpdated/CONTENT_UPDATED al reclasificar un ticket identificado
+     * (Eventos V1.69 §7.2/§7.7).
+     */
+    @Test
+    void correctClassificationPublishesContentUpdatedEventForIdentifiedTicket() {
+        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.LOW);
+        String originalPublicId = ticket.getPublicId();
+        RequestType newRequestType = requestTypeSprint2(20L, "FLOODING", "obras-hidraulicas",
+                Priority.MEDIUM, new BigDecimal("0.1000"));
+
+        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+        when(requestTypes.findById(20L)).thenReturn(Optional.of(newRequestType));
+        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+        when(activities.countByTicketId(ticketId)).thenReturn(0);
+
+        service.correctClassification(ticketId, 20L, actor);
+
+        ArgumentCaptor<OutboxEvent> eventCaptor = ArgumentCaptor.forClass(OutboxEvent.class);
+        verify(outboxEventRepository).save(eventCaptor.capture());
+        OutboxEvent event = eventCaptor.getValue();
+        assertThat(event.getEventType()).isEqualTo("ticketUpdated");
+        assertThat(event.getUpdateType()).isEqualTo(TicketUpdatedType.CONTENT_UPDATED);
+        assertThat(event.getTicket()).isSameAs(ticket);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> data = (Map<String, Object>) event.getPayload().get("data");
+        assertThat(data.get("ticketId")).isEqualTo(ticketId);
+        assertThat(data.get("publicId")).isEqualTo(originalPublicId);
+        assertThat(data.get("updateType")).isEqualTo("CONTENT_UPDATED");
+        assertThat(data.get("responsibleAreaId")).isEqualTo("obras-hidraulicas");
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> details = (Map<String, Object>) data.get("details");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> content = (Map<String, Object>) details.get("content");
+        assertThat(content.get("requestType")).isEqualTo("FLOODING");
+        assertThat(content.get("summary")).isEqualTo(ticket.getSummary());
+        assertThat(content.get("description")).isEqualTo(ticket.getDescription());
+        assertThat(content.get("formData")).isEqualTo(Map.of());
+    }
+
+    /**
+     * Eventos V1.69 §2.1 ("Anónimo · REGISTERED/IN_REVIEW/DUPLICATE" -&gt; sin
+     * ticketUpdated): un ticket anónimo nunca tiene consumidor M1, así que la
+     * reclasificación no debe publicar nada, a diferencia de routeToArea
+     * (ver routeToAreaSkipsOutboxWhenAreaIsSelfManaged, que es un gate
+     * distinto: ahí lo que importa es el área, no el anonimato).
+     */
+    @Test
+    void correctClassificationSkipsOutboxEventForAnonymousTicket() {
+        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.LOW);
+        ticket.setAnonymous(true);
+        RequestType newRequestType = requestTypeSprint2(20L, "FLOODING", "obras-hidraulicas",
+                Priority.MEDIUM, new BigDecimal("0.1000"));
+
+        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+        when(requestTypes.findById(20L)).thenReturn(Optional.of(newRequestType));
+        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+        when(activities.countByTicketId(ticketId)).thenReturn(0);
+
+        service.correctClassification(ticketId, 20L, actor);
+
+        verify(outboxEventRepository, never()).save(any());
+    }
+
     // ==================================================================
     // ---- routeToArea (Sprint 2) ----
     // ==================================================================
