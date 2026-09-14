@@ -213,6 +213,25 @@ class TicketControllerTest {
                 .andExpect(jsonPath("$.code").value("FORBIDDEN"));
     }
 
+    /**
+     * QA - Story 2.3: review/classification/route son triage, no lectura —
+     * CITIZEN nunca las ejecuta, y AREA_RESPONSIBLE tampoco (Guía funcional
+     * M2 §7: su capacidad staff se limita a leer y enviar mensajes, ni
+     * siquiera sobre tickets de su propia área). Sólo AGENT/ADMIN llegan al
+     * controller para estos tres endpoints.
+     */
+    @Test
+    void reviewIsForbiddenForCitizenAndAreaResponsible() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+
+        mockMvc.perform(post("/api/tickets/{ticketId}/review", ticketId)
+                        .with(authentication(CITIZEN_AUTHENTICATION)))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/tickets/{ticketId}/review", ticketId)
+                        .with(authentication(AREA_RESPONSIBLE_AUTHENTICATION)))
+                .andExpect(status().isForbidden());
+    }
+
     @Test
     void startReviewDelegatesToServiceAndReturnsOk() throws Exception {
         UUID ticketId = UUID.randomUUID();
@@ -248,6 +267,22 @@ class TicketControllerTest {
         mockMvc.perform(post("/api/tickets/{ticketId}/review", ticketId)
                         .with(authentication(AGENT_AUTHENTICATION)))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void classificationIsForbiddenForCitizenAndAreaResponsible() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+
+        mockMvc.perform(patch("/api/tickets/{ticketId}/classification", ticketId)
+                        .with(authentication(CITIZEN_AUTHENTICATION))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"requestTypeId\":20}"))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(patch("/api/tickets/{ticketId}/classification", ticketId)
+                        .with(authentication(AREA_RESPONSIBLE_AUTHENTICATION))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"requestTypeId\":20}"))
+                .andExpect(status().isForbidden());
     }
 
     @Test
@@ -288,6 +323,18 @@ class TicketControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"requestTypeId\":20}"))
                 .andExpect(status().isConflict());
+    }
+
+    @Test
+    void routeIsForbiddenForCitizenAndAreaResponsible() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+
+        mockMvc.perform(post("/api/tickets/{ticketId}/route", ticketId)
+                        .with(authentication(CITIZEN_AUTHENTICATION)))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/tickets/{ticketId}/route", ticketId)
+                        .with(authentication(AREA_RESPONSIBLE_AUTHENTICATION)))
+                .andExpect(status().isForbidden());
     }
 
     /**

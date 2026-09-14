@@ -752,6 +752,26 @@ class TicketServiceTest {
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 
+    /**
+     * QA - Story 2.3: Entidades V1.49 §3.3 ("la vista staff queda
+     * completamente read-only, incluso para ADMIN" cuando currentUser.citizenId
+     * = ticket.citizenId) bloquea el triage de un AGENT/ADMIN sobre su propio
+     * ticket, aunque el estado sea válido.
+     */
+    @Test
+    void startReviewRejectsTriageOnActorsOwnTicket() {
+        Ticket ticket = ticket(TicketStatus.REGISTERED, Priority.MEDIUM);
+        ticket.setCitizenId(actor.citizenId());
+        ticket.setAnonymous(false);
+        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+
+        assertThatThrownBy(() -> service.startReview(ticketId, actor))
+                .isInstanceOf(UnauthorizedTicketOperationException.class);
+
+        verify(activities, never()).save(any());
+        verify(tickets, never()).save(any());
+    }
+
     // ==================================================================
     // ---- correctClassification (Sprint 2) ----
     // ==================================================================
@@ -841,6 +861,24 @@ class TicketServiceTest {
 
         assertThatThrownBy(() -> service.correctClassification(ticketId, 20L, actor))
                 .isInstanceOf(TicketStateConflictException.class);
+
+        verify(requestTypes, never()).findById(any());
+    }
+
+    /**
+     * QA - Story 2.3: mismo bloqueo de "acción staff en ticket propio" que
+     * startReviewRejectsTriageOnActorsOwnTicket, acá para correctClassification.
+     */
+    @Test
+    void correctClassificationRejectsTriageOnActorsOwnTicket() {
+        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.LOW);
+        ticket.setCitizenId(actor.citizenId());
+        ticket.setAnonymous(false);
+
+        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+
+        assertThatThrownBy(() -> service.correctClassification(ticketId, 20L, actor))
+                .isInstanceOf(UnauthorizedTicketOperationException.class);
 
         verify(requestTypes, never()).findById(any());
     }
@@ -1015,6 +1053,25 @@ class TicketServiceTest {
                 .isInstanceOf(TicketStateConflictException.class);
 
         verify(outboxEventRepository, never()).save(any());
+    }
+
+    /**
+     * QA - Story 2.3: mismo bloqueo de "acción staff en ticket propio" que
+     * startReviewRejectsTriageOnActorsOwnTicket, acá para routeToArea.
+     */
+    @Test
+    void routeToAreaRejectsTriageOnActorsOwnTicket() {
+        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.LOW);
+        ticket.setResponsibleAreaId("M6");
+        ticket.setCitizenId(actor.citizenId());
+        ticket.setAnonymous(false);
+        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+
+        assertThatThrownBy(() -> service.routeToArea(ticketId, actor))
+                .isInstanceOf(UnauthorizedTicketOperationException.class);
+
+        verify(outboxEventRepository, never()).save(any());
+        verify(tickets, never()).save(any());
     }
 
     @Test
