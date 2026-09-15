@@ -1421,17 +1421,35 @@ class TicketServiceTest {
         TicketFilter filter = new TicketFilter(null, null, null, null, null);
         Pageable pageable = Pageable.unpaged();
         Page<Ticket> page = new PageImpl<>(List.of(ticket));
+        Instant firstResponseDueAt = NOW.plus(Duration.ofHours(4));
+        TicketSla firstResponseSla = sla(SlaType.FIRST_RESPONSE, SlaStatus.NEAR_DUE,
+                firstResponseDueAt.minus(Duration.ofHours(1)), firstResponseDueAt);
+        Instant resolutionDueAt = NOW.plus(Duration.ofDays(2));
+        TicketSla resolutionSla = sla(SlaType.RESOLUTION, SlaStatus.BREACHED,
+                resolutionDueAt.minus(Duration.ofHours(4)), resolutionDueAt);
 
         when(tickets.findAll(any(Specification.class), any(Pageable.class))).thenReturn(page);
         when(locations.findAllByTicket_IdIn(anyList())).thenReturn(List.of(location));
-        when(ticketSlaService.findLatestResolutionCycles(page.getContent())).thenReturn(Map.of());
+        when(ticketSlaService.findLatestFirstResponseCycles(page.getContent()))
+                .thenReturn(Map.of(ticketId, firstResponseSla));
+        when(ticketSlaService.findLatestResolutionCycles(page.getContent()))
+                .thenReturn(Map.of(ticketId, resolutionSla));
 
         Page<TicketResponse> result = service.listTickets(filter, pageable);
 
         assertThat(result.getContent()).hasSize(1);
-        assertThat(result.getContent().get(0).getNeighborhoodName()).isEqualTo("Recoleta");
+        TicketResponse response = result.getContent().get(0);
+        assertThat(response.getNeighborhoodName()).isEqualTo("Recoleta");
+        assertThat(response.getFirstResponseDueAt()).isEqualTo(firstResponseDueAt);
+        assertThat(response.isFirstResponseNearDue()).isTrue();
+        assertThat(response.isFirstResponseBreached()).isFalse();
+        assertThat(response.getResolutionDueAt()).isEqualTo(resolutionDueAt);
+        assertThat(response.isSlaNearDue()).isFalse();
+        assertThat(response.isSlaBreached()).isTrue();
         verify(ticketSlaService).findLatestResolutionCycles(page.getContent());
+        verify(ticketSlaService).findLatestFirstResponseCycles(page.getContent());
         verify(ticketSlaService, never()).findLatestResolutionCycle(any());
+        verify(ticketSlaService, never()).findLatestFirstResponseCycle(any());
     }
 
     @Test
@@ -1444,6 +1462,7 @@ class TicketServiceTest {
 
         when(tickets.findAll(any(Specification.class), any(Pageable.class))).thenReturn(page);
         when(locations.findAllByTicket_IdIn(anyList())).thenReturn(List.of());
+        when(ticketSlaService.findLatestFirstResponseCycles(page.getContent())).thenReturn(Map.of());
         when(ticketSlaService.findLatestResolutionCycles(page.getContent())).thenReturn(Map.of());
 
         Page<TicketResponse> result = service.listTickets(filter, pageable);
@@ -1492,6 +1511,8 @@ class TicketServiceTest {
 
         when(tickets.findByCitizenId(eq(actor.citizenId()), any(Pageable.class))).thenReturn(page);
         when(locations.findAllByTicket_IdIn(anyList())).thenReturn(List.of(location));
+        when(ticketSlaService.findLatestFirstResponseCycles(page.getContent())).thenReturn(Map.of());
+        when(ticketSlaService.findLatestResolutionCycles(page.getContent())).thenReturn(Map.of());
 
         Page<TicketResponse> result = service.listMyTickets(actor, pageable);
 
@@ -1499,6 +1520,10 @@ class TicketServiceTest {
         assertThat(result.getContent().get(0).getNeighborhoodName()).isEqualTo("Recoleta");
         verify(tickets).findByCitizenId(eq(actor.citizenId()), any(Pageable.class));
         verify(tickets, never()).findAll(any(Specification.class), any(Pageable.class));
+        verify(ticketSlaService).findLatestFirstResponseCycles(page.getContent());
+        verify(ticketSlaService).findLatestResolutionCycles(page.getContent());
+        verify(ticketSlaService, never()).findLatestFirstResponseCycle(any());
+        verify(ticketSlaService, never()).findLatestResolutionCycle(any());
     }
 
     @Test
@@ -1527,6 +1552,80 @@ class TicketServiceTest {
         TicketResponse response = service.getById(ticketId, actor);
 
         assertThat(response.getId()).isEqualTo(ticketId);
+    }
+
+    @Test
+    void getByIdProjectsFirstResponseStateWithoutInferringFromDeadlines() {
+        Ticket ticket = ticket(TicketStatus.REGISTERED, Priority.MEDIUM);
+        ticket.setCitizenId(actor.citizenId());
+        ticket.setAnonymous(false);
+        Instant dueAt = NOW.minus(Duration.ofHours(1));
+        TicketSla firstResponseSla = sla(SlaType.FIRST_RESPONSE, SlaStatus.RUNNING,
+                dueAt.minus(Duration.ofHours(1)), dueAt);
+
+        when(tickets.findById(ticketId)).thenReturn(Optional.of(ticket));
+        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+        when(ticketSlaService.findLatestResolutionCycle(ticket)).thenReturn(Optional.empty());
+
+        for (SlaStatus status : List.of(SlaStatus.RUNNING, SlaStatus.NEAR_DUE, SlaStatus.MET,
+                SlaStatus.BREACHED, SlaStatus.STOPPED)) {
+            firstResponseSla.setStatus(status);
+            firstResponseSla.setCompletedAt(status == SlaStatus.BREACHED ? NOW : null);
+            when(ticketSlaService.findLatestFirstResponseCycle(ticket))
+                    .thenReturn(Optional.of(firstResponseSla));
+
+            TicketResponse response = service.getById(ticketId, actor);
+
+            assertThat(response.getFirstResponseDueAt()).as(status.name()).isEqualTo(dueAt);
+            assertThat(response.isFirstResponseNearDue()).as(status.name())
+                    .isEqualTo(status == SlaStatus.NEAR_DUE);
+            assertThat(response.isFirstResponseBreached()).as(status.name())
+                    .isEqualTo(status == SlaStatus.BREACHED);
+        }
+    }
+
+    @Test
+    void getByIdProjectsResolutionDeadlineAndExistingSignals() {
+        Ticket ticket = ticket(TicketStatus.IN_PROGRESS, Priority.HIGH);
+        ticket.setCitizenId(actor.citizenId());
+        ticket.setAnonymous(false);
+        Instant dueAt = NOW.plus(Duration.ofHours(8));
+        Instant nearDueAt = NOW.plus(Duration.ofHours(2));
+        TicketSla resolutionSla = sla(SlaType.RESOLUTION, SlaStatus.NEAR_DUE, nearDueAt, dueAt);
+
+        when(tickets.findById(ticketId)).thenReturn(Optional.of(ticket));
+        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+        when(ticketSlaService.findLatestFirstResponseCycle(ticket)).thenReturn(Optional.empty());
+        when(ticketSlaService.findLatestResolutionCycle(ticket)).thenReturn(Optional.of(resolutionSla));
+
+        TicketResponse response = service.getById(ticketId, actor);
+
+        assertThat(response.getResolutionDueAt()).isEqualTo(dueAt);
+        assertThat(response.getResolutionNearDueAt()).isEqualTo(nearDueAt);
+        assertThat(response.isSlaNearDue()).isTrue();
+        assertThat(response.isSlaBreached()).isFalse();
+    }
+
+    @Test
+    void getByIdUsesNullDeadlinesAndFalseFlagsWhenSlaCyclesAreAbsent() {
+        Ticket ticket = ticket(TicketStatus.REGISTERED, Priority.MEDIUM);
+        ticket.setCitizenId(actor.citizenId());
+        ticket.setAnonymous(false);
+
+        when(tickets.findById(ticketId)).thenReturn(Optional.of(ticket));
+        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+        when(ticketSlaService.findLatestFirstResponseCycle(ticket)).thenReturn(Optional.empty());
+        when(ticketSlaService.findLatestResolutionCycle(ticket)).thenReturn(Optional.empty());
+
+        TicketResponse response = service.getById(ticketId, actor);
+
+        assertThat(response.getFirstResponseDueAt()).isNull();
+        assertThat(response.isFirstResponseNearDue()).isFalse();
+        assertThat(response.isFirstResponseBreached()).isFalse();
+        assertThat(response.getResolutionDueAt()).isNull();
+        assertThat(response.getResolutionNearDueAt()).isNull();
+        assertThat(response.isSlaNearDue()).isFalse();
+        assertThat(response.isSlaBreached()).isFalse();
     }
 
     @Test
@@ -1699,6 +1798,15 @@ class TicketServiceTest {
     // ==================================================================
     // ---- fixtures Sprint 2 ----
     // ==================================================================
+
+    private TicketSla sla(SlaType type, SlaStatus status, Instant nearDueAt, Instant dueAt) {
+        TicketSla sla = new TicketSla();
+        sla.setSlaType(type);
+        sla.setStatus(status);
+        sla.setNearDueAt(nearDueAt);
+        sla.setDueAt(dueAt);
+        return sla;
+    }
 
     private Ticket ticket(TicketStatus status, Priority priority) {
         Category category = new Category();

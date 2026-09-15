@@ -1139,13 +1139,15 @@ components:
     TicketResponse:
       type: object
       description: |
-        Vista interna de un ticket para agentes/administradores (listado y
-        transiciones de Sprint 2/3). No confundir con TrackingTicketResponse,
-        que es la vista pública reducida.
+        Vista compartida de un ticket para listados, detalles ciudadanos/staff
+        y transiciones. No confundir con TrackingTicketResponse, que es la
+        vista pública reducida. Los deadlines SLA son proyecciones derivadas
+        de TicketSla y no atributos persistidos del Ticket.
       required: [id, publicId, requestTypeCode, requestTypeName, categoryName, subcategoryName,
                  ticketType, summary, currentStatus, currentPriority, responsibleAreaId,
                  assignedAgentId, anonymous, estimatedAffectedCount, escalated, neighborhoodId,
-                 escalationReasonCode, escalatedAt, slaNearDue, slaBreached, resolutionNearDueAt,
+                 escalationReasonCode, escalatedAt, firstResponseDueAt, firstResponseNearDue,
+                 firstResponseBreached, resolutionDueAt, slaNearDue, slaBreached, resolutionNearDueAt,
                  neighborhoodName, classificationFinalizedAt,
                  statusChangedAt, createdAt, updatedAt]
       properties:
@@ -1191,6 +1193,22 @@ components:
           type: string
           format: date-time
           nullable: true
+        firstResponseDueAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Deadline del último ciclo FIRST_RESPONSE; se conserva como referencia histórica al finalizar.
+        firstResponseNearDue:
+          type: boolean
+          description: El último ciclo FIRST_RESPONSE se encuentra actualmente en estado NEAR_DUE.
+        firstResponseBreached:
+          type: boolean
+          description: El último ciclo FIRST_RESPONSE está en BREACHED, incluso si ya finalizó.
+        resolutionDueAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Deadline del último ciclo RESOLUTION, derivado desde TicketSla.
         slaNearDue:
           type: boolean
           description: El ciclo de resolución más reciente se encuentra actualmente en estado NEAR_DUE.

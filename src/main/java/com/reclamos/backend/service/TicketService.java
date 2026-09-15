@@ -478,10 +478,12 @@ public class TicketService {
         Map<UUID, TicketLocation> locationsByTicket = locationRepository
                 .findAllByTicket_IdIn(ticketIds).stream()
                 .collect(Collectors.toMap(location -> location.getTicket().getId(), Function.identity()));
+        Map<UUID, TicketSla> latestFirstResponseByTicket =
+                ticketSlaService.findLatestFirstResponseCycles(page.getContent());
         Map<UUID, TicketSla> latestResolutionByTicket =
                 ticketSlaService.findLatestResolutionCycles(page.getContent());
 
-        return mapPage(page, locationsByTicket, latestResolutionByTicket);
+        return mapPage(page, locationsByTicket, latestFirstResponseByTicket, latestResolutionByTicket);
     }
 
     /**
@@ -502,9 +504,11 @@ public class TicketService {
                 .findAllByTicket_IdIn(ticketIds).stream()
                 .collect(Collectors.toMap(location -> location.getTicket().getId(), Function.identity()));
 
+        Map<UUID, TicketSla> latestFirstResponseByTicket =
+                ticketSlaService.findLatestFirstResponseCycles(page.getContent());
         Map<UUID, TicketSla> latestResolutionByTicket =
                 ticketSlaService.findLatestResolutionCycles(page.getContent());
-        return mapPage(page, locationsByTicket, latestResolutionByTicket);
+        return mapPage(page, locationsByTicket, latestFirstResponseByTicket, latestResolutionByTicket);
     }
 
     /**
@@ -686,10 +690,18 @@ public class TicketService {
     }
 
     private TicketResponse toResponse(Ticket ticket, TicketLocation location) {
-        return toResponse(ticket, location, ticketSlaService.findLatestResolutionCycle(ticket).orElse(null));
+        return toResponse(ticket, location,
+                ticketSlaService.findLatestFirstResponseCycle(ticket).orElse(null),
+                ticketSlaService.findLatestResolutionCycle(ticket).orElse(null));
     }
 
     private TicketResponse toResponse(Ticket ticket, TicketLocation location, TicketSla resolutionSla) {
+        return toResponse(ticket, location,
+                ticketSlaService.findLatestFirstResponseCycle(ticket).orElse(null), resolutionSla);
+    }
+
+    private TicketResponse toResponse(Ticket ticket, TicketLocation location,
+                                      TicketSla firstResponseSla, TicketSla resolutionSla) {
         RequestType requestType = ticket.getRequestType();
         Subcategory subcategory = requestType.getSubcategory();
         Category category = subcategory.getCategory();
@@ -713,7 +725,7 @@ public class TicketService {
         response.setEscalated(ticket.isEscalated());
         response.setEscalationReasonCode(ticket.getEscalationReasonCode());
         response.setEscalatedAt(ticket.getEscalatedAt());
-        applySlaSignals(response, resolutionSla);
+        applySlaSignals(response, firstResponseSla, resolutionSla);
         if (location != null && location.getNeighborhood() != null) {
             response.setNeighborhoodId(location.getNeighborhood().getId());
             response.setNeighborhoodName(location.getNeighborhood().getName());
@@ -725,13 +737,25 @@ public class TicketService {
         return response;
     }
 
-    private void applySlaSignals(TicketResponse response, TicketSla resolutionSla) {
+    private void applySlaSignals(TicketResponse response, TicketSla firstResponseSla,
+                                 TicketSla resolutionSla) {
+        if (firstResponseSla == null) {
+            response.setFirstResponseDueAt(null);
+            response.setFirstResponseNearDue(false);
+            response.setFirstResponseBreached(false);
+        } else {
+            response.setFirstResponseDueAt(firstResponseSla.getDueAt());
+            response.setFirstResponseNearDue(firstResponseSla.getStatus() == SlaStatus.NEAR_DUE);
+            response.setFirstResponseBreached(firstResponseSla.getStatus() == SlaStatus.BREACHED);
+        }
         if (resolutionSla == null) {
+            response.setResolutionDueAt(null);
             response.setSlaNearDue(false);
             response.setSlaBreached(false);
             response.setResolutionNearDueAt(null);
             return;
         }
+        response.setResolutionDueAt(resolutionSla.getDueAt());
         response.setSlaNearDue(resolutionSla.getStatus() == SlaStatus.NEAR_DUE);
         response.setSlaBreached(resolutionSla.getStatus() == SlaStatus.BREACHED);
         response.setResolutionNearDueAt(resolutionSla.getNearDueAt());
@@ -739,9 +763,10 @@ public class TicketService {
 
     private Page<TicketResponse> mapPage(Page<Ticket> page,
                                          Map<UUID, TicketLocation> locationsByTicket,
+                                         Map<UUID, TicketSla> latestFirstResponseByTicket,
                                          Map<UUID, TicketSla> latestResolutionByTicket) {
         return page.map(ticket -> toResponse(ticket, locationsByTicket.get(ticket.getId()),
-                latestResolutionByTicket.get(ticket.getId())));
+                latestFirstResponseByTicket.get(ticket.getId()), latestResolutionByTicket.get(ticket.getId())));
     }
 
     private void validateLocation(RequestType type, CreateTicketRequest.LocationData location) {
