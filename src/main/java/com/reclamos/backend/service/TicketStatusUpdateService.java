@@ -444,11 +444,22 @@ public class TicketStatusUpdateService {
         response.setEscalated(ticket.isEscalated());
         response.setEscalationReasonCode(ticket.getEscalationReasonCode());
         response.setEscalatedAt(ticket.getEscalatedAt());
+        ticketSlaService.findLatestFirstResponseCycle(ticket).ifPresentOrElse(sla -> {
+            response.setFirstResponseDueAt(sla.getDueAt());
+            response.setFirstResponseNearDue(sla.getStatus() == SlaStatus.NEAR_DUE);
+            response.setFirstResponseBreached(sla.getStatus() == SlaStatus.BREACHED);
+        }, () -> {
+            response.setFirstResponseDueAt(null);
+            response.setFirstResponseNearDue(false);
+            response.setFirstResponseBreached(false);
+        });
         ticketSlaService.findLatestResolutionCycle(ticket).ifPresentOrElse(sla -> {
+            response.setResolutionDueAt(sla.getDueAt());
             response.setSlaNearDue(sla.getStatus() == SlaStatus.NEAR_DUE);
             response.setSlaBreached(sla.getStatus() == SlaStatus.BREACHED);
             response.setResolutionNearDueAt(sla.getNearDueAt());
         }, () -> {
+            response.setResolutionDueAt(null);
             response.setSlaNearDue(false);
             response.setSlaBreached(false);
             response.setResolutionNearDueAt(null);

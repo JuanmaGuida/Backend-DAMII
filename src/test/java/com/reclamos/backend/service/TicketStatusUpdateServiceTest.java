@@ -142,6 +142,11 @@ class TicketStatusUpdateServiceTest {
         TicketSla sla = new TicketSla();
         sla.setStatus(SlaStatus.NEAR_DUE);
         sla.setNearDueAt(Instant.parse("2026-09-08T11:00:00Z"));
+        sla.setDueAt(Instant.parse("2026-09-08T15:00:00Z"));
+        TicketSla firstResponseSla = new TicketSla();
+        firstResponseSla.setStatus(SlaStatus.BREACHED);
+        firstResponseSla.setDueAt(Instant.parse("2026-09-07T15:00:00Z"));
+        firstResponseSla.setCompletedAt(Instant.parse("2026-09-07T16:00:00Z"));
         Instant escalatedAt = Instant.parse("2026-09-08T10:00:00Z");
         ticket.setEscalated(true);
         ticket.setEscalationReasonCode(EscalationReasonCode.CRITICAL_PRIORITY);
@@ -149,6 +154,7 @@ class TicketStatusUpdateServiceTest {
         when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
         when(activityRepository.countByTicketId(ticketId)).thenReturn(0);
         when(locationRepository.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+        when(ticketSlaService.findLatestFirstResponseCycle(ticket)).thenReturn(Optional.of(firstResponseSla));
         when(ticketSlaService.findLatestResolutionCycle(ticket)).thenReturn(Optional.of(sla));
 
         Instant realOccurredAt = Instant.now().minusSeconds(120);
@@ -163,6 +169,10 @@ class TicketStatusUpdateServiceTest {
         assertThat(response.isEscalated()).isTrue();
         assertThat(response.getEscalationReasonCode()).isEqualTo(EscalationReasonCode.CRITICAL_PRIORITY);
         assertThat(response.getEscalatedAt()).isEqualTo(escalatedAt);
+        assertThat(response.getFirstResponseDueAt()).isEqualTo(firstResponseSla.getDueAt());
+        assertThat(response.isFirstResponseNearDue()).isFalse();
+        assertThat(response.isFirstResponseBreached()).isTrue();
+        assertThat(response.getResolutionDueAt()).isEqualTo(sla.getDueAt());
         assertThat(response.isSlaNearDue()).isTrue();
         assertThat(response.isSlaBreached()).isFalse();
         assertThat(response.getResolutionNearDueAt()).isEqualTo(sla.getNearDueAt());

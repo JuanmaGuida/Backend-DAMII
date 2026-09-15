@@ -386,6 +386,34 @@ class TicketSlaServiceTest {
         verify(slas, never()).findFirstByTicket_IdAndSlaTypeOrderByCycleNumberDesc(any(), any());
     }
 
+    @Test void paginatedTicketsLoadLatestFirstResponseCyclesInOneBatchIncludingDuplicates() {
+        Ticket main = new Ticket();
+        main.setId(UUID.randomUUID());
+        Ticket duplicate = new Ticket();
+        duplicate.setId(UUID.randomUUID());
+        duplicate.setMainTicket(main);
+        Ticket standalone = new Ticket();
+        standalone.setId(UUID.randomUUID());
+
+        TicketSla mainSla = cycle(1, SlaStatus.BREACHED);
+        mainSla.setTicket(main);
+        mainSla.setSlaType(SlaType.FIRST_RESPONSE);
+        TicketSla standaloneSla = cycle(1, SlaStatus.MET);
+        standaloneSla.setTicket(standalone);
+        standaloneSla.setSlaType(SlaType.FIRST_RESPONSE);
+        when(slas.findLatestByTicketIds(anyCollection(), eq(SlaType.FIRST_RESPONSE)))
+                .thenReturn(List.of(mainSla, standaloneSla));
+
+        Map<UUID, TicketSla> result = service.findLatestFirstResponseCycles(
+                List.of(main, duplicate, standalone));
+
+        assertSame(mainSla, result.get(main.getId()));
+        assertSame(mainSla, result.get(duplicate.getId()));
+        assertSame(standaloneSla, result.get(standalone.getId()));
+        verify(slas).findLatestByTicketIds(anyCollection(), eq(SlaType.FIRST_RESPONSE));
+        verify(slas, never()).findFirstByTicket_IdAndSlaTypeOrderByCycleNumberDesc(any(), any());
+    }
+
     private TicketSla cycle(int cycleNumber, SlaStatus status) {
         TicketSla sla = new TicketSla();
         sla.setTicket(ticket);

@@ -30,6 +30,10 @@ public class TicketResponse {
     private boolean escalated;
     private EscalationReasonCode escalationReasonCode;
     private Instant escalatedAt;
+    private Instant firstResponseDueAt;
+    private boolean firstResponseNearDue;
+    private boolean firstResponseBreached;
+    private Instant resolutionDueAt;
     private boolean slaNearDue;
     private boolean slaBreached;
     private Instant resolutionNearDueAt;

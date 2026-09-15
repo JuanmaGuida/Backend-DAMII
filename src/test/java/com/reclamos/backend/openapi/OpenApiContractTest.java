@@ -181,6 +181,10 @@ class OpenApiContractTest {
         assertEquals(Set.of("name"), map(schemas, "TrackingRequestTypeSummary", "properties").keySet());
         assertTrue(map(schemas, "TicketResponse", "properties").containsKey("escalationReasonCode"));
         assertTrue(map(schemas, "TicketResponse", "properties").containsKey("escalatedAt"));
+        assertTrue(map(schemas, "TicketResponse", "properties").containsKey("firstResponseDueAt"));
+        assertTrue(map(schemas, "TicketResponse", "properties").containsKey("firstResponseNearDue"));
+        assertTrue(map(schemas, "TicketResponse", "properties").containsKey("firstResponseBreached"));
+        assertTrue(map(schemas, "TicketResponse", "properties").containsKey("resolutionDueAt"));
         assertTrue(map(schemas, "TicketResponse", "properties").containsKey("slaNearDue"));
         assertTrue(map(schemas, "TicketResponse", "properties").containsKey("slaBreached"));
         assertTrue(map(schemas, "TicketResponse", "properties").containsKey("resolutionNearDueAt"));

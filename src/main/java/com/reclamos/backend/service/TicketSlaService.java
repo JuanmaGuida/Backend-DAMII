@@ -129,8 +129,16 @@ public class TicketSlaService {
     }
 
     public Optional<TicketSla> findLatestResolutionCycle(Ticket ticket) {
+        return findLatestCycle(ticket, SlaType.RESOLUTION);
+    }
+
+    public Optional<TicketSla> findLatestFirstResponseCycle(Ticket ticket) {
+        return findLatestCycle(ticket, SlaType.FIRST_RESPONSE);
+    }
+
+    private Optional<TicketSla> findLatestCycle(Ticket ticket, SlaType type) {
         Ticket owner = ticket.getMainTicket() == null ? ticket : ticket.getMainTicket();
-        return slaRepository.findFirstByTicket_IdAndSlaTypeOrderByCycleNumberDesc(owner.getId(), SlaType.RESOLUTION);
+        return slaRepository.findFirstByTicket_IdAndSlaTypeOrderByCycleNumberDesc(owner.getId(), type);
     }
 
     /**
@@ -152,6 +160,14 @@ public class TicketSlaService {
 
     /** Carga una sola vez el último ciclo de cada owner para respuestas paginadas. */
     public Map<UUID, TicketSla> findLatestResolutionCycles(List<Ticket> tickets) {
+        return findLatestCycles(tickets, SlaType.RESOLUTION);
+    }
+
+    public Map<UUID, TicketSla> findLatestFirstResponseCycles(List<Ticket> tickets) {
+        return findLatestCycles(tickets, SlaType.FIRST_RESPONSE);
+    }
+
+    private Map<UUID, TicketSla> findLatestCycles(List<Ticket> tickets, SlaType type) {
         if (tickets.isEmpty()) {
             return Map.of();
         }
@@ -161,7 +177,7 @@ public class TicketSlaService {
             ownerByTicket.put(ticket.getId(), owner.getId());
         }
         Map<UUID, TicketSla> latestByOwner = new HashMap<>();
-        slaRepository.findLatestByTicketIds(ownerByTicket.values(), SlaType.RESOLUTION)
+        slaRepository.findLatestByTicketIds(ownerByTicket.values(), type)
                 .forEach(sla -> latestByOwner.put(sla.getTicket().getId(), sla));
 
         Map<UUID, TicketSla> result = new HashMap<>();
