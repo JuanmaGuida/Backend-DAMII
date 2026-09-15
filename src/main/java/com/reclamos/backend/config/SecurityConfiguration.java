@@ -123,6 +123,8 @@ public class SecurityConfiguration {
                         // sin AREA_RESPONSIBLE) lo valida TicketService.requireCancelAuthority.
                         .requestMatchers(HttpMethod.POST, "/api/tickets/*/cancel").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/tracking/access").permitAll()
+                        // Laboratorio JMS: el controlador sólo existe con el perfil p2p-lab.
+                        .requestMatchers(HttpMethod.POST, "/api/lab/p2p/messages").permitAll()
                         // BE - Story 3.4/DDA2-61: el simulador de updateTicketStatus simula
                         // una llamada de un sistema externo (llegaría por bus de eventos, no
                         // HTTP con bearer token de agente) y sólo existe como bean cuando

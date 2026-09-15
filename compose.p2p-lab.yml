@@ -1,0 +1,24 @@
+services:
+  activemq:
+    image: apache/activemq:6.3.2
+    command:
+      - sh
+      - -c
+      - >-
+        sed -i 's|<Item>127.0.0.1</Item>|<Item>127.0.0.1</Item><Item>10.0.0.0/8</Item><Item>172.16.0.0/12</Item><Item>192.168.0.0/16</Item>|'
+        /opt/apache-activemq/conf/jetty/jetty-security.xml &&
+        exec /opt/apache-activemq/bin/activemq console
+    ports:
+      - "127.0.0.1:61616:61616"
+      - "127.0.0.1:8161:8161"
+    restart: unless-stopped
+
+  backend:
+    environment:
+      SPRING_PROFILES_ACTIVE: dev,p2p-lab
+      ACTIVEMQ_BROKER_URL: tcp://activemq:61616
+      ACTIVEMQ_USER: admin
+      ACTIVEMQ_PASSWORD: admin
+    depends_on:
+      activemq:
+        condition: service_started
