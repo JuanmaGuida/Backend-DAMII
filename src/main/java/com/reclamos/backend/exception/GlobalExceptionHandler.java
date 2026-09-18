@@ -39,7 +39,8 @@ public class GlobalExceptionHandler {
                 .body(new ApiErrorResponse(TrackingTicketNotFoundException.CODE, exception.getMessage()));
     }
 
-    @ExceptionHandler({InvalidTicketRequestException.class, MethodArgumentNotValidException.class})
+    @ExceptionHandler({InvalidTicketRequestException.class, InvalidCatalogRequestException.class,
+            MethodArgumentNotValidException.class})
     public ResponseEntity<ApiErrorResponse> handleBadRequest(Exception exception) {
         String message = exception instanceof MethodArgumentNotValidException validation
                 ? validation.getBindingResult().getFieldErrors().stream().findFirst()
