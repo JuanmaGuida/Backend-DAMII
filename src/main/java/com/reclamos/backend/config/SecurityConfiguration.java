@@ -128,6 +128,15 @@ public class SecurityConfiguration {
                         // HTTP con bearer token de agente) y sólo existe como bean cuando
                         // app.simulator.enabled=true (ver TicketSimulationController).
                         .requestMatchers(HttpMethod.POST, "/api/tickets/*/simulate-status-update").permitAll()
+                        // BE - DDA2-114/115/116 (US "Panel de administración del catálogo"):
+                        // el panel admin de Categories/Subcategories/Request Types es
+                        // exclusivo de ADMIN. La verificación exhaustiva de esta
+                        // autorización (tests dedicados, casos de acceso denegado) es
+                        // DDA2-139/140/141 — historia separada — pero dejar estos
+                        // endpoints de escritura bajo el fallback authenticated() de
+                        // abajo permitiría que cualquier CITIZEN autenticado modifique
+                        // el catálogo, así que el gate mínimo se agrega ya acá.
+                        .requestMatchers("/api/admin/catalog/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(bearerTokenAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
