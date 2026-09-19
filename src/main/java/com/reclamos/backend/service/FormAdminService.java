@@ -99,10 +99,23 @@ public class FormAdminService {
                 .map(previous -> previous.getVersion() + 1)
                 .orElse(1);
 
+        // QA (FAIL de "consulta y actualización del schema de Request
+        // Types"): la base exige "máximo una versión activa por RequestType"
+        // con un índice único parcial (uk_form_template_active_request_type
+        // ON form_templates(request_type_id) WHERE active = TRUE — V3). Con
+        // FormTemplate.id GenerationType.IDENTITY, el INSERT de la versión
+        // nueva se ejecuta de forma inmediata (Hibernate necesita el id ya
+        // generado), mientras que un simple save() de la versión anterior
+        // sólo queda como UPDATE diferido hasta el flush/commit. Resultado:
+        // en CUALQUIER segunda versión, el INSERT nuevo (active=true) corría
+        // contra la base con la versión anterior todavía en active=true →
+        // violación del índice único → 500. saveAndFlush fuerza que el
+        // UPDATE que desactiva la versión anterior llegue a la base ANTES
+        // del INSERT de la nueva, para no pisar el índice único.
         formTemplateRepository.findFirstByRequestType_IdAndActiveTrueOrderByVersionDesc(requestType.getId())
                 .ifPresent(previousActive -> {
                     previousActive.setActive(false);
-                    formTemplateRepository.save(previousActive);
+                    formTemplateRepository.saveAndFlush(previousActive);
                 });
 
         FormTemplate template = new FormTemplate();
@@ -208,7 +221,7 @@ public class FormAdminService {
         List<RiskRuleAdminRequest> activeRules = rules.stream().filter(RiskRuleAdminRequest::isActive).toList();
         for (int i = 0; i < activeRules.size(); i++) {
             for (int j = i + 1; j < activeRules.size(); j++) {
-                if (rulesOverlap(activeRules.get(i), activeRules.get(j))) {
+                if (rulesOverlap(field.getType(), activeRules.get(i), activeRules.get(j))) {
                     throw new InvalidCatalogRequestException(
                             "El campo '" + field.getCode() + "' tiene dos reglas de riesgo activas "
                                     + "que pueden coincidir con la misma respuesta");
@@ -251,22 +264,60 @@ public class FormAdminService {
      * 500 al crear el ticket; acá se rechaza antes de guardar, con un 400
      * para el admin que configuró mal la regla.
      */
-    private boolean rulesOverlap(RiskRuleAdminRequest a, RiskRuleAdminRequest b) {
+    private boolean rulesOverlap(FormFieldType fieldType, RiskRuleAdminRequest a, RiskRuleAdminRequest b) {
         boolean discreteA = isDiscrete(a);
         boolean discreteB = isDiscrete(b);
 
         if (discreteA && discreteB) {
-            return !intersection(valuesOf(a), valuesOf(b)).isEmpty();
+            // QA (FAIL de "validación del formato JSON antes de persistir
+            // modificaciones"): esto antes armaba dos Set<Object> con los
+            // expectedValue crudos (tal cual los deserializa Jackson en un
+            // campo Object: 5 -> Integer, 5.0 -> Double) y los comparaba con
+            // Set.retainAll, que usa equals()/hashCode() de Object. Integer 5
+            // y Double 5.0 nunca son equals() entre sí aunque sean el mismo
+            // número, así que dos reglas EQUALS con 5 y 5.0 no se detectaban
+            // como solapadas acá — y el 500 aparecía recién en
+            // RiskCalculationService al crear el ticket, con
+            // equalsTyped/toBigDecimal comparando por valor numérico real.
+            // Se reemplaza por una comparación consciente del tipo del
+            // campo (igual criterio que RiskCalculationService.equalsTyped),
+            // no por identidad de tipo Java.
+            return valuesOf(a).stream().anyMatch(valueA ->
+                    valuesOf(b).stream().anyMatch(valueB -> valuesEqual(fieldType, valueA, valueB)));
         }
         if (discreteA || discreteB) {
             RiskRuleAdminRequest discrete = discreteA ? a : b;
             RiskRuleAdminRequest range = discreteA ? b : a;
             return valuesOf(discrete).stream().anyMatch(value ->
-                    value instanceof Number number && inRange(new BigDecimal(number.toString()), range));
+                    value instanceof Number number && inRange(toBigDecimal(number), range));
         }
         BigDecimal maxLow = max(lowerBound(a), lowerBound(b));
         BigDecimal minHigh = min(upperBound(a), upperBound(b));
         return maxLow.compareTo(minHigh) <= 0;
+    }
+
+    /**
+     * Mismo criterio de igualdad que {@code RiskCalculationService.equalsTyped}
+     * (mantenido deliberadamente como código paralelo, no compartido — misma
+     * decisión de diseño que ya documenta el comentario de
+     * {@code validateRiskRules} sobre requireRiskCompatibleType): dos
+     * respuestas NUMBER son la misma si representan el mismo valor numérico,
+     * sin importar cómo haya deserializado Jackson el JSON (Integer, Long,
+     * Double, BigDecimal...).
+     */
+    private boolean valuesEqual(FormFieldType type, Object a, Object b) {
+        if (a == null || b == null) {
+            return false;
+        }
+        return switch (type) {
+            case NUMBER -> a instanceof Number numberA && b instanceof Number numberB
+                    && toBigDecimal(numberA).compareTo(toBigDecimal(numberB)) == 0;
+            case BOOLEAN, SELECT, TEXT, TEXTAREA, DATE -> a.equals(b);
+        };
+    }
+
+    private BigDecimal toBigDecimal(Number value) {
+        return value instanceof BigDecimal decimal ? decimal : new BigDecimal(value.toString());
     }
 
     private boolean isDiscrete(RiskRuleAdminRequest rule) {
@@ -278,12 +329,6 @@ public class FormAdminService {
             return new HashSet<>(values);
         }
         return rule.getExpectedValue() == null ? Set.of() : Set.of(rule.getExpectedValue());
-    }
-
-    private Set<Object> intersection(Set<Object> a, Set<Object> b) {
-        Set<Object> result = new HashSet<>(a);
-        result.retainAll(b);
-        return result;
     }
 
     private boolean inRange(BigDecimal value, RiskRuleAdminRequest range) {

@@ -73,6 +73,16 @@ class FormAdminServiceTest {
             }
             return template;
         });
+        // saveForm() usa saveAndFlush() (no save()) para desactivar la
+        // versión previa — ver el comentario en FormAdminService.saveForm
+        // sobre uk_form_template_active_request_type + IDENTITY insert.
+        lenient().when(formTemplateRepository.saveAndFlush(any(FormTemplate.class))).thenAnswer(invocation -> {
+            FormTemplate template = invocation.getArgument(0);
+            if (template.getId() == null) {
+                template.setId(nextId++);
+            }
+            return template;
+        });
         lenient().when(formFieldRepository.save(any(FormField.class))).thenAnswer(invocation -> {
             FormField field = invocation.getArgument(0);
             if (field.getId() == null) {
@@ -162,7 +172,13 @@ class FormAdminServiceTest {
         assertEquals(2, response.getVersion());
         assertTrue(response.isActive());
         assertFalse(v1.getActive());
-        verify(formTemplateRepository).save(v1);
+        // Regresión: tiene que ser saveAndFlush, no save() — con save() el
+        // UPDATE que desactiva v1 queda diferido hasta el commit y el
+        // INSERT (inmediato por IDENTITY) de v2 pisa
+        // uk_form_template_active_request_type en la base real. Un mock no
+        // distingue esto por sí solo, así que lo afirmamos explícitamente.
+        verify(formTemplateRepository).saveAndFlush(v1);
+        verify(formTemplateRepository, never()).save(v1);
     }
 
     @Test
@@ -295,6 +311,47 @@ class FormAdminServiceTest {
                         Map.of("options", List.of(Map.of("value", "ALTO", "label", "Alto"))), rules));
 
         assertThrows(InvalidCatalogRequestException.class, () -> service.saveForm(1L, request));
+    }
+
+    @Test
+    void saveFormRejectsOverlappingEqualsRulesWithNumericallyEquivalentValuesOfDifferentJavaType() {
+        // QA (FAIL de "validación del formato JSON antes de persistir
+        // modificaciones"): 5 (Integer, como deserializa Jackson un JSON sin
+        // punto decimal en un campo Object) y 5.0 (Double, con punto
+        // decimal) son el mismo valor NUMBER, pero antes del fix
+        // Integer(5).equals(Double(5.0)) == false hacía que esto pasara
+        // como "no solapan". Acá se simula exactamente esa mezcla de tipos
+        // Java, no dos BigDecimal con distinta escala.
+        when(requestTypeRepository.findById(1L)).thenReturn(Optional.of(requestType(1L)));
+
+        List<RiskRuleAdminRequest> rules = List.of(
+                ruleRequest(RiskOperator.EQUALS, 5, null, null, (short) 10, true),
+                ruleRequest(RiskOperator.EQUALS, 5.0, null, null, (short) 20, true));
+        FormTemplateAdminRequest request = templateRequest(
+                fieldRequest("CANTIDAD", FormFieldType.NUMBER, null, rules));
+
+        assertThrows(InvalidCatalogRequestException.class, () -> service.saveForm(1L, request));
+        verify(formTemplateRepository, never()).save(any());
+    }
+
+    @Test
+    void saveFormAllowsEqualsRulesWithGenuinelyDifferentNumericValues() {
+        // Control: valores realmente distintos (5 vs 6) no deben rechazarse
+        // por el fix de comparación numérica.
+        when(requestTypeRepository.findById(1L)).thenReturn(Optional.of(requestType(1L)));
+        when(formTemplateRepository.findFirstByRequestType_IdOrderByVersionDesc(1L)).thenReturn(Optional.empty());
+        when(formTemplateRepository.findFirstByRequestType_IdAndActiveTrueOrderByVersionDesc(1L))
+                .thenReturn(Optional.empty());
+
+        List<RiskRuleAdminRequest> rules = List.of(
+                ruleRequest(RiskOperator.EQUALS, 5, null, null, (short) 10, true),
+                ruleRequest(RiskOperator.EQUALS, 6.0, null, null, (short) 20, true));
+        FormTemplateAdminRequest request = templateRequest(
+                fieldRequest("CANTIDAD", FormFieldType.NUMBER, null, rules));
+
+        FormTemplateAdminResponse response = service.saveForm(1L, request);
+
+        assertEquals(2, response.getFields().get(0).getRiskRules().size());
     }
 
     @Test
