@@ -7,9 +7,11 @@ import com.reclamos.backend.entity.Priority;
 import com.reclamos.backend.entity.Risk;
 import com.reclamos.backend.entity.Subcategory;
 import com.reclamos.backend.entity.TicketType;
+import com.reclamos.backend.exception.InvalidCatalogRequestException;
 import com.reclamos.backend.repository.CategoryRepository;
 import com.reclamos.backend.repository.RequestTypeRepository;
 import com.reclamos.backend.repository.SubcategoryRepository;
+import com.reclamos.backend.repository.TicketRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -73,6 +75,8 @@ class CatalogAdminServiceConcurrencyIntegrationTest {
     @Autowired
     private RequestTypeRepository requestTypeRepository;
     @Autowired
+    private TicketRepository ticketRepository;
+    @Autowired
     private JdbcTemplate jdbcTemplate;
     @Autowired
     private TransactionTemplate transactions;
@@ -89,7 +93,8 @@ class CatalogAdminServiceConcurrencyIntegrationTest {
             return categoryRepository.existsByNameIgnoreCase(actualName);
         }).when(coordinatedRepository).existsByNameIgnoreCase(any());
         CatalogAdminService service =
-                new CatalogAdminService(coordinatedRepository, subcategoryRepository, requestTypeRepository);
+                new CatalogAdminService(
+                        coordinatedRepository, subcategoryRepository, requestTypeRepository, ticketRepository);
         ExecutorService executor = Executors.newFixedThreadPool(2);
 
         try {
@@ -139,7 +144,8 @@ class CatalogAdminServiceConcurrencyIntegrationTest {
             return categoryRepository.existsByNameIgnoreCase(actualName);
         }).when(coordinatedRepository).existsByNameIgnoreCase(any());
         CatalogAdminService service =
-                new CatalogAdminService(coordinatedRepository, subcategoryRepository, requestTypeRepository);
+                new CatalogAdminService(
+                        coordinatedRepository, subcategoryRepository, requestTypeRepository, ticketRepository);
         ExecutorService executor = Executors.newFixedThreadPool(2);
 
         try {
@@ -173,26 +179,15 @@ class CatalogAdminServiceConcurrencyIntegrationTest {
      * ambos activos) para que la única carrera forzada sea la de código —
      * el pre-check de nombre no está sincronizado y no debería interferir.
      *
-     * QA (retest de DDA2-115): a diferencia de createCategory (Category no
-     * tiene relaciones), createRequestType empieza por
-     * requireActiveSubcategory, que hace subcategory.getCategory().isActive()
-     * — un @ManyToOne LAZY — ANTES de llegar siquiera al pre-check
-     * sincronizado por el CyclicBarrier. new CatalogAdminService(...) no pasa
-     * por el proxy @Transactional de Spring (eso sólo lo aplica el
-     * ApplicationContext sobre el bean real), así que subcategoryRepository
-     * .findById(...) corría en su propia mini-transacción de
-     * SimpleJpaRepository que se cerraba apenas devolvía el resultado — para
-     * cuando el código tocaba .getCategory(), la Session ya estaba cerrada y
-     * las dos ramas volaban con LazyInitializationException antes de
-     * validar la carrera real (0 éxitos, 0 conflictos). Se envuelve la
-     * llamada al service en transactions.execute(...) (mismo patrón que
-     * TicketResolutionNumberConcurrencyIntegrationTest.createResolvableTicket)
-     * para que cada hilo tenga una Session/transacción propia y viva durante
-     * toda la llamada, igual que si el service hubiera pasado por el proxy
-     * real — sin tocar los dos tests de arriba, que nunca la necesitaron.
+     * La serialización jerárquica toma Category/Subcategory antes del
+     * pre-check de código. Por eso ambos hilos se largan juntos con una
+     * barrera externa, pero ya no se fuerza artificialmente que los dos
+     * atraviesen el pre-check: uno persiste y el otro observa el duplicado
+     * tras adquirir los locks (o queda frenado por la constraint). En ambos
+     * casos el conflicto es controlado y nunca quedan dos códigos equivalentes.
      */
     @Test
-    void concurrentCreatesWithCaseVariantCodesLeaveExactlyOneRequestTypeAndFailTheOtherWithDataIntegrityViolation()
+    void concurrentCreatesWithCaseVariantCodesLeaveExactlyOneRequestTypeAndFailTheOtherWithControlledConflict()
             throws Exception {
         Category category = categoryRepository.save(newCategory("CategoriaCI" + UUID.randomUUID()));
         Subcategory subcategory =
@@ -200,37 +195,37 @@ class CatalogAdminServiceConcurrencyIntegrationTest {
         String baseCode = "RTCI" + UUID.randomUUID().toString().replace("-", "");
         String codeLower = baseCode.toLowerCase();
         String codeUpper = baseCode.toUpperCase();
-        CyclicBarrier preCheckBarrier = new CyclicBarrier(2);
-        RequestTypeRepository coordinatedRepository =
-                mock(RequestTypeRepository.class, delegatesTo(requestTypeRepository));
-        doAnswer(invocation -> {
-            preCheckBarrier.await(10, TimeUnit.SECONDS);
-            String actualCode = invocation.getArgument(0);
-            return requestTypeRepository.existsByCodeIgnoreCase(actualCode);
-        }).when(coordinatedRepository).existsByCodeIgnoreCase(any());
+        CyclicBarrier startBarrier = new CyclicBarrier(2);
         CatalogAdminService service =
-                new CatalogAdminService(categoryRepository, subcategoryRepository, coordinatedRepository);
+                new CatalogAdminService(
+                        categoryRepository, subcategoryRepository, requestTypeRepository, ticketRepository);
         ExecutorService executor = Executors.newFixedThreadPool(2);
 
         try {
-            Future<Exception> first = executor.submit(() -> attemptCreateRequestType(
-                    service, subcategory.getId(), codeLower, "RequestTypeCiA" + UUID.randomUUID()));
-            Future<Exception> second = executor.submit(() -> attemptCreateRequestType(
-                    service, subcategory.getId(), codeUpper, "RequestTypeCiB" + UUID.randomUUID()));
+            Future<Exception> first = executor.submit(() -> {
+                startBarrier.await(10, TimeUnit.SECONDS);
+                return attemptCreateRequestType(
+                        service, subcategory.getId(), codeLower, "RequestTypeCiA" + UUID.randomUUID());
+            });
+            Future<Exception> second = executor.submit(() -> {
+                startBarrier.await(10, TimeUnit.SECONDS);
+                return attemptCreateRequestType(
+                        service, subcategory.getId(), codeUpper, "RequestTypeCiB" + UUID.randomUUID());
+            });
 
             Exception firstOutcome = first.get(15, TimeUnit.SECONDS);
             Exception secondOutcome = second.get(15, TimeUnit.SECONDS);
             long successes = Stream.of(firstOutcome, secondOutcome).filter(outcome -> outcome == null).count();
-            long integrityFailures = Stream.of(firstOutcome, secondOutcome)
-                    .filter(outcome -> outcome instanceof DataIntegrityViolationException)
+            long controlledFailures = Stream.of(firstOutcome, secondOutcome)
+                    .filter(outcome -> outcome instanceof InvalidCatalogRequestException
+                            || outcome instanceof DataIntegrityViolationException)
                     .count();
 
             assertEquals(1, successes,
                     "de dos altas concurrentes que sólo difieren en mayúsculas de código, exactamente una debe "
                             + "persistir");
-            assertEquals(1, integrityFailures,
-                    "la otra debe fallar con DataIntegrityViolationException — antes de V36 quedaban las dos "
-                            + "guardadas porque uk_request_type_code era case-sensitive");
+            assertEquals(1, controlledFailures,
+                    "la otra debe fallar con un conflicto controlado, antes o en la constraint case-insensitive");
             assertEquals(1, jdbcTemplate.queryForObject(
                     "SELECT COUNT(*) FROM request_types WHERE LOWER(code) = LOWER(?)", Integer.class, codeLower));
         } finally {
@@ -279,7 +274,7 @@ class CatalogAdminServiceConcurrencyIntegrationTest {
         request.setName(name);
         request.setDescription("desc");
         request.setTicketType(TicketType.COMPLAINT);
-        request.setResponsibleAreaId("area-1");
+        request.setResponsibleAreaId("M1");
         request.setMinimumPriority(Priority.LOW);
         request.setBaseRisk(Risk.LOW);
         request.setAffectedPopulationFactor(new BigDecimal("0.5"));

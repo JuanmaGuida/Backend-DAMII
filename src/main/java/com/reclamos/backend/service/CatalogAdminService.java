@@ -14,11 +14,14 @@ import com.reclamos.backend.exception.ResourceNotFoundException;
 import com.reclamos.backend.repository.CategoryRepository;
 import com.reclamos.backend.repository.RequestTypeRepository;
 import com.reclamos.backend.repository.SubcategoryRepository;
+import com.reclamos.backend.repository.TicketRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * BE - DDA2-114/115/116 (US "Panel de administración del catálogo"): CRUD
@@ -52,6 +55,7 @@ public class CatalogAdminService {
     private final CategoryRepository categoryRepository;
     private final SubcategoryRepository subcategoryRepository;
     private final RequestTypeRepository requestTypeRepository;
+    private final TicketRepository ticketRepository;
 
     @Transactional(readOnly = true)
     public List<CategoryAdminResponse> listCategories() {
@@ -73,8 +77,7 @@ public class CatalogAdminService {
     }
 
     public CategoryAdminResponse updateCategory(Long categoryId, CategoryAdminRequest request) {
-        Category category = categoryRepository.findById(categoryId)
-                .orElseThrow(() -> new ResourceNotFoundException("La categoría solicitada no existe"));
+        Category category = lockCategory(categoryId);
 
         if (categoryRepository.existsByNameIgnoreCaseAndIdNot(request.getName(), categoryId)) {
             throw new InvalidCatalogRequestException(
@@ -97,7 +100,7 @@ public class CatalogAdminService {
     }
 
     public SubcategoryAdminResponse createSubcategory(SubcategoryAdminRequest request) {
-        Category category = requireActiveCategory(request.getCategoryId());
+        Category category = requireActiveCategoryForUpdate(request.getCategoryId());
 
         if (subcategoryRepository.existsByCategory_IdAndNameIgnoreCase(category.getId(), request.getName())) {
             throw new InvalidCatalogRequestException(
@@ -113,8 +116,14 @@ public class CatalogAdminService {
     }
 
     public SubcategoryAdminResponse updateSubcategory(Long subcategoryId, SubcategoryAdminRequest request) {
-        Subcategory subcategory = subcategoryRepository.findById(subcategoryId)
+        Long originalCategoryId = subcategoryRepository.findCategoryIdById(subcategoryId)
                 .orElseThrow(() -> new ResourceNotFoundException("La subcategoría solicitada no existe"));
+        Map<Long, Category> lockedCategories = lockCategories(originalCategoryId, request.getCategoryId());
+        Subcategory subcategory = subcategoryRepository.findByIdForUpdate(subcategoryId)
+                .orElseThrow(() -> new ResourceNotFoundException("La subcategoría solicitada no existe"));
+        if (!subcategory.getCategory().getId().equals(originalCategoryId)) {
+            throw concurrentHierarchyChange();
+        }
 
         // Sólo valida que la nueva Category esté activa si efectivamente se
         // está reasignando el padre ("no se permite asociar una entidad
@@ -122,9 +131,11 @@ public class CatalogAdminService {
         // re-valida el padre actual si no cambia, para no bloquear una
         // edición de nombre/descripción sobre una Subcategory cuya Category
         // fue desactivada después de creada).
-        Category category = subcategory.getCategory().getId().equals(request.getCategoryId())
-                ? subcategory.getCategory()
-                : requireActiveCategory(request.getCategoryId());
+        Category category = lockedCategories.get(request.getCategoryId());
+        if (!originalCategoryId.equals(request.getCategoryId()) && !category.isActive()) {
+            throw new InvalidCatalogRequestException(
+                    "La categoría seleccionada no existe o está inactiva");
+        }
 
         if (subcategoryRepository.existsByCategory_IdAndNameIgnoreCaseAndIdNot(
                 category.getId(), request.getName(), subcategoryId)) {
@@ -150,7 +161,7 @@ public class CatalogAdminService {
     }
 
     public RequestTypeAdminResponse createRequestType(RequestTypeAdminRequest request) {
-        Subcategory subcategory = requireActiveSubcategory(request.getSubcategoryId());
+        Subcategory subcategory = requireActiveSubcategoryForUpdate(request.getSubcategoryId());
 
         if (requestTypeRepository.existsByCodeIgnoreCase(request.getCode())) {
             throw new InvalidCatalogRequestException(
@@ -169,12 +180,41 @@ public class CatalogAdminService {
     }
 
     public RequestTypeAdminResponse updateRequestType(Long requestTypeId, RequestTypeAdminRequest request) {
-        RequestType requestType = requestTypeRepository.findById(requestTypeId)
+        Long originalSubcategoryId = requestTypeRepository.findSubcategoryIdById(requestTypeId)
                 .orElseThrow(() -> new ResourceNotFoundException("El Request Type solicitado no existe"));
+        Long originalCategoryId = subcategoryRepository.findCategoryIdById(originalSubcategoryId)
+                .orElseThrow(this::concurrentHierarchyChange);
+        Long targetCategoryId = subcategoryRepository.findCategoryIdById(request.getSubcategoryId())
+                .orElseThrow(() -> new InvalidCatalogRequestException(
+                        "La subcategoría seleccionada no existe o está inactiva"));
+        Map<Long, Category> lockedCategories = lockCategories(
+                originalCategoryId,
+                targetCategoryId);
+        Map<Long, Subcategory> lockedSubcategories = lockSubcategories(
+                originalSubcategoryId, request.getSubcategoryId());
+        RequestType requestType = requestTypeRepository.findByIdForUpdate(requestTypeId)
+                .orElseThrow(() -> new ResourceNotFoundException("El Request Type solicitado no existe"));
+        if (!requestType.getSubcategory().getId().equals(originalSubcategoryId)) {
+            throw concurrentHierarchyChange();
+        }
 
-        Subcategory subcategory = requestType.getSubcategory().getId().equals(request.getSubcategoryId())
-                ? requestType.getSubcategory()
-                : requireActiveSubcategory(request.getSubcategoryId());
+        if (!lockedSubcategories.get(originalSubcategoryId).getCategory().getId().equals(originalCategoryId)
+                || !lockedSubcategories.get(request.getSubcategoryId()).getCategory().getId()
+                        .equals(targetCategoryId)) {
+            throw concurrentHierarchyChange();
+        }
+
+        Subcategory subcategory = lockedSubcategories.get(request.getSubcategoryId());
+        Category lockedTargetCategory = lockedCategories.get(subcategory.getCategory().getId());
+        if (lockedTargetCategory == null) {
+            throw concurrentHierarchyChange();
+        }
+
+        if (!originalSubcategoryId.equals(request.getSubcategoryId())
+                && (!subcategory.isActive() || !lockedTargetCategory.isActive())) {
+            throw new InvalidCatalogRequestException(
+                    "La subcategoría seleccionada no existe o está inactiva");
+        }
 
         if (requestTypeRepository.existsByCodeIgnoreCaseAndIdNot(request.getCode(), requestTypeId)) {
             throw new InvalidCatalogRequestException(
@@ -187,14 +227,19 @@ public class CatalogAdminService {
                             + "' en la subcategoría seleccionada");
         }
 
+        if (ticketRepository.existsByRequestType_Id(requestTypeId)
+                && requestType.getBaseRisk() != request.getBaseRisk()) {
+            throw new InvalidCatalogRequestException(
+                    "No se puede modificar el riesgo base de un Request Type que ya tiene tickets asociados");
+        }
+
         requestType.setSubcategory(subcategory);
         applyFields(requestType, request);
         return toResponse(requestTypeRepository.save(requestType));
     }
 
     public CategoryAdminResponse deactivateCategory(Long categoryId) {
-        Category category = categoryRepository.findById(categoryId)
-                .orElseThrow(() -> new ResourceNotFoundException("La categoría solicitada no existe"));
+        Category category = lockCategory(categoryId);
         category.setActive(false);
         CategoryAdminResponse response = toResponse(categoryRepository.save(category));
 
@@ -202,7 +247,7 @@ public class CatalogAdminService {
         // Request Types. Se fuerza active=false en todo el árbol sin
         // importar el estado previo de cada hijo (idempotente) — más
         // simple y más seguro que sólo tocar las que estaban activas.
-        for (Subcategory subcategory : subcategoryRepository.findByCategory_IdOrderByNameAsc(categoryId)) {
+        for (Subcategory subcategory : subcategoryRepository.findByCategoryIdOrderByIdAscForUpdate(categoryId)) {
             subcategory.setActive(false);
             subcategoryRepository.save(subcategory);
             deactivateRequestTypesOf(subcategory.getId());
@@ -213,15 +258,13 @@ public class CatalogAdminService {
 
     public CategoryAdminResponse activateCategory(Long categoryId) {
         // Category es la raíz de la jerarquía: no tiene padre que validar.
-        Category category = categoryRepository.findById(categoryId)
-                .orElseThrow(() -> new ResourceNotFoundException("La categoría solicitada no existe"));
+        Category category = lockCategory(categoryId);
         category.setActive(true);
         return toResponse(categoryRepository.save(category));
     }
 
     public SubcategoryAdminResponse deactivateSubcategory(Long subcategoryId) {
-        Subcategory subcategory = subcategoryRepository.findById(subcategoryId)
-                .orElseThrow(() -> new ResourceNotFoundException("La subcategoría solicitada no existe"));
+        Subcategory subcategory = lockSubcategoryHierarchy(subcategoryId).subcategory();
         subcategory.setActive(false);
         SubcategoryAdminResponse response = toResponse(subcategoryRepository.save(subcategory));
 
@@ -232,17 +275,16 @@ public class CatalogAdminService {
     }
 
     private void deactivateRequestTypesOf(Long subcategoryId) {
-        for (RequestType requestType : requestTypeRepository.findBySubcategory_IdOrderByNameAsc(subcategoryId)) {
+        for (RequestType requestType : requestTypeRepository.findBySubcategoryIdOrderByIdAscForUpdate(subcategoryId)) {
             requestType.setActive(false);
             requestTypeRepository.save(requestType);
         }
     }
 
     public SubcategoryAdminResponse activateSubcategory(Long subcategoryId) {
-        Subcategory subcategory = subcategoryRepository.findById(subcategoryId)
-                .orElseThrow(() -> new ResourceNotFoundException("La subcategoría solicitada no existe"));
-
-        Category category = subcategory.getCategory();
+        LockedSubcategory hierarchy = lockSubcategoryHierarchy(subcategoryId);
+        Subcategory subcategory = hierarchy.subcategory();
+        Category category = hierarchy.category();
         if (!category.isActive()) {
             throw new InvalidCatalogRequestException(
                     "No se puede activar la subcategoría porque su categoría '"
@@ -254,27 +296,26 @@ public class CatalogAdminService {
     }
 
     public RequestTypeAdminResponse deactivateRequestType(Long requestTypeId) {
-        RequestType requestType = requestTypeRepository.findById(requestTypeId)
-                .orElseThrow(() -> new ResourceNotFoundException("El Request Type solicitado no existe"));
+        RequestType requestType = lockRequestTypeHierarchy(requestTypeId).requestType();
         requestType.setActive(false);
         return toResponse(requestTypeRepository.save(requestType));
     }
 
     public RequestTypeAdminResponse activateRequestType(Long requestTypeId) {
-        RequestType requestType = requestTypeRepository.findById(requestTypeId)
-                .orElseThrow(() -> new ResourceNotFoundException("El Request Type solicitado no existe"));
+        LockedRequestType hierarchy = lockRequestTypeHierarchy(requestTypeId);
+        RequestType requestType = hierarchy.requestType();
 
         // Se valida la cadena completa (Subcategory Y Category), no sólo el
         // padre inmediato: "No puede existir un Request Type activo cuya
         // Subcategory o Category esté inactiva" es el mismo invariante que
         // DDA2-126/127/128/129 formaliza para toda la jerarquía.
-        Subcategory subcategory = requestType.getSubcategory();
+        Subcategory subcategory = hierarchy.subcategory();
         if (!subcategory.isActive()) {
             throw new InvalidCatalogRequestException(
                     "No se puede activar el Request Type porque su subcategoría '"
                             + subcategory.getName() + "' está inactiva");
         }
-        Category category = subcategory.getCategory();
+        Category category = hierarchy.category();
         if (!category.isActive()) {
             throw new InvalidCatalogRequestException(
                     "No se puede activar el Request Type porque la categoría '"
@@ -285,14 +326,14 @@ public class CatalogAdminService {
         return toResponse(requestTypeRepository.save(requestType));
     }
 
-    private Category requireActiveCategory(Long categoryId) {
-        return categoryRepository.findById(categoryId)
+    private Category requireActiveCategoryForUpdate(Long categoryId) {
+        return categoryRepository.findByIdForUpdate(categoryId)
                 .filter(Category::isActive)
                 .orElseThrow(() -> new InvalidCatalogRequestException(
                         "La categoría seleccionada no existe o está inactiva"));
     }
 
-    private Subcategory requireActiveSubcategory(Long subcategoryId) {
+    private Subcategory requireActiveSubcategoryForUpdate(Long subcategoryId) {
         // DDA2-128/129: "no puede existir un Request Type activo cuya
         // Subcategory O Category esté inactiva" — se valida la cadena
         // completa, no sólo el padre inmediato, igual que en
@@ -301,14 +342,86 @@ public class CatalogAdminService {
         // también es la defensa en profundidad correcta: barata y no
         // depende de que ningún otro camino de escritura se mantenga
         // correcto para siempre.
-        Subcategory subcategory = subcategoryRepository.findById(subcategoryId)
+        Long categoryId = subcategoryRepository.findCategoryIdById(subcategoryId)
                 .orElseThrow(() -> new InvalidCatalogRequestException(
                         "La subcategoría seleccionada no existe o está inactiva"));
-        if (!subcategory.isActive() || !subcategory.getCategory().isActive()) {
+        Category category = categoryRepository.findByIdForUpdate(categoryId)
+                .orElseThrow(() -> new InvalidCatalogRequestException(
+                        "La subcategoría seleccionada no existe o está inactiva"));
+        Subcategory subcategory = subcategoryRepository.findByIdForUpdate(subcategoryId)
+                .orElseThrow(() -> new InvalidCatalogRequestException(
+                        "La subcategoría seleccionada no existe o está inactiva"));
+        if (!subcategory.getCategory().getId().equals(category.getId())) {
+            throw concurrentHierarchyChange();
+        }
+        if (!subcategory.isActive() || !category.isActive()) {
             throw new InvalidCatalogRequestException(
                     "La subcategoría seleccionada no existe o está inactiva");
         }
         return subcategory;
+    }
+
+    private Category lockCategory(Long categoryId) {
+        return categoryRepository.findByIdForUpdate(categoryId)
+                .orElseThrow(() -> new ResourceNotFoundException("La categoría solicitada no existe"));
+    }
+
+    private LockedSubcategory lockSubcategoryHierarchy(Long subcategoryId) {
+        Long categoryId = subcategoryRepository.findCategoryIdById(subcategoryId)
+                .orElseThrow(() -> new ResourceNotFoundException("La subcategoría solicitada no existe"));
+        Category category = lockCategory(categoryId);
+        Subcategory subcategory = subcategoryRepository.findByIdForUpdate(subcategoryId)
+                .orElseThrow(() -> new ResourceNotFoundException("La subcategoría solicitada no existe"));
+        if (!subcategory.getCategory().getId().equals(categoryId)) {
+            throw concurrentHierarchyChange();
+        }
+        return new LockedSubcategory(category, subcategory);
+    }
+
+    private LockedRequestType lockRequestTypeHierarchy(Long requestTypeId) {
+        Long subcategoryId = requestTypeRepository.findSubcategoryIdById(requestTypeId)
+                .orElseThrow(() -> new ResourceNotFoundException("El Request Type solicitado no existe"));
+        Long categoryId = subcategoryRepository.findCategoryIdById(subcategoryId)
+                .orElseThrow(this::concurrentHierarchyChange);
+        Category category = lockCategory(categoryId);
+        Subcategory subcategory = subcategoryRepository.findByIdForUpdate(subcategoryId)
+                .orElseThrow(() -> new ResourceNotFoundException("La subcategoría solicitada no existe"));
+        RequestType requestType = requestTypeRepository.findByIdForUpdate(requestTypeId)
+                .orElseThrow(() -> new ResourceNotFoundException("El Request Type solicitado no existe"));
+        if (!subcategory.getCategory().getId().equals(categoryId)
+                || !requestType.getSubcategory().getId().equals(subcategoryId)) {
+            throw concurrentHierarchyChange();
+        }
+        return new LockedRequestType(category, subcategory, requestType);
+    }
+
+    private Map<Long, Category> lockCategories(Long firstId, Long secondId) {
+        Map<Long, Category> result = new LinkedHashMap<>();
+        List.of(firstId, secondId).stream().distinct().sorted().forEach(id ->
+                result.put(id, categoryRepository.findByIdForUpdate(id)
+                        .orElseThrow(() -> new InvalidCatalogRequestException(
+                                "La categoría seleccionada no existe o está inactiva"))));
+        return result;
+    }
+
+    private Map<Long, Subcategory> lockSubcategories(Long firstId, Long secondId) {
+        Map<Long, Subcategory> result = new LinkedHashMap<>();
+        List.of(firstId, secondId).stream().distinct().sorted().forEach(id ->
+                result.put(id, subcategoryRepository.findByIdForUpdate(id)
+                        .orElseThrow(() -> new InvalidCatalogRequestException(
+                                "La subcategoría seleccionada no existe o está inactiva"))));
+        return result;
+    }
+
+    private InvalidCatalogRequestException concurrentHierarchyChange() {
+        return new InvalidCatalogRequestException(
+                "La jerarquía del catálogo cambió durante la operación; vuelva a intentarlo");
+    }
+
+    private record LockedSubcategory(Category category, Subcategory subcategory) {
+    }
+
+    private record LockedRequestType(Category category, Subcategory subcategory, RequestType requestType) {
     }
 
     private void applyFields(RequestType requestType, RequestTypeAdminRequest request) {

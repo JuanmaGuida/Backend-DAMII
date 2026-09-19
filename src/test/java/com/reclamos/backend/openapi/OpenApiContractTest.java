@@ -269,6 +269,22 @@ class OpenApiContractTest {
     }
 
     @Test
+    void requestTypeAdminDocumentsConditionalBaseRiskMutabilityAndItsFunctionalError() {
+        Map<String, Object> schemas = map(spec, "components", "schemas");
+        Map<String, Object> baseRisk = map(schemas, "RequestTypeAdminRequest", "properties", "baseRisk");
+        String description = string(baseRisk.get("description"));
+
+        assertTrue(description.contains("mientras el Request Type no tenga tickets asociados"));
+        assertTrue(description.contains("sólo se acepta conservar el mismo valor"));
+        assertTrue(baseRisk.get("allOf") instanceof java.util.List<?>);
+        assertEquals("#/components/schemas/Risk",
+                map(((java.util.List<?>) baseRisk.get("allOf")).getFirst()).get("$ref"));
+        assertEquals("#/components/responses/InvalidRequest",
+                map(operation("PUT /api/admin/catalog/request-types/{requestTypeId}"), "responses", "400")
+                        .get("$ref"));
+    }
+
+    @Test
     void requiredAndNullableMatchTheCurrentJacksonContracts() {
         Map<String, Object> schemas = map(spec, "components", "schemas");
         for (String schemaName : RESPONSE_SCHEMAS_WITH_STABLE_PRESENCE) {
