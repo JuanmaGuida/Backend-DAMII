@@ -1697,9 +1697,7 @@ components:
         ticketType:
           $ref: '#/components/schemas/TicketType'
         responsibleAreaId:
-          type: string
-          maxLength: 100
-          description: A diferencia de RequestTypeResponse.responsibleAreaId (ModuleId), acá es un string libre validado recién al crear un ticket contra ese Request Type.
+          $ref: '#/components/schemas/ModuleId'
         minimumPriority:
           $ref: '#/components/schemas/Priority'
         baseRisk:
@@ -1738,7 +1736,7 @@ components:
         ticketType:
           $ref: '#/components/schemas/TicketType'
         responsibleAreaId:
-          type: string
+          $ref: '#/components/schemas/ModuleId'
         minimumPriority:
           $ref: '#/components/schemas/Priority'
         baseRisk:

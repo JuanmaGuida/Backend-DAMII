@@ -616,7 +616,7 @@ class TicketStatusUpdateServiceTest {
         verify(cancellationRepository).save(argThat(cancellation ->
                 cancellation.getReasonCode() == CancellationReasonCode.REJECTED_BY_AREA));
         verify(outbox).cancelled(ticket, CancellationReasonCode.REJECTED_BY_AREA,
-                "No es posible continuar.", false, data.updateOccurredAt());
+                "No es posible continuar.", false, FIXED_NOW);
     }
 
     @Test

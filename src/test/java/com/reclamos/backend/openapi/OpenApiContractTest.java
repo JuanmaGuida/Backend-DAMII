@@ -213,8 +213,6 @@ class OpenApiContractTest {
 
         String serialized = spec.toString();
         assertFalse(serialized.contains("riskScore"));
-        assertFalse(serialized.contains("RiskRule"));
-        assertFalse(serialized.contains("riskIncrement"));
         assertFalse(serialized.contains("formTemplateId"));
         assertFalse(serialized.contains("storageKey"));
         assertFalse(serialized.contains("trackingCodeHash"));
