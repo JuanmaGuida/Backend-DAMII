@@ -1,4 +1,7 @@
 @baseUrl = http://localhost:8080
+@citizenPassword = {{$dotenv MOCK_CITIZEN_PASSWORD}}
+@agentPassword = {{$dotenv MOCK_AGENT_PASSWORD}}
+@areaResponsiblePassword = {{$dotenv MOCK_AREA_RESPONSIBLE_PASSWORD}}
 
 
 ###############################################
@@ -18,7 +21,7 @@ Content-Type: application/json
 
 {
   "username": "citizen@example.test",
-  "password": "CitizenDev!2026"
+  "password": "{{citizenPassword}}"
 }
 
 
@@ -40,7 +43,7 @@ Content-Type: application/json
 
 {
   "username": "agent@example.test",
-  "password": "AgentDev!2026"
+  "password": "{{agentPassword}}"
 }
 
 
@@ -62,7 +65,7 @@ Content-Type: application/json
 
 {
   "username": "area.responsible@example.test",
-  "password": "AreaDev!2026"
+  "password": "{{areaResponsiblePassword}}"
 }
 
 

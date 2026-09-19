@@ -24,13 +24,9 @@ import java.util.concurrent.ConcurrentHashMap;
 @Profile("dev")
 public class MockIdentityProvider implements IdentityProvider {
     static final String CITIZEN_USERNAME = "citizen@example.test";
-    static final String CITIZEN_PASSWORD = "CitizenDev!2026";
     static final String AGENT_USERNAME = "agent@example.test";
-    static final String AGENT_PASSWORD = "AgentDev!2026";
     static final String AREA_RESPONSIBLE_USERNAME = "area.responsible@example.test";
-    static final String AREA_RESPONSIBLE_PASSWORD = "AreaDev!2026";
     static final String ADMIN_USERNAME = "module.admin@example.test";
-    static final String ADMIN_PASSWORD = "AdminDev!2026";
 
     private static final int TOKEN_BYTES = 32;
 
@@ -49,42 +45,40 @@ public class MockIdentityProvider implements IdentityProvider {
             "Administrador", "de módulo de prueba", "Administrador de módulo de prueba",
             ADMIN_USERNAME);
 
-    private static final Map<String, MockUser> USERS = Map.of(
-            CITIZEN_USERNAME, user(
-                    CITIZEN_PASSWORD,
-                    CITIZEN_PROFILE
-            ),
-            AGENT_USERNAME, user(
-                    AGENT_PASSWORD,
-                    AGENT_PROFILE
-            ),
-            AREA_RESPONSIBLE_USERNAME, user(
-                    AREA_RESPONSIBLE_PASSWORD,
-                    AREA_RESPONSIBLE_PROFILE
-            ),
-            ADMIN_USERNAME, user(
-                    ADMIN_PASSWORD,
-                    ADMIN_PROFILE
-            )
-    );
-
     private final Duration sessionTtl;
     private final Clock clock;
     private final SecureRandom secureRandom;
+    private final Map<String, MockUser> users;
     private final Map<String, StoredSession> sessions = new ConcurrentHashMap<>();
 
     @Autowired
-    public MockIdentityProvider(@Value("${app.identity.mock.session-ttl}") Duration sessionTtl) {
-        this(sessionTtl, Clock.systemUTC(), new SecureRandom());
+    public MockIdentityProvider(
+            @Value("${app.identity.mock.session-ttl}") Duration sessionTtl,
+            @Value("${app.identity.mock.citizen-password}") String citizenPassword,
+            @Value("${app.identity.mock.agent-password}") String agentPassword,
+            @Value("${app.identity.mock.area-responsible-password}") String areaResponsiblePassword,
+            @Value("${app.identity.mock.admin-password}") String adminPassword
+    ) {
+        this(sessionTtl, Clock.systemUTC(), new SecureRandom(), citizenPassword, agentPassword,
+                areaResponsiblePassword, adminPassword);
     }
 
-    MockIdentityProvider(Duration sessionTtl, Clock clock, SecureRandom secureRandom) {
+    MockIdentityProvider(Duration sessionTtl, Clock clock, SecureRandom secureRandom,
+                         String citizenPassword, String agentPassword,
+                         String areaResponsiblePassword, String adminPassword) {
         if (sessionTtl == null || sessionTtl.isZero() || sessionTtl.isNegative()) {
             throw new IllegalArgumentException("sessionTtl must be positive");
         }
         this.sessionTtl = sessionTtl;
         this.clock = clock;
         this.secureRandom = secureRandom;
+        this.users = Map.of(
+                CITIZEN_USERNAME, user(requirePassword(citizenPassword, "citizen"), CITIZEN_PROFILE),
+                AGENT_USERNAME, user(requirePassword(agentPassword, "agent"), AGENT_PROFILE),
+                AREA_RESPONSIBLE_USERNAME,
+                user(requirePassword(areaResponsiblePassword, "area responsible"), AREA_RESPONSIBLE_PROFILE),
+                ADMIN_USERNAME, user(requirePassword(adminPassword, "admin"), ADMIN_PROFILE)
+        );
     }
 
     @Override
@@ -93,7 +87,7 @@ public class MockIdentityProvider implements IdentityProvider {
             return Optional.empty();
         }
 
-        MockUser user = USERS.get(username);
+        MockUser user = users.get(username);
         if (user == null || !passwordMatches(password, user.password())) {
             return Optional.empty();
         }
@@ -153,6 +147,13 @@ public class MockIdentityProvider implements IdentityProvider {
 
     private static MockUser user(String password, ExternalIdentityProfile identity) {
         return new MockUser(password, identity);
+    }
+
+    private static String requirePassword(String password, String userLabel) {
+        if (password == null || password.isBlank()) {
+            throw new IllegalArgumentException("Mock password for " + userLabel + " must not be blank");
+        }
+        return password;
     }
 
     private record MockUser(String password, ExternalIdentityProfile identity) {

@@ -17,7 +17,13 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 
 @SpringBootTest(
         classes = MockIdentityProvider.class,
-        webEnvironment = SpringBootTest.WebEnvironment.NONE
+        webEnvironment = SpringBootTest.WebEnvironment.NONE,
+        properties = {
+                "app.identity.mock.citizen-password=citizen-test-password",
+                "app.identity.mock.agent-password=agent-test-password",
+                "app.identity.mock.area-responsible-password=area-test-password",
+                "app.identity.mock.admin-password=admin-test-password"
+        }
 )
 @ActiveProfiles("dev")
 class MockIdentityProviderSpringContextTest {
@@ -35,7 +41,7 @@ class MockIdentityProviderSpringContextTest {
         Instant beforeLogin = Instant.now();
         ExternalAuthenticatedSession session = identityProvider.authenticate(
                 MockIdentityProvider.AGENT_USERNAME,
-                MockIdentityProvider.AGENT_PASSWORD
+                "agent-test-password"
         ).orElseThrow();
         Instant afterLogin = Instant.now();
 

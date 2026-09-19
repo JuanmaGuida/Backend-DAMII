@@ -334,12 +334,14 @@ TICKET_INFORMATION_EXPIRATION_SCAN_DELAY=30000
 # Usuarios mock disponibles en desarrollo
 
 El profile `dev` incluye identidades simuladas para desarrollar sin depender de M1.
+Las contraseñas no están versionadas: deben definirse en el `.env` local usando
+las variables indicadas a continuación.
 
 ## Ciudadano
 
 ```text
 Username: citizen@example.test
-Password: CitizenDev!2026
+Password: valor de MOCK_CITIZEN_PASSWORD
 Role: CITIZEN
 Area ID: null
 ```
@@ -348,7 +350,7 @@ Area ID: null
 
 ```text
 Username: agent@example.test
-Password: AgentDev!2026
+Password: valor de MOCK_AGENT_PASSWORD
 Role: AGENT
 Area ID: null
 ```
@@ -357,7 +359,7 @@ Area ID: null
 
 ```text
 Username: area.responsible@example.test
-Password: AreaDev!2026
+Password: valor de MOCK_AREA_RESPONSIBLE_PASSWORD
 Role: AREA_RESPONSIBLE
 Area ID: M6
 ```
@@ -366,7 +368,7 @@ Area ID: M6
 
 ```text
 Username: module.admin@example.test
-Password: AdminDev!2026
+Password: valor de MOCK_ADMIN_PASSWORD
 Role: ADMIN
 Area ID: null
 ```

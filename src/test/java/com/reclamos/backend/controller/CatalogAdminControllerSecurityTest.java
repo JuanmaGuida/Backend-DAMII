@@ -46,7 +46,7 @@ class CatalogAdminControllerSecurityTest {
     private static final String REQUEST_TYPE_BODY = """
             {"subcategoryId":1,"code":"TEST-CODE","name":"Request type de prueba",
             "description":"Descripción de prueba","ticketType":"COMPLAINT",
-            "responsibleAreaId":"AREA-TEST","minimumPriority":"LOW","baseRisk":"LOW",
+            "responsibleAreaId":"M2","minimumPriority":"LOW","baseRisk":"LOW",
             "affectedPopulationFactor":1.0,"allowsAnonymous":false,"requiresLocation":false}""";
 
     private static final RoleAuth CITIZEN = roleAuth("CITIZEN", ModuleRole.CITIZEN, "000000000005");
