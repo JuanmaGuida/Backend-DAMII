@@ -7,6 +7,7 @@ import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
@@ -31,8 +32,16 @@ public class RequestTypeAdminRequest {
     @NotNull(message = "ticketType es obligatorio")
     private TicketType ticketType;
 
+    // DDA2-190 (QA FAIL): sólo se validaba obligatoriedad/longitud, así que un
+    // valor fuera del namespace M1..M9 (p.ej. "area-1", "M0", "M10", "m6" o un
+    // nombre humano) pasaba esta validación y recién fallaba en PostgreSQL por
+    // ck_request_type_responsible_area_namespace, devolviendo un 409 genérico
+    // de conflicto de persistencia en vez de un 400 de request inválido. Mismo
+    // guardrail simétrico que affectedPopulationFactor más abajo: el patrón
+    // espeja exactamente el CHECK de la migración V9
+    // (responsible_area_id IN ('M1', 'M2', ..., 'M9')).
     @NotBlank(message = "responsibleAreaId es obligatorio")
-    @Size(max = 100, message = "responsibleAreaId no puede superar los 100 caracteres")
+    @Pattern(regexp = "^M[1-9]$", message = "responsibleAreaId debe pertenecer al namespace M1..M9")
     private String responsibleAreaId;
 
     @NotNull(message = "minimumPriority es obligatorio")
