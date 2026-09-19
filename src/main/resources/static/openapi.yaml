@@ -1703,7 +1703,9 @@ components:
         minimumPriority:
           $ref: '#/components/schemas/Priority'
         baseRisk:
-          $ref: '#/components/schemas/Risk'
+          allOf:
+            - $ref: '#/components/schemas/Risk'
+          description: Puede modificarse mientras el Request Type no tenga tickets asociados. Una vez utilizado por al menos un ticket, sólo se acepta conservar el mismo valor; intentar cambiarlo devuelve 400.
         affectedPopulationFactor:
           type: number
           minimum: 0
