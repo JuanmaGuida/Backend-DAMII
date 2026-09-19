@@ -4,16 +4,12 @@ import jakarta.persistence.*;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+// Unicidad case-insensitive de (category_id, name) vía
+// uk_subcategory_category_name_ci (V36, índice único funcional sobre
+// LOWER(name)) — no representable como @UniqueConstraint de tabla. Ver el
+// comentario equivalente en Category.
 @Entity
-@Table(
-        name = "subcategories",
-        uniqueConstraints = {
-                @UniqueConstraint(
-                        name = "uk_subcategory_category_name",
-                        columnNames = {"category_id", "name"}
-                )
-        }
-)
+@Table(name = "subcategories")
 @Data
 @NoArgsConstructor
 public class Subcategory {
