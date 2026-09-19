@@ -35,6 +35,23 @@ class OpenApiContractTest {
             "GET /api/catalog/categories/{categoryId}/subcategories",
             "GET /api/catalog/subcategories/{subcategoryId}/request-types",
             "GET /api/catalog/request-types/{requestTypeId}/form",
+            "GET /api/admin/catalog/categories",
+            "POST /api/admin/catalog/categories",
+            "PUT /api/admin/catalog/categories/{categoryId}",
+            "GET /api/admin/catalog/categories/{categoryId}/subcategories",
+            "POST /api/admin/catalog/categories/{categoryId}/deactivate",
+            "POST /api/admin/catalog/categories/{categoryId}/activate",
+            "POST /api/admin/catalog/subcategories",
+            "PUT /api/admin/catalog/subcategories/{subcategoryId}",
+            "POST /api/admin/catalog/subcategories/{subcategoryId}/deactivate",
+            "POST /api/admin/catalog/subcategories/{subcategoryId}/activate",
+            "GET /api/admin/catalog/subcategories/{subcategoryId}/request-types",
+            "POST /api/admin/catalog/request-types",
+            "PUT /api/admin/catalog/request-types/{requestTypeId}",
+            "POST /api/admin/catalog/request-types/{requestTypeId}/deactivate",
+            "POST /api/admin/catalog/request-types/{requestTypeId}/activate",
+            "GET /api/admin/catalog/request-types/{requestTypeId}/form",
+            "PUT /api/admin/catalog/request-types/{requestTypeId}/form",
             "GET /api/me/tickets",
             "GET /api/tickets",
             "POST /api/tickets",
@@ -54,6 +71,23 @@ class OpenApiContractTest {
     );
     private static final Set<String> PROTECTED_OPERATIONS = Set.of(
             "GET /api/auth/me",
+            "GET /api/admin/catalog/categories",
+            "POST /api/admin/catalog/categories",
+            "PUT /api/admin/catalog/categories/{categoryId}",
+            "GET /api/admin/catalog/categories/{categoryId}/subcategories",
+            "POST /api/admin/catalog/categories/{categoryId}/deactivate",
+            "POST /api/admin/catalog/categories/{categoryId}/activate",
+            "POST /api/admin/catalog/subcategories",
+            "PUT /api/admin/catalog/subcategories/{subcategoryId}",
+            "POST /api/admin/catalog/subcategories/{subcategoryId}/deactivate",
+            "POST /api/admin/catalog/subcategories/{subcategoryId}/activate",
+            "GET /api/admin/catalog/subcategories/{subcategoryId}/request-types",
+            "POST /api/admin/catalog/request-types",
+            "PUT /api/admin/catalog/request-types/{requestTypeId}",
+            "POST /api/admin/catalog/request-types/{requestTypeId}/deactivate",
+            "POST /api/admin/catalog/request-types/{requestTypeId}/activate",
+            "GET /api/admin/catalog/request-types/{requestTypeId}/form",
+            "PUT /api/admin/catalog/request-types/{requestTypeId}/form",
             "GET /api/me/tickets",
             "GET /api/tickets",
             "POST /api/tickets",
@@ -87,7 +121,13 @@ class OpenApiContractTest {
             "TrackingTicketResponse",
             "TrackingRequestTypeSummary",
             "TrackingCategorySummary",
-            "TrackingSubcategorySummary"
+            "TrackingSubcategorySummary",
+            "CategoryAdminResponse",
+            "SubcategoryAdminResponse",
+            "RequestTypeAdminResponse",
+            "FormTemplateAdminResponse",
+            "FormFieldAdminResponse",
+            "RiskRuleAdminResponse"
     );
 
     private static Map<String, Object> spec;
@@ -108,7 +148,7 @@ class OpenApiContractTest {
     void versionedFileIsAValidOpenApi3DocumentWithExactlyTheCurrentBusinessOperations() {
         assertTrue(string(spec.get("openapi")).startsWith("3."));
         assertEquals("3.0.3", parsedOpenApi.getOpenapi());
-        assertEquals(23, parsedOpenApi.getPaths().size());
+        assertEquals(38, parsedOpenApi.getPaths().size());
         assertNotNull(map(spec, "info").get("title"));
         assertNotNull(map(spec, "components").get("schemas"));
         assertEquals(EXPECTED_OPERATIONS, documentedOperations());

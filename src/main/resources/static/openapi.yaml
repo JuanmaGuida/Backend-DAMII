@@ -9,6 +9,7 @@ servers:
 tags:
   - name: Authentication
   - name: Catalog
+  - name: Catalog Admin
   - name: Tickets
   - name: Information Requests
   - name: Tracking
@@ -172,6 +173,518 @@ paths:
                 $ref: '#/components/schemas/FormDefinitionResponse'
         '400':
           $ref: '#/components/responses/InvalidRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/admin/catalog/categories:
+    get:
+      tags: [Catalog Admin]
+      summary: Listar todas las categorías (activas e inactivas)
+      description: |
+        DDA2-114/115/116 (US "Panel de administración del catálogo"). A
+        diferencia de GET /api/catalog/categories (catálogo público), lista
+        TODAS las categorías sin filtrar por active, para que el panel admin
+        pueda reactivarlas.
+      operationId: getAdminCategories
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Todas las categorías.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CategoryAdminResponse'
+        '401':
+          $ref: '#/components/responses/InvalidToken'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Catalog Admin]
+      summary: Crear una categoría
+      operationId: createCategory
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CategoryAdminRequest'
+      responses:
+        '201':
+          description: Categoría creada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryAdminResponse'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/InvalidToken'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/DataIntegrityConflict'
+  /api/admin/catalog/categories/{categoryId}:
+    put:
+      tags: [Catalog Admin]
+      summary: Actualizar una categoría
+      operationId: updateCategory
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CategoryId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CategoryAdminRequest'
+      responses:
+        '200':
+          description: Categoría actualizada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryAdminResponse'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/InvalidToken'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/DataIntegrityConflict'
+  /api/admin/catalog/categories/{categoryId}/subcategories:
+    get:
+      tags: [Catalog Admin]
+      summary: Listar todas las subcategorías de una categoría (activas e inactivas)
+      operationId: getAdminSubcategoriesByCategory
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CategoryId'
+      responses:
+        '200':
+          description: Todas las subcategorías de la categoría.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SubcategoryAdminResponse'
+        '401':
+          $ref: '#/components/responses/InvalidToken'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/admin/catalog/categories/{categoryId}/deactivate:
+    post:
+      tags: [Catalog Admin]
+      summary: Desactivar una categoría
+      description: |
+        DDA2-120/121/122 + DDA2-126/127 (US "Activar/desactivar entidades del
+        catálogo" + "Integridad jerárquica y desactivación en cascada"):
+        cascadea a todas las subcategorías de la categoría y, a través de
+        ellas, a todos sus tipos de solicitud.
+      operationId: deactivateCategory
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CategoryId'
+      responses:
+        '200':
+          description: Categoría desactivada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryAdminResponse'
+        '401':
+          $ref: '#/components/responses/InvalidToken'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/admin/catalog/categories/{categoryId}/activate:
+    post:
+      tags: [Catalog Admin]
+      summary: Activar una categoría
+      description: |
+        DDA2-120/121/122. Category es la raíz de la jerarquía, así que no
+        valida ningún padre. Activar nunca cascadea hacia abajo (DDA2-128/129):
+        sus subcategorías y tipos de solicitud conservan el estado que tenían.
+      operationId: activateCategory
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CategoryId'
+      responses:
+        '200':
+          description: Categoría activada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryAdminResponse'
+        '401':
+          $ref: '#/components/responses/InvalidToken'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/admin/catalog/subcategories:
+    post:
+      tags: [Catalog Admin]
+      summary: Crear una subcategoría
+      operationId: createSubcategory
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubcategoryAdminRequest'
+      responses:
+        '201':
+          description: Subcategoría creada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubcategoryAdminResponse'
+        '400':
+          description: |
+            Request inválido, o categoryId no corresponde a una categoría
+            existente y activa, o ya existe una subcategoría con ese nombre
+            en la categoría seleccionada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+              example:
+                code: INVALID_REQUEST
+                message: La categoría seleccionada no existe o está inactiva
+        '401':
+          $ref: '#/components/responses/InvalidToken'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/DataIntegrityConflict'
+  /api/admin/catalog/subcategories/{subcategoryId}:
+    put:
+      tags: [Catalog Admin]
+      summary: Actualizar una subcategoría
+      operationId: updateSubcategory
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SubcategoryId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubcategoryAdminRequest'
+      responses:
+        '200':
+          description: Subcategoría actualizada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubcategoryAdminResponse'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/InvalidToken'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/DataIntegrityConflict'
+  /api/admin/catalog/subcategories/{subcategoryId}/deactivate:
+    post:
+      tags: [Catalog Admin]
+      summary: Desactivar una subcategoría
+      description: DDA2-120/121/122 + DDA2-126/127. Cascadea a todos sus tipos de solicitud.
+      operationId: deactivateSubcategory
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SubcategoryId'
+      responses:
+        '200':
+          description: Subcategoría desactivada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubcategoryAdminResponse'
+        '401':
+          $ref: '#/components/responses/InvalidToken'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/admin/catalog/subcategories/{subcategoryId}/activate:
+    post:
+      tags: [Catalog Admin]
+      summary: Activar una subcategoría
+      description: |
+        DDA2-120/121/122 + DDA2-128/129: rechaza la activación si la
+        categoría padre está inactiva. Nunca cascadea hacia abajo.
+      operationId: activateSubcategory
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SubcategoryId'
+      responses:
+        '200':
+          description: Subcategoría activada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubcategoryAdminResponse'
+        '400':
+          description: La categoría padre de la subcategoría está inactiva.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+              example:
+                code: INVALID_REQUEST
+                message: No se puede activar la subcategoría porque su categoría está inactiva
+        '401':
+          $ref: '#/components/responses/InvalidToken'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/admin/catalog/subcategories/{subcategoryId}/request-types:
+    get:
+      tags: [Catalog Admin]
+      summary: Listar todos los tipos de solicitud de una subcategoría (activos e inactivos)
+      operationId: getAdminRequestTypesBySubcategory
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SubcategoryId'
+      responses:
+        '200':
+          description: Todos los tipos de solicitud de la subcategoría.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RequestTypeAdminResponse'
+        '401':
+          $ref: '#/components/responses/InvalidToken'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/admin/catalog/request-types:
+    post:
+      tags: [Catalog Admin]
+      summary: Crear un tipo de solicitud
+      operationId: createRequestType
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RequestTypeAdminRequest'
+      responses:
+        '201':
+          description: Tipo de solicitud creado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestTypeAdminResponse'
+        '400':
+          description: |
+            Request inválido, subcategoryId no corresponde a una subcategoría
+            existente y activa (o su categoría está inactiva), o ya existe un
+            tipo de solicitud con ese código o con ese nombre en la
+            subcategoría seleccionada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+              example:
+                code: INVALID_REQUEST
+                message: Ya existe un Request Type con el código indicado
+        '401':
+          $ref: '#/components/responses/InvalidToken'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/DataIntegrityConflict'
+  /api/admin/catalog/request-types/{requestTypeId}:
+    put:
+      tags: [Catalog Admin]
+      summary: Actualizar un tipo de solicitud
+      operationId: updateRequestType
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/RequestTypeId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RequestTypeAdminRequest'
+      responses:
+        '200':
+          description: Tipo de solicitud actualizado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestTypeAdminResponse'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/InvalidToken'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/DataIntegrityConflict'
+  /api/admin/catalog/request-types/{requestTypeId}/deactivate:
+    post:
+      tags: [Catalog Admin]
+      summary: Desactivar un tipo de solicitud
+      operationId: deactivateRequestType
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/RequestTypeId'
+      responses:
+        '200':
+          description: Tipo de solicitud desactivado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestTypeAdminResponse'
+        '401':
+          $ref: '#/components/responses/InvalidToken'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/admin/catalog/request-types/{requestTypeId}/activate:
+    post:
+      tags: [Catalog Admin]
+      summary: Activar un tipo de solicitud
+      description: |
+        DDA2-120/121/122 + DDA2-128/129: valida la cadena completa
+        (Subcategory Y Category), no sólo el padre inmediato.
+      operationId: activateRequestType
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/RequestTypeId'
+      responses:
+        '200':
+          description: Tipo de solicitud activado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestTypeAdminResponse'
+        '400':
+          description: La subcategoría o la categoría padre del tipo de solicitud están inactivas.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+              example:
+                code: INVALID_REQUEST
+                message: No se puede activar el Request Type porque su subcategoría está inactiva
+        '401':
+          $ref: '#/components/responses/InvalidToken'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/admin/catalog/request-types/{requestTypeId}/form:
+    get:
+      tags: [Catalog Admin]
+      summary: Obtener el formulario dinámico administrativo vigente
+      description: |
+        DDA2-133/134/135 (US "Administración del schema de formularios
+        dinámicos"). A diferencia de GET /api/catalog/request-types/{id}/form
+        (proyección pública, FormDefinitionResponse), expone el modelo
+        administrativo completo (versión, reglas de riesgo, active) para
+        editarlo.
+      operationId: getRequestTypeFormAdmin
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/RequestTypeId'
+      responses:
+        '200':
+          description: Formulario dinámico administrativo vigente.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FormTemplateAdminResponse'
+        '401':
+          $ref: '#/components/responses/InvalidToken'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: El Request Type no existe, o no tiene un formulario configurado todavía.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+              example:
+                code: NOT_FOUND
+                message: El Request Type no tiene un formulario configurado
+    put:
+      tags: [Catalog Admin]
+      summary: Guardar una nueva versión del formulario dinámico
+      description: |
+        DDA2-133/134/135. Un FormTemplate nunca se edita in-place: cada
+        guardado crea una nueva versión (version+1), la marca como la única
+        activa y desactiva la anterior sin borrarla (los tickets ya creados
+        quedan congelados a la versión que tenían). Valida el schema antes de
+        persistir — códigos de pregunta repetidos, `config` de un SELECT sin
+        `options` válidas, y reglas de riesgo mal formadas o solapadas entre
+        sí para la misma respuesta quedan rechazados acá con 400, en vez de
+        fallar recién al crear un ticket.
+      operationId: saveRequestTypeForm
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/RequestTypeId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FormTemplateAdminRequest'
+      responses:
+        '200':
+          description: Nueva versión del formulario guardada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FormTemplateAdminResponse'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/InvalidToken'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
   /api/me/tickets:
@@ -935,6 +1448,19 @@ components:
           example:
             code: UNSUPPORTED_MEDIA_TYPE
             message: Tipo de contenido no soportado
+    DataIntegrityConflict:
+      description: |
+        La operación entra en conflicto con datos existentes (violación de
+        una constraint de unicidad de base, detectada bajo una carrera real
+        entre dos altas/ediciones concurrentes que el pre-check de la
+        aplicación no alcanzó a frenar).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          example:
+            code: DATA_INTEGRITY_CONFLICT
+            message: La operación entra en conflicto con datos existentes
   schemas:
     TicketPublicId:
       type: string
@@ -1086,6 +1612,284 @@ components:
         config:
           type: object
           additionalProperties: true
+    CategoryAdminRequest:
+      type: object
+      required: [name, description]
+      properties:
+        name:
+          type: string
+          maxLength: 150
+        description:
+          type: string
+      additionalProperties: false
+    CategoryAdminResponse:
+      type: object
+      required: [id, name, description, active, createdAt, updatedAt]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        description:
+          type: string
+        active:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    SubcategoryAdminRequest:
+      type: object
+      required: [categoryId, name]
+      properties:
+        categoryId:
+          type: integer
+          format: int64
+        name:
+          type: string
+          maxLength: 150
+        description:
+          type: string
+          nullable: true
+          description: Subcategory.description es nullable en el schema, a diferencia de Category/RequestType.
+      additionalProperties: false
+    SubcategoryAdminResponse:
+      type: object
+      required: [id, categoryId, categoryName, name, description, active]
+      properties:
+        id:
+          type: integer
+          format: int64
+        categoryId:
+          type: integer
+          format: int64
+        categoryName:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        active:
+          type: boolean
+    RequestTypeAdminRequest:
+      type: object
+      required: [subcategoryId, code, name, description, ticketType, responsibleAreaId, minimumPriority,
+                 baseRisk, affectedPopulationFactor]
+      properties:
+        subcategoryId:
+          type: integer
+          format: int64
+        code:
+          type: string
+          maxLength: 100
+        name:
+          type: string
+          maxLength: 200
+        description:
+          type: string
+        ticketType:
+          $ref: '#/components/schemas/TicketType'
+        responsibleAreaId:
+          type: string
+          maxLength: 100
+          description: A diferencia de RequestTypeResponse.responsibleAreaId (ModuleId), acá es un string libre validado recién al crear un ticket contra ese Request Type.
+        minimumPriority:
+          $ref: '#/components/schemas/Priority'
+        baseRisk:
+          $ref: '#/components/schemas/Risk'
+        affectedPopulationFactor:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: Proporción 0..1 de la población del barrio que podría verse afectada (Entidades V1.49 §7.3).
+        allowsAnonymous:
+          type: boolean
+          default: false
+        requiresLocation:
+          type: boolean
+          default: false
+      additionalProperties: false
+    RequestTypeAdminResponse:
+      type: object
+      required: [id, subcategoryId, subcategoryName, code, name, description, ticketType, responsibleAreaId,
+                 minimumPriority, baseRisk, affectedPopulationFactor, allowsAnonymous, requiresLocation, active]
+      properties:
+        id:
+          type: integer
+          format: int64
+        subcategoryId:
+          type: integer
+          format: int64
+        subcategoryName:
+          type: string
+        code:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        ticketType:
+          $ref: '#/components/schemas/TicketType'
+        responsibleAreaId:
+          type: string
+        minimumPriority:
+          $ref: '#/components/schemas/Priority'
+        baseRisk:
+          $ref: '#/components/schemas/Risk'
+        affectedPopulationFactor:
+          type: number
+        allowsAnonymous:
+          type: boolean
+        requiresLocation:
+          type: boolean
+        active:
+          type: boolean
+    FormTemplateAdminRequest:
+      type: object
+      required: [fields]
+      properties:
+        fields:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/FormFieldAdminRequest'
+      additionalProperties: false
+    FormTemplateAdminResponse:
+      type: object
+      required: [id, requestTypeId, version, active, createdAt, fields]
+      properties:
+        id:
+          type: integer
+          format: int64
+        requestTypeId:
+          type: integer
+          format: int64
+        version:
+          type: integer
+          format: int32
+        active:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/FormFieldAdminResponse'
+    FormFieldAdminRequest:
+      type: object
+      description: Versión administrativa de una pregunta del formulario dinámico; ver FormFieldResponse para la proyección pública.
+      required: [code, label, type, displayOrder]
+      properties:
+        code:
+          type: string
+          maxLength: 100
+        label:
+          type: string
+          maxLength: 200
+        type:
+          $ref: '#/components/schemas/FormFieldType'
+        required:
+          type: boolean
+          default: false
+          description: Indica si la clave debe estar presente en `formData` al crear un ticket.
+        allowUnknown:
+          type: boolean
+          default: false
+          description: Indica si un valor JSON `null` representa una respuesta desconocida válida.
+        displayOrder:
+          type: integer
+          format: int32
+        config:
+          type: object
+          additionalProperties: true
+          nullable: true
+          description: Forma dependiente de `type` (ej. `options` para SELECT); validado antes de persistir.
+        riskRules:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/RiskRuleAdminRequest'
+      additionalProperties: false
+    FormFieldAdminResponse:
+      type: object
+      required: [id, code, label, type, required, allowUnknown, displayOrder, config, riskRules]
+      properties:
+        id:
+          type: integer
+          format: int64
+        code:
+          type: string
+        label:
+          type: string
+        type:
+          $ref: '#/components/schemas/FormFieldType'
+        required:
+          type: boolean
+        allowUnknown:
+          type: boolean
+        displayOrder:
+          type: integer
+          format: int32
+        config:
+          type: object
+          additionalProperties: true
+        riskRules:
+          type: array
+          items:
+            $ref: '#/components/schemas/RiskRuleAdminResponse'
+    RiskRuleAdminRequest:
+      type: object
+      required: [operator, riskIncrement]
+      properties:
+        operator:
+          $ref: '#/components/schemas/RiskOperator'
+        expectedValue:
+          nullable: true
+          description: |
+            Requerido para EQUALS (valor único) e IN (lista no vacía); no
+            aplica a BETWEEN/GREATER_THAN/LESS_THAN, que usan valueFrom/valueTo.
+        valueFrom:
+          type: number
+          nullable: true
+          description: Requerido para BETWEEN y GREATER_THAN.
+        valueTo:
+          type: number
+          nullable: true
+          description: Requerido para BETWEEN y LESS_THAN.
+        riskIncrement:
+          type: integer
+          format: int32
+        active:
+          type: boolean
+          default: true
+      additionalProperties: false
+    RiskRuleAdminResponse:
+      type: object
+      required: [id, operator, expectedValue, valueFrom, valueTo, riskIncrement, active]
+      properties:
+        id:
+          type: integer
+          format: int64
+        operator:
+          $ref: '#/components/schemas/RiskOperator'
+        expectedValue:
+          nullable: true
+        valueFrom:
+          type: number
+          nullable: true
+        valueTo:
+          type: number
+          nullable: true
+        riskIncrement:
+          type: integer
+          format: int32
+        active:
+          type: boolean
     CreateTicketRequest:
       type: object
       required: [requestTypeId, summary, description, formData]
@@ -1492,6 +2296,10 @@ components:
     Priority:
       type: string
       enum: [LOW, MEDIUM, HIGH, CRITICAL]
+    Risk:
+      type: string
+      description: Riesgo base de un Request Type (RequestType.baseRisk); mismos valores que Priority pero un concepto distinto — el riesgo dinámico de un ticket parte de éste y se incrementa por RiskRule.
+      enum: [LOW, MEDIUM, HIGH, CRITICAL]
     EscalationReasonCode:
       type: string
       enum: [CRITICAL_PRIORITY, SLA_BREACHED, MANUAL]
@@ -1507,3 +2315,6 @@ components:
     FormFieldType:
       type: string
       enum: [TEXT, TEXTAREA, SELECT, BOOLEAN, NUMBER, DATE]
+    RiskOperator:
+      type: string
+      enum: [EQUALS, BETWEEN, GREATER_THAN, LESS_THAN, IN]
