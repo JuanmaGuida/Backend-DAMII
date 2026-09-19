@@ -1,7 +1,13 @@
 package com.reclamos.backend.controller;
 
 import com.reclamos.backend.config.SecurityConfiguration;
-import com.reclamos.backend.dto.TicketResponse;
+import com.reclamos.backend.dto.response.TicketDetailResponse;
+import com.reclamos.backend.dto.response.TicketActivityResponse;
+import com.reclamos.backend.dto.response.TicketAttachmentResponse;
+import com.reclamos.backend.entity.ActivityType;
+import com.reclamos.backend.entity.ActorType;
+import com.reclamos.backend.entity.MessageVisibility;
+import com.reclamos.backend.entity.Priority;
 import com.reclamos.backend.entity.TicketStatus;
 import com.reclamos.backend.exception.ResourceNotFoundException;
 import com.reclamos.backend.exception.UnauthorizedTicketOperationException;
@@ -21,6 +27,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
 import java.util.UUID;
+import java.time.Instant;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -99,14 +106,28 @@ class StaffTicketControllerTest {
     @Test
     void getStaffDetailIsReachableForEveryStaffRole() throws Exception {
         UUID ticketId = UUID.randomUUID();
-        TicketResponse response = new TicketResponse();
+        TicketDetailResponse response = new TicketDetailResponse();
         response.setId(ticketId);
         response.setCurrentStatus(TicketStatus.IN_REVIEW);
+        response.setDescription("Descripción staff");
+        response.setAttachments(List.of(new TicketAttachmentResponse(
+                2L, "interno.pdf", "application/pdf", 456L,
+                MessageVisibility.INTERNAL, Instant.EPOCH)));
+        response.setTicketActivities(List.of(new TicketActivityResponse(
+                1, ActivityType.PRIORITY_CHANGED, TicketStatus.REGISTERED, TicketStatus.IN_REVIEW,
+                Instant.EPOCH, "STAFF_REASON", ActorType.AGENT, Priority.LOW, Priority.HIGH, "nota staff")));
         when(ticketService.getStaffDetail(eq(ticketId), any())).thenReturn(response);
 
         mockMvc.perform(get("/api/staff/tickets/{ticketId}", ticketId).with(authentication(AGENT_AUTHENTICATION)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.currentStatus").value("IN_REVIEW"));
+                .andExpect(jsonPath("$.currentStatus").value("IN_REVIEW"))
+                .andExpect(jsonPath("$.description").value("Descripción staff"))
+                .andExpect(jsonPath("$.neighborhoodId").doesNotExist())
+                .andExpect(jsonPath("$.attachments[0].visibility").value("INTERNAL"))
+                .andExpect(jsonPath("$.attachments[0].storageKey").doesNotExist())
+                .andExpect(jsonPath("$.ticketActivities[0].actorType").value("AGENT"))
+                .andExpect(jsonPath("$.ticketActivities[0].message").value("nota staff"))
+                .andExpect(jsonPath("$.ticketActivities[0].actorId").doesNotExist());
         mockMvc.perform(get("/api/staff/tickets/{ticketId}", ticketId)
                         .with(authentication(AREA_RESPONSIBLE_AUTHENTICATION)))
                 .andExpect(status().isOk());
@@ -163,15 +184,24 @@ class StaffTicketControllerTest {
     @Test
     void getCitizenViewIsReachableForEveryStaffRole() throws Exception {
         UUID ticketId = UUID.randomUUID();
-        TicketResponse response = new TicketResponse();
+        TicketDetailResponse response = new TicketDetailResponse();
         response.setId(ticketId);
         response.setCurrentStatus(TicketStatus.IN_REVIEW);
+        response.setAttachments(List.of(new TicketAttachmentResponse(
+                1L, "publico.pdf", "application/pdf", 123L,
+                MessageVisibility.PUBLIC, Instant.EPOCH)));
+        response.setTicketActivities(List.of(new TicketActivityResponse(
+                1, ActivityType.PROGRESS_REPORTED, TicketStatus.IN_PROGRESS, TicketStatus.IN_PROGRESS,
+                Instant.EPOCH, null, null, null, null, null)));
         when(ticketService.getStaffCitizenView(eq(ticketId), any())).thenReturn(response);
 
         mockMvc.perform(get("/api/staff/tickets/{ticketId}/citizen-view", ticketId)
                         .with(authentication(AGENT_AUTHENTICATION)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.currentStatus").value("IN_REVIEW"));
+                .andExpect(jsonPath("$.currentStatus").value("IN_REVIEW"))
+                .andExpect(jsonPath("$.attachments[0].visibility").value("PUBLIC"))
+                .andExpect(jsonPath("$.ticketActivities[0].message").doesNotExist())
+                .andExpect(jsonPath("$.ticketActivities[0].actorType").doesNotExist());
         mockMvc.perform(get("/api/staff/tickets/{ticketId}/citizen-view", ticketId)
                         .with(authentication(AREA_RESPONSIBLE_AUTHENTICATION)))
                 .andExpect(status().isOk());
