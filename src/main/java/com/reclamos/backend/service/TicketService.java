@@ -96,7 +96,7 @@ public class TicketService {
         if (identity == null) {
             throw new InvalidTicketRequestException("Se requiere la identidad del ciudadano");
         }
-        RequestType requestType = requestTypeRepository.findById(request.requestTypeId())
+        RequestType requestType = requestTypeRepository.findByIdForUpdate(request.requestTypeId())
                 .orElseThrow(() -> new ResourceNotFoundException("Request Type no encontrado"));
         if (!requestType.isActive()) {
             throw new InvalidTicketRequestException("El Request Type seleccionado está inactivo");
@@ -250,7 +250,7 @@ public class TicketService {
                             + "antes de derivarlo, iniciar gestión o vincularlo como duplicado");
         }
 
-        RequestType newRequestType = requestTypeRepository.findById(newRequestTypeId)
+        RequestType newRequestType = requestTypeRepository.findByIdForUpdate(newRequestTypeId)
                 .filter(RequestType::isActive)
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "El Request Type solicitado no existe o está inactivo"));

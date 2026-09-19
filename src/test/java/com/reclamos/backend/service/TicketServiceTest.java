@@ -45,6 +45,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
@@ -122,6 +123,8 @@ class TicketServiceTest {
         lenient().when(publicIds.generate(NOW)).thenReturn("TK-2026-000123");
         requestType = requestType(true);
 
+        lenient().when(requestTypes.findByIdForUpdate(anyLong()))
+                .thenAnswer(invocation -> requestTypes.findById(invocation.getArgument(0)));
         lenient().when(requestTypes.findById(1L)).thenReturn(Optional.of(requestType));
 
         FormTemplate template = new FormTemplate();

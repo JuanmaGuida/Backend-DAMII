@@ -17,6 +17,7 @@ import com.reclamos.backend.exception.ResourceNotFoundException;
 import com.reclamos.backend.repository.CategoryRepository;
 import com.reclamos.backend.repository.RequestTypeRepository;
 import com.reclamos.backend.repository.SubcategoryRepository;
+import com.reclamos.backend.repository.TicketRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -33,6 +34,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -52,12 +55,33 @@ class CatalogAdminServiceTest {
     private SubcategoryRepository subcategoryRepository;
     @Mock
     private RequestTypeRepository requestTypeRepository;
+    @Mock
+    private TicketRepository ticketRepository;
 
     private CatalogAdminService service;
 
     @BeforeEach
     void setUp() {
-        service = new CatalogAdminService(categoryRepository, subcategoryRepository, requestTypeRepository);
+        lenient().when(categoryRepository.findByIdForUpdate(anyLong()))
+                .thenAnswer(invocation -> categoryRepository.findById(invocation.getArgument(0)));
+        lenient().when(subcategoryRepository.findByIdForUpdate(anyLong()))
+                .thenAnswer(invocation -> subcategoryRepository.findById(invocation.getArgument(0)));
+        lenient().when(subcategoryRepository.findCategoryIdById(anyLong()))
+                .thenAnswer(invocation -> subcategoryRepository.findById(invocation.getArgument(0))
+                        .map(subcategory -> subcategory.getCategory().getId()));
+        lenient().when(requestTypeRepository.findByIdForUpdate(anyLong()))
+                .thenAnswer(invocation -> requestTypeRepository.findById(invocation.getArgument(0)));
+        lenient().when(requestTypeRepository.findSubcategoryIdById(anyLong()))
+                .thenAnswer(invocation -> requestTypeRepository.findById(invocation.getArgument(0))
+                        .map(requestType -> requestType.getSubcategory().getId()));
+        lenient().when(subcategoryRepository.findByCategoryIdOrderByIdAscForUpdate(anyLong()))
+                .thenAnswer(invocation -> subcategoryRepository.findByCategory_IdOrderByNameAsc(
+                        invocation.getArgument(0)));
+        lenient().when(requestTypeRepository.findBySubcategoryIdOrderByIdAscForUpdate(anyLong()))
+                .thenAnswer(invocation -> requestTypeRepository.findBySubcategory_IdOrderByNameAsc(
+                        invocation.getArgument(0)));
+        service = new CatalogAdminService(
+                categoryRepository, subcategoryRepository, requestTypeRepository, ticketRepository);
     }
 
     // ---- Category: listado y CRUD ----
@@ -242,6 +266,7 @@ class CatalogAdminServiceTest {
         Category inactiveCategory = category(10L, "Infraestructura", false);
         Subcategory existing = subcategory(1L, inactiveCategory, "Calles", true);
         when(subcategoryRepository.findById(1L)).thenReturn(Optional.of(existing));
+        when(categoryRepository.findById(10L)).thenReturn(Optional.of(inactiveCategory));
         when(subcategoryRepository.existsByCategory_IdAndNameIgnoreCaseAndIdNot(10L, "Calles pavimentadas", 1L))
                 .thenReturn(false);
         when(subcategoryRepository.save(any(Subcategory.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -250,7 +275,7 @@ class CatalogAdminServiceTest {
                 subcategoryRequest(10L, "Calles pavimentadas", "desc"));
 
         assertEquals("Calles pavimentadas", response.getName());
-        verify(categoryRepository, never()).findById(any());
+        verify(categoryRepository).findByIdForUpdate(10L);
     }
 
     @Test
@@ -258,6 +283,7 @@ class CatalogAdminServiceTest {
         Category currentCategory = category(10L, "Infraestructura", true);
         Subcategory existing = subcategory(1L, currentCategory, "Calles", true);
         when(subcategoryRepository.findById(1L)).thenReturn(Optional.of(existing));
+        when(categoryRepository.findById(10L)).thenReturn(Optional.of(currentCategory));
         when(categoryRepository.findById(20L)).thenReturn(Optional.of(category(20L, "Espacios verdes", false)));
 
         assertThrows(InvalidCatalogRequestException.class,
@@ -276,6 +302,7 @@ class CatalogAdminServiceTest {
         Subcategory existing = subcategory(1L, category, "Calles", true);
         RequestType bache = requestType(100L, existing, "BACHE", "Informar bache", true);
         when(subcategoryRepository.findById(1L)).thenReturn(Optional.of(existing));
+        when(categoryRepository.findById(10L)).thenReturn(Optional.of(category));
         when(subcategoryRepository.save(any(Subcategory.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(requestTypeRepository.findBySubcategory_IdOrderByNameAsc(1L)).thenReturn(List.of(bache));
         when(requestTypeRepository.save(any(RequestType.class)))
@@ -293,6 +320,7 @@ class CatalogAdminServiceTest {
     void activateSubcategoryRejectsWhenCategoryIsInactive() {
         Subcategory existing = subcategory(1L, category(10L, "Infraestructura", false), "Calles", false);
         when(subcategoryRepository.findById(1L)).thenReturn(Optional.of(existing));
+        when(categoryRepository.findById(10L)).thenReturn(Optional.of(existing.getCategory()));
 
         assertThrows(InvalidCatalogRequestException.class, () -> service.activateSubcategory(1L));
         verify(subcategoryRepository, never()).save(any());
@@ -302,6 +330,7 @@ class CatalogAdminServiceTest {
     void activateSubcategorySetsActiveTrueWhenCategoryIsActive() {
         Subcategory existing = subcategory(1L, category(10L, "Infraestructura", true), "Calles", false);
         when(subcategoryRepository.findById(1L)).thenReturn(Optional.of(existing));
+        when(categoryRepository.findById(10L)).thenReturn(Optional.of(existing.getCategory()));
         when(subcategoryRepository.save(any(Subcategory.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         SubcategoryAdminResponse response = service.activateSubcategory(1L);
@@ -330,6 +359,7 @@ class CatalogAdminServiceTest {
     void createRequestTypeRejectsInactiveParentSubcategory() {
         Subcategory inactiveSubcategory = subcategory(20L, category(10L, "Infraestructura", true), "Calles", false);
         when(subcategoryRepository.findById(20L)).thenReturn(Optional.of(inactiveSubcategory));
+        when(categoryRepository.findById(10L)).thenReturn(Optional.of(inactiveSubcategory.getCategory()));
 
         assertThrows(InvalidCatalogRequestException.class,
                 () -> service.createRequestType(requestTypeRequest(20L, "BACHE", "Informar bache")));
@@ -344,6 +374,7 @@ class CatalogAdminServiceTest {
         Category inactiveCategory = category(10L, "Infraestructura", false);
         Subcategory subcategoryWithInactiveCategory = subcategory(20L, inactiveCategory, "Calles", true);
         when(subcategoryRepository.findById(20L)).thenReturn(Optional.of(subcategoryWithInactiveCategory));
+        when(categoryRepository.findById(10L)).thenReturn(Optional.of(inactiveCategory));
 
         assertThrows(InvalidCatalogRequestException.class,
                 () -> service.createRequestType(requestTypeRequest(20L, "BACHE", "Informar bache")));
@@ -354,6 +385,7 @@ class CatalogAdminServiceTest {
     void createRequestTypeRejectsDuplicateCode() {
         Subcategory subcategory = subcategory(20L, category(10L, "Infraestructura", true), "Calles", true);
         when(subcategoryRepository.findById(20L)).thenReturn(Optional.of(subcategory));
+        when(categoryRepository.findById(10L)).thenReturn(Optional.of(subcategory.getCategory()));
         when(requestTypeRepository.existsByCodeIgnoreCase("BACHE")).thenReturn(true);
 
         assertThrows(InvalidCatalogRequestException.class,
@@ -365,6 +397,7 @@ class CatalogAdminServiceTest {
     void createRequestTypeRejectsDuplicateNameInSameSubcategory() {
         Subcategory subcategory = subcategory(20L, category(10L, "Infraestructura", true), "Calles", true);
         when(subcategoryRepository.findById(20L)).thenReturn(Optional.of(subcategory));
+        when(categoryRepository.findById(10L)).thenReturn(Optional.of(subcategory.getCategory()));
         when(requestTypeRepository.existsByCodeIgnoreCase("BACHE")).thenReturn(false);
         when(requestTypeRepository.existsBySubcategory_IdAndNameIgnoreCase(20L, "Informar bache")).thenReturn(true);
 
@@ -377,6 +410,7 @@ class CatalogAdminServiceTest {
     void createRequestTypeSavesWhenParentActiveAndCodeAndNameAreUnique() {
         Subcategory subcategory = subcategory(20L, category(10L, "Infraestructura", true), "Calles", true);
         when(subcategoryRepository.findById(20L)).thenReturn(Optional.of(subcategory));
+        when(categoryRepository.findById(10L)).thenReturn(Optional.of(subcategory.getCategory()));
         when(requestTypeRepository.existsByCodeIgnoreCase("BACHE")).thenReturn(false);
         when(requestTypeRepository.existsBySubcategory_IdAndNameIgnoreCase(20L, "Informar bache")).thenReturn(false);
         when(requestTypeRepository.save(any(RequestType.class)))
@@ -397,10 +431,61 @@ class CatalogAdminServiceTest {
                 subcategory(30L, category(10L, "Infraestructura", true), "Veredas", false);
         RequestType existing = requestType(1L, currentSubcategory, "BACHE", "Informar bache", true);
         when(requestTypeRepository.findById(1L)).thenReturn(Optional.of(existing));
+        when(categoryRepository.findById(10L)).thenReturn(Optional.of(currentSubcategory.getCategory()));
+        when(subcategoryRepository.findById(20L)).thenReturn(Optional.of(currentSubcategory));
         when(subcategoryRepository.findById(30L)).thenReturn(Optional.of(newInactiveSubcategory));
 
         assertThrows(InvalidCatalogRequestException.class,
                 () -> service.updateRequestType(1L, requestTypeRequest(30L, "BACHE", "Informar bache")));
+        verify(requestTypeRepository, never()).save(any());
+    }
+
+    @Test
+    void updateRequestTypeAllowsChangingBaseRiskWhileUnused() {
+        Subcategory subcategory = subcategory(20L, category(10L, "Infraestructura", true), "Calles", true);
+        RequestType existing = requestType(1L, subcategory, "BACHE", "Informar bache", true);
+        stubRequestTypeHierarchy(existing);
+        when(ticketRepository.existsByRequestType_Id(1L)).thenReturn(false);
+        when(requestTypeRepository.save(any(RequestType.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        RequestTypeAdminRequest request = requestTypeRequest(20L, "BACHE", "Informar bache");
+        request.setBaseRisk(Risk.HIGH);
+
+        RequestTypeAdminResponse response = service.updateRequestType(1L, request);
+
+        assertEquals(Risk.HIGH, response.getBaseRisk());
+        assertEquals(Risk.HIGH, existing.getBaseRisk());
+    }
+
+    @Test
+    void updateRequestTypeAllowsKeepingBaseRiskAfterUse() {
+        Subcategory subcategory = subcategory(20L, category(10L, "Infraestructura", true), "Calles", true);
+        RequestType existing = requestType(1L, subcategory, "BACHE", "Informar bache", true);
+        stubRequestTypeHierarchy(existing);
+        when(ticketRepository.existsByRequestType_Id(1L)).thenReturn(true);
+        when(requestTypeRepository.save(any(RequestType.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        RequestTypeAdminRequest request = requestTypeRequest(20L, "BACHE", "Informar bache editado");
+        request.setBaseRisk(Risk.LOW);
+
+        RequestTypeAdminResponse response = service.updateRequestType(1L, request);
+
+        assertEquals(Risk.LOW, response.getBaseRisk());
+        assertEquals("Informar bache editado", response.getName());
+    }
+
+    @Test
+    void updateRequestTypeRejectsChangingBaseRiskAfterUseBeforeMutatingAnyField() {
+        Subcategory subcategory = subcategory(20L, category(10L, "Infraestructura", true), "Calles", true);
+        RequestType existing = requestType(1L, subcategory, "BACHE", "Informar bache", true);
+        stubRequestTypeHierarchy(existing);
+        when(ticketRepository.existsByRequestType_Id(1L)).thenReturn(true);
+        RequestTypeAdminRequest request = requestTypeRequest(20L, "BACHE_EDITADO", "Nombre editado");
+        request.setBaseRisk(Risk.CRITICAL);
+
+        assertThrows(InvalidCatalogRequestException.class, () -> service.updateRequestType(1L, request));
+
+        assertEquals(Risk.LOW, existing.getBaseRisk());
+        assertEquals("BACHE", existing.getCode());
+        assertEquals("Informar bache", existing.getName());
         verify(requestTypeRepository, never()).save(any());
     }
 
@@ -411,6 +496,8 @@ class CatalogAdminServiceTest {
         Subcategory subcategory = subcategory(20L, category(10L, "Infraestructura", true), "Calles", true);
         RequestType existing = requestType(1L, subcategory, "BACHE", "Informar bache", true);
         when(requestTypeRepository.findById(1L)).thenReturn(Optional.of(existing));
+        when(categoryRepository.findById(10L)).thenReturn(Optional.of(subcategory.getCategory()));
+        when(subcategoryRepository.findById(20L)).thenReturn(Optional.of(subcategory));
         when(requestTypeRepository.save(any(RequestType.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -424,6 +511,8 @@ class CatalogAdminServiceTest {
         Subcategory inactiveSubcategory = subcategory(20L, category(10L, "Infraestructura", true), "Calles", false);
         RequestType existing = requestType(1L, inactiveSubcategory, "BACHE", "Informar bache", false);
         when(requestTypeRepository.findById(1L)).thenReturn(Optional.of(existing));
+        when(categoryRepository.findById(10L)).thenReturn(Optional.of(inactiveSubcategory.getCategory()));
+        when(subcategoryRepository.findById(20L)).thenReturn(Optional.of(inactiveSubcategory));
 
         assertThrows(InvalidCatalogRequestException.class, () -> service.activateRequestType(1L));
         verify(requestTypeRepository, never()).save(any());
@@ -440,6 +529,8 @@ class CatalogAdminServiceTest {
         Subcategory subcategoryWithInactiveCategory = subcategory(20L, inactiveCategory, "Calles", true);
         RequestType existing = requestType(1L, subcategoryWithInactiveCategory, "BACHE", "Informar bache", false);
         when(requestTypeRepository.findById(1L)).thenReturn(Optional.of(existing));
+        when(categoryRepository.findById(10L)).thenReturn(Optional.of(inactiveCategory));
+        when(subcategoryRepository.findById(20L)).thenReturn(Optional.of(subcategoryWithInactiveCategory));
 
         assertThrows(InvalidCatalogRequestException.class, () -> service.activateRequestType(1L));
         verify(requestTypeRepository, never()).save(any());
@@ -450,6 +541,8 @@ class CatalogAdminServiceTest {
         Subcategory subcategory = subcategory(20L, category(10L, "Infraestructura", true), "Calles", true);
         RequestType existing = requestType(1L, subcategory, "BACHE", "Informar bache", false);
         when(requestTypeRepository.findById(1L)).thenReturn(Optional.of(existing));
+        when(categoryRepository.findById(10L)).thenReturn(Optional.of(subcategory.getCategory()));
+        when(subcategoryRepository.findById(20L)).thenReturn(Optional.of(subcategory));
         when(requestTypeRepository.save(any(RequestType.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -526,5 +619,13 @@ class CatalogAdminServiceTest {
         requestType.setRequiresLocation(true);
         requestType.setActive(active);
         return requestType;
+    }
+
+    private void stubRequestTypeHierarchy(RequestType requestType) {
+        Subcategory subcategory = requestType.getSubcategory();
+        when(requestTypeRepository.findById(requestType.getId())).thenReturn(Optional.of(requestType));
+        when(subcategoryRepository.findById(subcategory.getId())).thenReturn(Optional.of(subcategory));
+        when(categoryRepository.findById(subcategory.getCategory().getId()))
+                .thenReturn(Optional.of(subcategory.getCategory()));
     }
 }
