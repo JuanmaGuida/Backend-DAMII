@@ -13,6 +13,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.security.test.context.support.WithAnonymousUser;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -44,6 +46,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @WebMvcTest(TicketSimulationController.class)
 @TestPropertySource(properties = "app.simulator.enabled=true")
 @Import({SecurityConfiguration.class, BearerTokenAuthenticationFilter.class})
+@WithMockUser
 class TicketSimulationControllerTest {
 
     @Autowired
@@ -54,6 +57,24 @@ class TicketSimulationControllerTest {
 
     @MockitoBean
     private AuthService authService;
+
+    @Test
+    @WithAnonymousUser
+    void simulateStatusUpdateRequiresAuthentication() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+
+        mockMvc.perform(post("/api/tickets/{ticketId}/simulate-status-update", ticketId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(envelopeJson(ticketId, """
+                                {
+                                  "updateType": "STARTED",
+                                  "updatedBy": {"type": "EXTERNAL_USER", "id": "USR-M6-77"}
+                                }
+                                """)))
+                .andExpect(status().isUnauthorized());
+
+        verifyNoInteractions(ticketStatusUpdateService);
+    }
 
     @Test
     void simulateStatusUpdateDelegatesToServiceAndReturnsOk() throws Exception {
