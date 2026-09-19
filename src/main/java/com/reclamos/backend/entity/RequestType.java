@@ -6,16 +6,12 @@ import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 
+// Unicidad case-insensitive de code (uk_request_type_code_ci) y de
+// (subcategory_id, name) (uk_request_type_subcategory_name_ci) vía índices
+// únicos funcionales sobre LOWER(...) (V36/V35) — no representables como
+// @UniqueConstraint de tabla. Ver el comentario equivalente en Category.
 @Entity
-@Table(
-        name = "request_types",
-        uniqueConstraints = {
-                @UniqueConstraint(
-                        name = "uk_request_type_code",
-                        columnNames = "code"
-                )
-        }
-)
+@Table(name = "request_types")
 @Data
 @NoArgsConstructor
 public class RequestType {
@@ -24,7 +20,7 @@ public class RequestType {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, unique = true, length = 100)
+    @Column(nullable = false, length = 100)
     private String code;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)

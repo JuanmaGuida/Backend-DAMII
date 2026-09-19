@@ -8,16 +8,14 @@ import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.Instant;
 
+// La unicidad de name es case-insensitive (uk_category_name_ci, V36 — un
+// índice único funcional sobre LOWER(name), no una @UniqueConstraint de
+// tabla: Postgres no admite UNIQUE de tabla sobre una expresión). No se
+// declara acá porque @UniqueConstraint sólo puede referenciar columnas
+// literales, no expresiones; spring.jpa.hibernate.ddl-auto=validate no
+// exige que la anotación coincida con el índice real.
 @Entity
-@Table(
-        name = "categories",
-        uniqueConstraints = {
-                @UniqueConstraint(
-                        name = "uk_category_name",
-                        columnNames = "name"
-                )
-        }
-)
+@Table(name = "categories")
 @Data
 @NoArgsConstructor
 public class Category {
