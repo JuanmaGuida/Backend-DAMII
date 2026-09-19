@@ -73,7 +73,7 @@ public class TicketController {
      * sólo para su propietario autenticado.
      */
     @GetMapping("/{ticketId}")
-    public TicketResponse getById(
+    public TicketDetailResponse getById(
             @PathVariable UUID ticketId,
             @AuthenticationPrincipal AuthenticatedIdentity identity
     ) {

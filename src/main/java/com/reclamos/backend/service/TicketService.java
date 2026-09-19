@@ -5,6 +5,9 @@ import com.reclamos.backend.dto.TicketResponse;
 import com.reclamos.backend.dto.request.CancelTicketRequest;
 import com.reclamos.backend.dto.request.CreateTicketRequest;
 import com.reclamos.backend.dto.response.CreateTicketResponse;
+import com.reclamos.backend.dto.response.TicketActivityResponse;
+import com.reclamos.backend.dto.response.TicketAttachmentResponse;
+import com.reclamos.backend.dto.response.TicketDetailResponse;
 import com.reclamos.backend.entity.*;
 import com.reclamos.backend.exception.EvidenceRequiredException;
 import com.reclamos.backend.exception.InvalidTicketRequestException;
@@ -72,6 +75,7 @@ public class TicketService {
     private final RequestTypeRepository requestTypeRepository;
     private final TicketRepository ticketRepository;
     private final TicketActivityRepository activityRepository;
+    private final AttachmentRepository attachmentRepository;
     private final TicketLocationRepository locationRepository;
     private final NeighborhoodRepository neighborhoodRepository;
     private final TicketCancellationRepository cancellationRepository;
@@ -518,12 +522,12 @@ public class TicketService {
      * este endpoint.
      */
     @Transactional(readOnly = true)
-    public TicketResponse getById(UUID ticketId, AuthenticatedIdentity identity) {
+    public TicketDetailResponse getById(UUID ticketId, AuthenticatedIdentity identity) {
         Ticket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(() -> new ResourceNotFoundException("El ticket solicitado no existe"));
         requireOwner(ticket, identity);
         TicketLocation location = locationRepository.findByTicket_Id(ticketId).orElse(null);
-        return toResponse(ticket, location);
+        return toDetailResponse(ticket, location, false);
     }
 
     private void requireOwner(Ticket ticket, AuthenticatedIdentity identity) {
@@ -544,12 +548,12 @@ public class TicketService {
      * no aplica acá porque este endpoint es de sólo lectura.
      */
     @Transactional(readOnly = true)
-    public TicketResponse getStaffDetail(UUID ticketId, AuthenticatedIdentity identity) {
+    public TicketDetailResponse getStaffDetail(UUID ticketId, AuthenticatedIdentity identity) {
         Ticket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(() -> new ResourceNotFoundException("El ticket solicitado no existe"));
         requireStaffAccess(ticket, identity);
         TicketLocation location = locationRepository.findByTicket_Id(ticketId).orElse(null);
-        return toResponse(ticket, location);
+        return toDetailResponse(ticket, location, true);
     }
 
     private void requireStaffAccess(Ticket ticket, AuthenticatedIdentity identity) {
@@ -600,15 +604,17 @@ public class TicketService {
      * sólo su areaId o su propio ticket); la Guía aclara "en ticket ajeno es
      * read-only", pero eso ya lo garantiza que este endpoint sea un GET.
      * <p>
-     * Hoy delega directo en getStaffDetail porque TicketResponse todavía no
-     * distingue campos exclusivos de staff de la proyección pública del
-     * ciudadano — son la misma forma. Si el equipo agrega campos internos al
-     * detalle staff (por ejemplo notas internas u otra info no pública), hay
-     * que separar los dos mapeos acá, no sólo el nombre del método.
+     * Comparte autorización con getStaffDetail, pero usa la proyección pública
+     * del detalle: sólo adjuntos PUBLIC y actividades sanitizadas, aun cuando
+     * quien consulta tenga un rol staff.
      */
     @Transactional(readOnly = true)
-    public TicketResponse getStaffCitizenView(UUID ticketId, AuthenticatedIdentity identity) {
-        return getStaffDetail(ticketId, identity);
+    public TicketDetailResponse getStaffCitizenView(UUID ticketId, AuthenticatedIdentity identity) {
+        Ticket ticket = ticketRepository.findById(ticketId)
+                .orElseThrow(() -> new ResourceNotFoundException("El ticket solicitado no existe"));
+        requireStaffAccess(ticket, identity);
+        TicketLocation location = locationRepository.findByTicket_Id(ticketId).orElse(null);
+        return toDetailResponse(ticket, location, false);
     }
 
     private void validateSort(Sort sort) {
@@ -692,6 +698,88 @@ public class TicketService {
         return toResponse(ticket, location,
                 ticketSlaService.findLatestFirstResponseCycle(ticket).orElse(null),
                 ticketSlaService.findLatestResolutionCycle(ticket).orElse(null));
+    }
+
+    private TicketDetailResponse toDetailResponse(Ticket ticket, TicketLocation location, boolean staffView) {
+        TicketResponse base = toResponse(ticket, location);
+        TicketDetailResponse detail = new TicketDetailResponse();
+        detail.setId(base.getId());
+        detail.setPublicId(base.getPublicId());
+        detail.setRequestTypeCode(base.getRequestTypeCode());
+        detail.setRequestTypeName(base.getRequestTypeName());
+        detail.setCategoryName(base.getCategoryName());
+        detail.setSubcategoryName(base.getSubcategoryName());
+        detail.setTicketType(base.getTicketType());
+        detail.setSummary(base.getSummary());
+        detail.setDescription(ticket.getDescription());
+        detail.setCurrentStatus(base.getCurrentStatus());
+        detail.setCurrentPriority(base.getCurrentPriority());
+        detail.setResponsibleAreaId(base.getResponsibleAreaId());
+        detail.setAssignedAgentId(base.getAssignedAgentId());
+        detail.setAnonymous(base.isAnonymous());
+        detail.setEstimatedAffectedCount(base.getEstimatedAffectedCount());
+        detail.setEscalated(base.isEscalated());
+        detail.setEscalationReasonCode(base.getEscalationReasonCode());
+        detail.setEscalatedAt(base.getEscalatedAt());
+        detail.setFirstResponseDueAt(base.getFirstResponseDueAt());
+        detail.setFirstResponseNearDue(base.isFirstResponseNearDue());
+        detail.setFirstResponseBreached(base.isFirstResponseBreached());
+        detail.setResolutionDueAt(base.getResolutionDueAt());
+        detail.setSlaNearDue(base.isSlaNearDue());
+        detail.setSlaBreached(base.isSlaBreached());
+        detail.setResolutionNearDueAt(base.getResolutionNearDueAt());
+        detail.setNeighborhoodName(base.getNeighborhoodName());
+        detail.setClassificationFinalizedAt(base.getClassificationFinalizedAt());
+        detail.setStatusChangedAt(base.getStatusChangedAt());
+        detail.setCreatedAt(base.getCreatedAt());
+        detail.setUpdatedAt(base.getUpdatedAt());
+
+        List<Attachment> attachments = staffView
+                ? attachmentRepository.findAllByTicket_IdOrderByCreatedAtAsc(ticket.getId())
+                : attachmentRepository.findAllByTicket_IdAndVisibilityOrderByCreatedAtAsc(
+                        ticket.getId(), MessageVisibility.PUBLIC);
+        detail.setAttachments(attachments.stream().map(this::toAttachmentResponse).toList());
+
+        detail.setTicketActivities(activityRepository.findAllByTicket_IdOrderBySequenceAsc(ticket.getId()).stream()
+                .filter(activity -> staffView || isCitizenVisibleActivity(activity))
+                .map(activity -> toActivityResponse(activity, staffView))
+                .toList());
+        return detail;
+    }
+
+    private TicketAttachmentResponse toAttachmentResponse(Attachment attachment) {
+        return new TicketAttachmentResponse(attachment.getId(), attachment.getFileName(),
+                attachment.getContentType(), attachment.getSizeBytes(), attachment.getVisibility(),
+                attachment.getCreatedAt());
+    }
+
+    private boolean isCitizenVisibleActivity(TicketActivity activity) {
+        return activity.getActionType() != ActivityType.INTERNAL_MESSAGE_ADDED
+                && activity.getActionType() != ActivityType.ATTACHMENT_ADDED;
+    }
+
+    private TicketActivityResponse toActivityResponse(TicketActivity activity, boolean staffView) {
+        Instant effectiveOccurredAt = activity.getOccurredAt() != null
+                ? activity.getOccurredAt()
+                : activity.getCreatedAt();
+        return new TicketActivityResponse(
+                activity.getSequence(),
+                activity.getActionType(),
+                activity.getPreviousStatus(),
+                activity.getNewStatus(),
+                effectiveOccurredAt,
+                staffView || isCitizenVisibleReason(activity.getActionType()) ? activity.getReasonCode() : null,
+                staffView ? activity.getActorType() : null,
+                staffView ? activity.getPreviousPriority() : null,
+                staffView ? activity.getNewPriority() : null,
+                staffView ? activity.getMessage() : null);
+    }
+
+    private boolean isCitizenVisibleReason(ActivityType actionType) {
+        return actionType == ActivityType.CANCELLED
+                || actionType == ActivityType.RESOLVED
+                || actionType == ActivityType.CLOSED
+                || actionType == ActivityType.REOPENED;
     }
 
     private TicketResponse toResponse(Ticket ticket, TicketLocation location, TicketSla resolutionSla) {

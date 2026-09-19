@@ -417,7 +417,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TicketResponse'
+                $ref: '#/components/schemas/TicketDetailResponse'
         '401':
           $ref: '#/components/responses/InvalidToken'
         '403':
@@ -432,8 +432,8 @@ paths:
         GET /staff/tickets/{id} (Guía funcional M2 §7/§7.1): detalle de
         gestión interna. AGENT y ADMIN acceden a cualquier ticket ajeno sin
         restricción de área; AREA_RESPONSIBLE sólo a los de su propia areaId
-        (o al suyo propio como ciudadano). No expone todavía
-        GET /staff/tickets/{id}/citizen-view.
+        (o al suyo propio como ciudadano). El endpoint citizen-view expone
+        en cambio la misma proyección pública que recibe el propietario.
       operationId: getStaffTicketDetail
       security:
         - bearerAuth: [ ]
@@ -445,7 +445,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TicketResponse'
+                $ref: '#/components/schemas/TicketDetailResponse'
         '401':
           $ref: '#/components/responses/InvalidToken'
         '403':
@@ -475,7 +475,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TicketResponse'
+                $ref: '#/components/schemas/TicketDetailResponse'
         '401':
           $ref: '#/components/responses/InvalidToken'
         '403':
@@ -1142,10 +1142,10 @@ components:
     TicketResponse:
       type: object
       description: |
-        Vista compartida de un ticket para listados, detalles ciudadanos/staff
-        y transiciones. No confundir con TrackingTicketResponse, que es la
-        vista pública reducida. Los deadlines SLA son proyecciones derivadas
-        de TicketSla y no atributos persistidos del Ticket.
+        Vista compartida de un ticket para listados y transiciones. Los GET de
+        detalle usan TicketDetailResponse. No confundir con TrackingTicketResponse,
+        que es la vista pública reducida. Los deadlines SLA son proyecciones
+        derivadas de TicketSla y no atributos persistidos del Ticket.
       required: [id, publicId, requestTypeCode, requestTypeName, categoryName, subcategoryName,
                  ticketType, summary, currentStatus, currentPriority, responsibleAreaId,
                  assignedAgentId, anonymous, estimatedAffectedCount, escalated, neighborhoodId,
@@ -1243,6 +1243,183 @@ components:
         updatedAt:
           type: string
           format: date-time
+          nullable: true
+    TicketDetailResponse:
+      type: object
+      description: |
+        Detalle plano del ticket. Conserva los campos útiles de TicketResponse,
+        agrega descripción, metadatos de adjuntos e historial y expone sólo el
+        nombre del barrio. En detalle ciudadano y citizen-view los adjuntos son
+        PUBLIC y las actividades usan la proyección pública sanitizada; el detalle
+        staff puede incluir adjuntos INTERNAL y campos adicionales del historial.
+      required: [id, publicId, requestTypeCode, requestTypeName, categoryName, subcategoryName,
+                 ticketType, summary, description, currentStatus, currentPriority, responsibleAreaId,
+                 assignedAgentId, anonymous, estimatedAffectedCount, escalated, escalationReasonCode,
+                 escalatedAt, firstResponseDueAt, firstResponseNearDue, firstResponseBreached,
+                 resolutionDueAt, slaNearDue, slaBreached, resolutionNearDueAt, neighborhoodName,
+                 classificationFinalizedAt, statusChangedAt, createdAt, updatedAt, attachments,
+                 ticketActivities]
+      properties:
+        id:
+          type: string
+          format: uuid
+        publicId:
+          $ref: '#/components/schemas/TicketPublicId'
+        requestTypeCode:
+          type: string
+        requestTypeName:
+          type: string
+        categoryName:
+          type: string
+        subcategoryName:
+          type: string
+        ticketType:
+          $ref: '#/components/schemas/TicketType'
+        summary:
+          type: string
+        description:
+          type: string
+        currentStatus:
+          $ref: '#/components/schemas/TicketStatus'
+        currentPriority:
+          $ref: '#/components/schemas/Priority'
+        responsibleAreaId:
+          type: string
+        assignedAgentId:
+          type: string
+          nullable: true
+        anonymous:
+          type: boolean
+        estimatedAffectedCount:
+          type: integer
+          format: int32
+        escalated:
+          type: boolean
+        escalationReasonCode:
+          allOf:
+            - $ref: '#/components/schemas/EscalationReasonCode'
+          nullable: true
+        escalatedAt:
+          type: string
+          format: date-time
+          nullable: true
+        firstResponseDueAt:
+          type: string
+          format: date-time
+          nullable: true
+        firstResponseNearDue:
+          type: boolean
+        firstResponseBreached:
+          type: boolean
+        resolutionDueAt:
+          type: string
+          format: date-time
+          nullable: true
+        slaNearDue:
+          type: boolean
+        slaBreached:
+          type: boolean
+        resolutionNearDueAt:
+          type: string
+          format: date-time
+          nullable: true
+        neighborhoodName:
+          type: string
+          nullable: true
+        classificationFinalizedAt:
+          type: string
+          format: date-time
+          nullable: true
+        statusChangedAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+        attachments:
+          type: array
+          description: Metadatos únicamente; este contrato no provee descarga del archivo.
+          items:
+            $ref: '#/components/schemas/TicketAttachmentResponse'
+        ticketActivities:
+          type: array
+          description: Historial ordenado por sequence ascendente.
+          items:
+            $ref: '#/components/schemas/TicketActivityResponse'
+    TicketAttachmentResponse:
+      type: object
+      description: Metadatos seguros de un adjunto, sin claves ni internals de almacenamiento.
+      required: [id, fileName, contentType, sizeBytes, visibility, createdAt]
+      properties:
+        id:
+          type: integer
+          format: int64
+        fileName:
+          type: string
+        contentType:
+          type: string
+        sizeBytes:
+          type: integer
+          format: int64
+        visibility:
+          type: string
+          enum: [PUBLIC, INTERNAL]
+          description: Citizen y citizen-view reciben sólo PUBLIC; staff puede recibir ambas.
+        createdAt:
+          type: string
+          format: date-time
+    TicketActivityResponse:
+      type: object
+      description: |
+        Actividad sanitizada. actorType, prioridades y message son nulos en la
+        proyección ciudadana; staff puede recibirlos. Nunca expone identificadores
+        de actor/módulo/evento, metadata cruda ni ticketVersion.
+      required: [sequence, actionType, previousStatus, newStatus, occurredAt, reasonCode,
+                 actorType, previousPriority, newPriority, message]
+      properties:
+        sequence:
+          type: integer
+          format: int32
+        actionType:
+          type: string
+          enum: [TICKET_CREATED, REVIEW_STARTED, STATE_CHANGED, REQUEST_TYPE_CHANGED, ROUTED,
+                 RETURNED_BY_AREA, PRIORITY_CHANGED, SLA_NEAR_DUE, SLA_BREACHED, ESCALATED,
+                 INFORMATION_REQUIRED, INFORMATION_PROVIDED, PROGRESS_REPORTED, DUPLICATE_LINKED,
+                 RESOLVED, REOPENED, CANCELLATION_REQUESTED, CANCELLATION_APPROVED,
+                 CANCELLATION_REJECTED, CANCELLED, CLOSED, PUBLIC_MESSAGE_SENT,
+                 INTERNAL_MESSAGE_ADDED, ATTACHMENT_ADDED]
+        previousStatus:
+          allOf:
+            - $ref: '#/components/schemas/TicketStatus'
+          nullable: true
+        newStatus:
+          allOf:
+            - $ref: '#/components/schemas/TicketStatus'
+          nullable: true
+        occurredAt:
+          type: string
+          format: date-time
+        reasonCode:
+          type: string
+          nullable: true
+        actorType:
+          type: string
+          enum: [CITIZEN, AGENT, AREA_RESPONSIBLE, ADMIN, EXTERNAL_USER, SYSTEM]
+          nullable: true
+        previousPriority:
+          allOf:
+            - $ref: '#/components/schemas/Priority'
+          nullable: true
+        newPriority:
+          allOf:
+            - $ref: '#/components/schemas/Priority'
+          nullable: true
+        message:
+          type: string
           nullable: true
     PagedTicketResponse:
       type: object

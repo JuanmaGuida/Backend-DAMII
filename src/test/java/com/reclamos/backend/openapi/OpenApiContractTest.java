@@ -84,6 +84,9 @@ class OpenApiContractTest {
             "InformationRequestResponse",
             "TicketResolutionResponse",
             "TicketResolutionActionResponse",
+            "TicketDetailResponse",
+            "TicketAttachmentResponse",
+            "TicketActivityResponse",
             "TrackingTicketResponse",
             "TrackingRequestTypeSummary",
             "TrackingCategorySummary",
@@ -188,6 +191,25 @@ class OpenApiContractTest {
         assertTrue(map(schemas, "TicketResponse", "properties").containsKey("slaNearDue"));
         assertTrue(map(schemas, "TicketResponse", "properties").containsKey("slaBreached"));
         assertTrue(map(schemas, "TicketResponse", "properties").containsKey("resolutionNearDueAt"));
+        assertTrue(map(schemas, "TicketResponse", "properties").containsKey("neighborhoodId"));
+        assertFalse(map(schemas, "TicketResponse", "properties").containsKey("attachments"));
+        assertFalse(map(schemas, "TicketResponse", "properties").containsKey("ticketActivities"));
+
+        Map<String, Object> detailProperties = map(schemas, "TicketDetailResponse", "properties");
+        assertTrue(detailProperties.containsKey("description"));
+        assertTrue(detailProperties.containsKey("attachments"));
+        assertTrue(detailProperties.containsKey("ticketActivities"));
+        assertTrue(detailProperties.containsKey("neighborhoodName"));
+        assertFalse(detailProperties.containsKey("neighborhoodId"));
+
+        Map<String, Object> activityProperties = map(schemas, "TicketActivityResponse", "properties");
+        assertTrue(list(map(schemas, "TicketActivityResponse"), "required").contains("occurredAt"));
+        assertFalse(nullableProperty(schemas, "TicketActivityResponse", "occurredAt"));
+        assertFalse(activityProperties.containsKey("actorId"));
+        assertFalse(activityProperties.containsKey("sourceModuleId"));
+        assertFalse(activityProperties.containsKey("externalEventId"));
+        assertFalse(activityProperties.containsKey("metadata"));
+        assertFalse(activityProperties.containsKey("ticketVersion"));
         assertEquals(Set.of("CRITICAL_PRIORITY", "SLA_BREACHED", "MANUAL"),
                 Set.copyOf(list(map(schemas, "EscalationReasonCode"), "enum")));
         assertEquals(Set.of("PENDING", "ANSWERED", "EXPIRED", "CANCELLED"),
@@ -201,7 +223,8 @@ class OpenApiContractTest {
 
         assertEquals("^TK-[0-9]{4}-[0-9]{6,}$", publicId.get("pattern"));
         assertEquals("TK-2026-000123", publicId.get("example"));
-        for (String responseSchema : Set.of("TicketResponse", "CreateTicketResponse", "TrackingTicketResponse")) {
+        for (String responseSchema : Set.of(
+                "TicketResponse", "TicketDetailResponse", "CreateTicketResponse", "TrackingTicketResponse")) {
             assertEquals("#/components/schemas/TicketPublicId",
                     map(schemas, responseSchema, "properties", "publicId").get("$ref"), responseSchema);
         }
@@ -257,12 +280,39 @@ class OpenApiContractTest {
                 }
                 for (RequestMethod requestMethod : mapping.method()) {
                     operations.add(requestMethod.name() + normalize(prefix + firstPath(mapping)));
+                }
             }
         }
         assertEquals("#/components/responses/Forbidden",
                 map(operation("GET /api/tickets"), "responses", "403").get("$ref"));
-    }
         return operations;
+    }
+
+    @Test
+    void detailOperationsUseTheDedicatedResponseWithoutChangingSharedTicketResponses() {
+        for (String operationName : Set.of(
+                "GET /api/tickets/{ticketId}",
+                "GET /api/staff/tickets/{ticketId}",
+                "GET /api/staff/tickets/{ticketId}/citizen-view")) {
+            assertEquals("#/components/schemas/TicketDetailResponse",
+                    map(operation(operationName), "responses", "200", "content", "application/json", "schema")
+                            .get("$ref"), operationName);
+        }
+        for (String operationName : Set.of(
+                "POST /api/tickets/{ticketId}/review",
+                "PATCH /api/tickets/{ticketId}/classification",
+                "POST /api/tickets/{ticketId}/route",
+                "POST /api/tickets/{ticketId}/cancel")) {
+            assertEquals("#/components/schemas/TicketResponse",
+                    map(operation(operationName), "responses", "200", "content", "application/json", "schema")
+                            .get("$ref"), operationName);
+        }
+        assertEquals("#/components/schemas/PagedTicketResponse",
+                map(operation("GET /api/tickets"), "responses", "200", "content", "application/json", "schema")
+                        .get("$ref"));
+        assertEquals("#/components/schemas/PagedTicketResponse",
+                map(operation("GET /api/me/tickets"), "responses", "200", "content", "application/json", "schema")
+                        .get("$ref"));
     }
 
     private static String firstPath(RequestMapping mapping) {

@@ -5,7 +5,12 @@ import com.reclamos.backend.dto.TicketFilter;
 import com.reclamos.backend.dto.TicketResponse;
 import com.reclamos.backend.dto.request.CancelTicketRequest;
 import com.reclamos.backend.dto.response.CreateTicketResponse;
+import com.reclamos.backend.dto.response.TicketDetailResponse;
+import com.reclamos.backend.dto.response.TicketActivityResponse;
+import com.reclamos.backend.dto.response.TicketAttachmentResponse;
+import com.reclamos.backend.entity.ActivityType;
 import com.reclamos.backend.entity.CancellationReasonCode;
+import com.reclamos.backend.entity.MessageVisibility;
 import com.reclamos.backend.entity.TicketStatus;
 import com.reclamos.backend.exception.InvalidTicketRequestException;
 import com.reclamos.backend.exception.ResourceNotFoundException;
@@ -33,6 +38,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
 import java.util.UUID;
+import java.time.Instant;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -183,14 +189,32 @@ class TicketControllerTest {
     @Test
     void getByIdDelegatesToServiceAndReturnsOk() throws Exception {
         UUID ticketId = UUID.randomUUID();
-        TicketResponse response = new TicketResponse();
+        TicketDetailResponse response = new TicketDetailResponse();
         response.setId(ticketId);
         response.setCurrentStatus(TicketStatus.REGISTERED);
+        response.setDescription("Descripción completa");
+        response.setNeighborhoodName("Recoleta");
+        response.setAttachments(List.of(new TicketAttachmentResponse(
+                1L, "foto.jpg", "image/jpeg", 123L, MessageVisibility.PUBLIC, Instant.EPOCH)));
+        response.setTicketActivities(List.of(new TicketActivityResponse(
+                1, ActivityType.TICKET_CREATED, null, TicketStatus.REGISTERED, Instant.EPOCH,
+                null, null, null, null, null)));
         when(ticketService.getById(eq(ticketId), eq(AGENT))).thenReturn(response);
 
         mockMvc.perform(get("/api/tickets/{ticketId}", ticketId).with(authentication(AGENT_AUTHENTICATION)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.currentStatus").value("REGISTERED"));
+                .andExpect(jsonPath("$.currentStatus").value("REGISTERED"))
+                .andExpect(jsonPath("$.description").value("Descripción completa"))
+                .andExpect(jsonPath("$.neighborhoodName").value("Recoleta"))
+                .andExpect(jsonPath("$.neighborhoodId").doesNotExist())
+                .andExpect(jsonPath("$.attachments[0].fileName").value("foto.jpg"))
+                .andExpect(jsonPath("$.attachments[0].storageKey").doesNotExist())
+                .andExpect(jsonPath("$.ticketActivities[0].sequence").value(1))
+                .andExpect(jsonPath("$.ticketActivities[0].actorId").doesNotExist())
+                .andExpect(jsonPath("$.ticketActivities[0].sourceModuleId").doesNotExist())
+                .andExpect(jsonPath("$.ticketActivities[0].externalEventId").doesNotExist())
+                .andExpect(jsonPath("$.ticketActivities[0].metadata").doesNotExist())
+                .andExpect(jsonPath("$.ticketActivities[0].ticketVersion").doesNotExist());
     }
 
     @Test

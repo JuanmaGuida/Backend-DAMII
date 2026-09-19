@@ -5,6 +5,7 @@ import com.reclamos.backend.dto.TicketResponse;
 import com.reclamos.backend.dto.request.CancelTicketRequest;
 import com.reclamos.backend.dto.request.CreateTicketRequest;
 import com.reclamos.backend.dto.response.CreateTicketResponse;
+import com.reclamos.backend.dto.response.TicketDetailResponse;
 import com.reclamos.backend.entity.*;
 import com.reclamos.backend.exception.*;
 import com.reclamos.backend.identity.AuthenticatedIdentity;
@@ -35,6 +36,7 @@ import java.util.*;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -77,6 +79,8 @@ class TicketServiceTest {
     private TicketRepository tickets;
     @Mock
     private TicketActivityRepository activities;
+    @Mock
+    private AttachmentRepository attachmentRepository;
     @Mock
     private TicketLocationRepository locations;
     @Mock
@@ -1540,6 +1544,10 @@ class TicketServiceTest {
         verify(ticketSlaService).findLatestFirstResponseCycles(page.getContent());
         verify(ticketSlaService, never()).findLatestResolutionCycle(any());
         verify(ticketSlaService, never()).findLatestFirstResponseCycle(any());
+        verify(attachmentRepository, never()).findAllByTicket_IdOrderByCreatedAtAsc(any());
+        verify(attachmentRepository, never())
+                .findAllByTicket_IdAndVisibilityOrderByCreatedAtAsc(any(), any());
+        verify(activities, never()).findAllByTicket_IdOrderBySequenceAsc(any());
     }
 
     @Test
@@ -1614,6 +1622,10 @@ class TicketServiceTest {
         verify(ticketSlaService).findLatestResolutionCycles(page.getContent());
         verify(ticketSlaService, never()).findLatestFirstResponseCycle(any());
         verify(ticketSlaService, never()).findLatestResolutionCycle(any());
+        verify(attachmentRepository, never()).findAllByTicket_IdOrderByCreatedAtAsc(any());
+        verify(attachmentRepository, never())
+                .findAllByTicket_IdAndVisibilityOrderByCreatedAtAsc(any(), any());
+        verify(activities, never()).findAllByTicket_IdOrderBySequenceAsc(any());
     }
 
     @Test
@@ -1639,9 +1651,56 @@ class TicketServiceTest {
         when(tickets.findById(ticketId)).thenReturn(Optional.of(ticket));
         when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
 
-        TicketResponse response = service.getById(ticketId, actor);
+        TicketDetailResponse response = service.getById(ticketId, actor);
 
         assertThat(response.getId()).isEqualTo(ticketId);
+    }
+
+    @Test
+    void getByIdReturnsPublicDetailWithSanitizedTimeline() {
+        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.MEDIUM);
+        ticket.setCitizenId(actor.citizenId());
+        ticket.setAnonymous(false);
+        ticket.setDescription("Descripción completa");
+
+        Neighborhood neighborhood = new Neighborhood();
+        neighborhood.setId(UUID.randomUUID());
+        neighborhood.setName("Recoleta");
+        TicketLocation location = new TicketLocation();
+        location.setTicket(ticket);
+        location.setNeighborhood(neighborhood);
+
+        Attachment publicAttachment = attachment(1L, MessageVisibility.PUBLIC, "foto.jpg");
+        TicketActivity returned = activity(2, ActivityType.RETURNED_BY_AREA, "INTERNAL_REASON",
+                "mensaje interno");
+        returned.setActorId("actor-secreto");
+        returned.setSourceModuleId("M9");
+        returned.setExternalEventId(UUID.randomUUID());
+        returned.setMetadata(Map.of("secret", true));
+        returned.setTicketVersion(7);
+        TicketActivity internalMessage = activity(3, ActivityType.INTERNAL_MESSAGE_ADDED, null,
+                "nota interna");
+
+        when(tickets.findById(ticketId)).thenReturn(Optional.of(ticket));
+        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.of(location));
+        when(attachmentRepository.findAllByTicket_IdAndVisibilityOrderByCreatedAtAsc(
+                ticketId, MessageVisibility.PUBLIC)).thenReturn(List.of(publicAttachment));
+        when(activities.findAllByTicket_IdOrderBySequenceAsc(ticketId))
+                .thenReturn(List.of(returned, internalMessage));
+
+        TicketDetailResponse response = service.getById(ticketId, actor);
+
+        assertThat(response.getDescription()).isEqualTo("Descripción completa");
+        assertThat(response.getNeighborhoodName()).isEqualTo("Recoleta");
+        assertThat(response.getAttachments()).extracting("fileName", "visibility")
+                .containsExactly(tuple("foto.jpg", MessageVisibility.PUBLIC));
+        assertThat(response.getTicketActivities()).hasSize(1);
+        assertThat(response.getTicketActivities().getFirst().getSequence()).isEqualTo(2);
+        assertThat(response.getTicketActivities().getFirst().getOccurredAt()).isEqualTo(NOW);
+        assertThat(response.getTicketActivities().getFirst().getReasonCode()).isNull();
+        assertThat(response.getTicketActivities().getFirst().getActorType()).isNull();
+        assertThat(response.getTicketActivities().getFirst().getMessage()).isNull();
+        verify(attachmentRepository, never()).findAllByTicket_IdOrderByCreatedAtAsc(any());
     }
 
     @Test
@@ -1664,7 +1723,7 @@ class TicketServiceTest {
             when(ticketSlaService.findLatestFirstResponseCycle(ticket))
                     .thenReturn(Optional.of(firstResponseSla));
 
-            TicketResponse response = service.getById(ticketId, actor);
+            TicketDetailResponse response = service.getById(ticketId, actor);
 
             assertThat(response.getFirstResponseDueAt()).as(status.name()).isEqualTo(dueAt);
             assertThat(response.isFirstResponseNearDue()).as(status.name())
@@ -1688,7 +1747,7 @@ class TicketServiceTest {
         when(ticketSlaService.findLatestFirstResponseCycle(ticket)).thenReturn(Optional.empty());
         when(ticketSlaService.findLatestResolutionCycle(ticket)).thenReturn(Optional.of(resolutionSla));
 
-        TicketResponse response = service.getById(ticketId, actor);
+        TicketDetailResponse response = service.getById(ticketId, actor);
 
         assertThat(response.getResolutionDueAt()).isEqualTo(dueAt);
         assertThat(response.getResolutionNearDueAt()).isEqualTo(nearDueAt);
@@ -1707,7 +1766,7 @@ class TicketServiceTest {
         when(ticketSlaService.findLatestFirstResponseCycle(ticket)).thenReturn(Optional.empty());
         when(ticketSlaService.findLatestResolutionCycle(ticket)).thenReturn(Optional.empty());
 
-        TicketResponse response = service.getById(ticketId, actor);
+        TicketDetailResponse response = service.getById(ticketId, actor);
 
         assertThat(response.getFirstResponseDueAt()).isNull();
         assertThat(response.isFirstResponseNearDue()).isFalse();
@@ -1766,9 +1825,42 @@ class TicketServiceTest {
         when(tickets.findById(ticketId)).thenReturn(Optional.of(ticket));
         when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
 
-        TicketResponse response = service.getStaffDetail(ticketId, actor);
+        TicketDetailResponse response = service.getStaffDetail(ticketId, actor);
 
         assertThat(response.getId()).isEqualTo(ticketId);
+    }
+
+    @Test
+    void getStaffDetailReturnsAllAttachmentVisibilitiesAndStaffActivityFields() {
+        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.MEDIUM);
+        ticket.setDescription("Descripción staff");
+        Attachment publicAttachment = attachment(1L, MessageVisibility.PUBLIC, "publico.pdf");
+        Attachment internalAttachment = attachment(2L, MessageVisibility.INTERNAL, "interno.pdf");
+        TicketActivity activity = activity(1, ActivityType.PRIORITY_CHANGED, "STAFF_REASON", "nota staff");
+        activity.setActorType(ActorType.AGENT);
+        activity.setPreviousPriority(Priority.LOW);
+        activity.setNewPriority(Priority.HIGH);
+        Instant persistedAt = NOW.minusSeconds(30);
+        activity.setOccurredAt(null);
+        activity.setCreatedAt(persistedAt);
+
+        when(tickets.findById(ticketId)).thenReturn(Optional.of(ticket));
+        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+        when(attachmentRepository.findAllByTicket_IdOrderByCreatedAtAsc(ticketId))
+                .thenReturn(List.of(publicAttachment, internalAttachment));
+        when(activities.findAllByTicket_IdOrderBySequenceAsc(ticketId)).thenReturn(List.of(activity));
+
+        TicketDetailResponse response = service.getStaffDetail(ticketId, actor);
+
+        assertThat(response.getDescription()).isEqualTo("Descripción staff");
+        assertThat(response.getAttachments()).extracting("visibility")
+                .containsExactly(MessageVisibility.PUBLIC, MessageVisibility.INTERNAL);
+        assertThat(response.getTicketActivities().getFirst().getActorType()).isEqualTo(ActorType.AGENT);
+        assertThat(response.getTicketActivities().getFirst().getPreviousPriority()).isEqualTo(Priority.LOW);
+        assertThat(response.getTicketActivities().getFirst().getNewPriority()).isEqualTo(Priority.HIGH);
+        assertThat(response.getTicketActivities().getFirst().getOccurredAt()).isEqualTo(persistedAt);
+        assertThat(response.getTicketActivities().getFirst().getReasonCode()).isEqualTo("STAFF_REASON");
+        assertThat(response.getTicketActivities().getFirst().getMessage()).isEqualTo("nota staff");
     }
 
     @Test
@@ -1779,7 +1871,7 @@ class TicketServiceTest {
         when(tickets.findById(ticketId)).thenReturn(Optional.of(ticket));
         when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
 
-        TicketResponse response = service.getStaffDetail(ticketId, admin);
+        TicketDetailResponse response = service.getStaffDetail(ticketId, admin);
 
         assertThat(response.getId()).isEqualTo(ticketId);
     }
@@ -1793,7 +1885,7 @@ class TicketServiceTest {
         when(tickets.findById(ticketId)).thenReturn(Optional.of(ticket));
         when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
 
-        TicketResponse response = service.getStaffDetail(ticketId, areaResponsible);
+        TicketDetailResponse response = service.getStaffDetail(ticketId, areaResponsible);
 
         assertThat(response.getId()).isEqualTo(ticketId);
     }
@@ -1829,7 +1921,7 @@ class TicketServiceTest {
         when(tickets.findById(ticketId)).thenReturn(Optional.of(ticket));
         when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
 
-        TicketResponse response = service.getStaffDetail(ticketId, areaResponsible);
+        TicketDetailResponse response = service.getStaffDetail(ticketId, areaResponsible);
 
         assertThat(response.getId()).isEqualTo(ticketId);
     }
@@ -1858,9 +1950,35 @@ class TicketServiceTest {
         when(tickets.findById(ticketId)).thenReturn(Optional.of(ticket));
         when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
 
-        TicketResponse response = service.getStaffCitizenView(ticketId, actor);
+        TicketDetailResponse response = service.getStaffCitizenView(ticketId, actor);
 
         assertThat(response.getId()).isEqualTo(ticketId);
+    }
+
+    @Test
+    void getStaffCitizenViewUsesThePublicProjection() {
+        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.MEDIUM);
+        Attachment publicAttachment = attachment(1L, MessageVisibility.PUBLIC, "publico.pdf");
+        TicketActivity activity = activity(1, ActivityType.PROGRESS_REPORTED, "INTERNAL_REASON",
+                "mensaje interno");
+        Instant persistedAt = NOW.minusSeconds(60);
+        activity.setOccurredAt(null);
+        activity.setCreatedAt(persistedAt);
+        when(tickets.findById(ticketId)).thenReturn(Optional.of(ticket));
+        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+        when(attachmentRepository.findAllByTicket_IdAndVisibilityOrderByCreatedAtAsc(
+                ticketId, MessageVisibility.PUBLIC)).thenReturn(List.of(publicAttachment));
+        when(activities.findAllByTicket_IdOrderBySequenceAsc(ticketId)).thenReturn(List.of(activity));
+
+        TicketDetailResponse response = service.getStaffCitizenView(ticketId, actor);
+
+        assertThat(response.getAttachments()).extracting("visibility")
+                .containsExactly(MessageVisibility.PUBLIC);
+        assertThat(response.getTicketActivities().getFirst().getActorType()).isNull();
+        assertThat(response.getTicketActivities().getFirst().getReasonCode()).isNull();
+        assertThat(response.getTicketActivities().getFirst().getMessage()).isNull();
+        assertThat(response.getTicketActivities().getFirst().getOccurredAt()).isEqualTo(persistedAt);
+        verify(attachmentRepository, never()).findAllByTicket_IdOrderByCreatedAtAsc(any());
     }
 
     @Test
@@ -1925,6 +2043,30 @@ class TicketServiceTest {
         ticket.setEscalated(false);
         ticket.setStatusChangedAt(Instant.now());
         return ticket;
+    }
+
+    private Attachment attachment(Long id, MessageVisibility visibility, String fileName) {
+        Attachment attachment = new Attachment();
+        attachment.setId(id);
+        attachment.setFileName(fileName);
+        attachment.setContentType("application/pdf");
+        attachment.setSizeBytes(123L);
+        attachment.setVisibility(visibility);
+        attachment.setCreatedAt(NOW);
+        return attachment;
+    }
+
+    private TicketActivity activity(int sequence, ActivityType type, String reasonCode, String message) {
+        TicketActivity activity = new TicketActivity();
+        activity.setSequence(sequence);
+        activity.setActionType(type);
+        activity.setPreviousStatus(TicketStatus.IN_PROGRESS);
+        activity.setNewStatus(TicketStatus.IN_REVIEW);
+        activity.setActorType(ActorType.AGENT);
+        activity.setReasonCode(reasonCode);
+        activity.setMessage(message);
+        activity.setOccurredAt(NOW);
+        return activity;
     }
 
     private RequestType requestTypeSprint2(Long id, String code, String responsibleAreaId,

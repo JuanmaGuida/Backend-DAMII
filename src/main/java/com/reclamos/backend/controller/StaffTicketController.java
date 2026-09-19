@@ -1,6 +1,6 @@
 package com.reclamos.backend.controller;
 
-import com.reclamos.backend.dto.TicketResponse;
+import com.reclamos.backend.dto.response.TicketDetailResponse;
 import com.reclamos.backend.identity.AuthenticatedIdentity;
 import com.reclamos.backend.service.TicketService;
 import lombok.RequiredArgsConstructor;
@@ -35,7 +35,7 @@ public class StaffTicketController {
      * TicketService.requireStaffAccess.
      */
     @GetMapping("/{ticketId}")
-    public TicketResponse getStaffDetail(
+    public TicketDetailResponse getStaffDetail(
             @PathVariable UUID ticketId,
             @AuthenticationPrincipal AuthenticatedIdentity identity
     ) {
@@ -43,13 +43,13 @@ public class StaffTicketController {
     }
 
     /**
-     * GET /staff/tickets/{id}/citizen-view: misma proyección que ve el
-     * ciudadano, consultada desde el contexto staff. Mismo control de
-     * acceso de entrada que getStaffDetail — ver
+     * GET /staff/tickets/{id}/citizen-view: proyección pública que ve el
+     * ciudadano, consultada desde el contexto staff. Mismo control de acceso
+     * de entrada que getStaffDetail — ver
      * TicketService.getStaffCitizenView.
      */
     @GetMapping("/{ticketId}/citizen-view")
-    public TicketResponse getCitizenView(
+    public TicketDetailResponse getCitizenView(
             @PathVariable UUID ticketId,
             @AuthenticationPrincipal AuthenticatedIdentity identity
     ) {
