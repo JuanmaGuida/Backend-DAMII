@@ -1,6 +1,7 @@
 package com.reclamos.backend.exception;
 
 import com.reclamos.backend.dto.error.ApiErrorResponse;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.CacheControl;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.http.HttpStatus;
@@ -39,7 +40,8 @@ public class GlobalExceptionHandler {
                 .body(new ApiErrorResponse(TrackingTicketNotFoundException.CODE, exception.getMessage()));
     }
 
-    @ExceptionHandler({InvalidTicketRequestException.class, MethodArgumentNotValidException.class})
+    @ExceptionHandler({InvalidTicketRequestException.class, InvalidCatalogRequestException.class,
+            MethodArgumentNotValidException.class})
     public ResponseEntity<ApiErrorResponse> handleBadRequest(Exception exception) {
         String message = exception instanceof MethodArgumentNotValidException validation
                 ? validation.getBindingResult().getFieldErrors().stream().findFirst()
@@ -125,6 +127,23 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(UnauthorizedTicketOperationException.class)
     public ResponseEntity<ApiErrorResponse> handleForbidden(UnauthorizedTicketOperationException exception) {
         return response(HttpStatus.FORBIDDEN, "FORBIDDEN", exception.getMessage());
+    }
+
+    /**
+     * QA (FAIL de "validaciones de datos y relaciones jerárquicas del
+     * catálogo"): altas concurrentes con el mismo nombre/código terminaban
+     * en 500 porque nada mapeaba las violaciones de constraints de base
+     * (unique/check) que sí existen en el schema — {@code
+     * CatalogAdminService} sólo hace un pre-check existsBy... antes de
+     * guardar, que es TOCTOU-racy bajo concurrencia real. La constraint de
+     * base sigue siendo la última línea de defensa (correcta: es atómica,
+     * el pre-check no); acá se traduce a un 409 controlado en vez de dejar
+     * que la excepción cruda de Hibernate/JDBC llegue como 500.
+     */
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ApiErrorResponse> handleDataIntegrityViolation(DataIntegrityViolationException exception) {
+        return response(HttpStatus.CONFLICT, "DATA_INTEGRITY_CONFLICT",
+                "La operación entra en conflicto con datos existentes");
     }
 
     private ResponseEntity<ApiErrorResponse> response(HttpStatus status, String code, String message) {
