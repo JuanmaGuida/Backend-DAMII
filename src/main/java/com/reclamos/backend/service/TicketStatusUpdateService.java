@@ -194,8 +194,8 @@ public class TicketStatusUpdateService {
             }
             case REJECTED -> {
                 requireCurrentStatus(ticket,
-                        "REJECTED sólo es válido con el ticket en ROUTED, IN_PROGRESS o PENDING_INFORMATION",
-                        TicketStatus.ROUTED, TicketStatus.IN_PROGRESS, TicketStatus.PENDING_INFORMATION);
+                        "REJECTED sólo es válido con el ticket en ROUTED o IN_PROGRESS",
+                        TicketStatus.ROUTED, TicketStatus.IN_PROGRESS);
                 UpdateTicketStatusRequest.Cancellation cancellation = request.details() == null
                         ? null : request.details().cancellation();
                 if (cancellation == null || isBlank(cancellation.reasonCode())) {
