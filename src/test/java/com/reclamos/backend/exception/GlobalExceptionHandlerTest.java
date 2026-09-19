@@ -2,12 +2,29 @@ package com.reclamos.backend.exception;
 
 import com.reclamos.backend.dto.error.ApiErrorResponse;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class GlobalExceptionHandlerTest {
+    // QA (FAIL de "validaciones de datos y relaciones jerárquicas del
+    // catálogo"): antes de este handler, una DataIntegrityViolationException
+    // (típicamente una constraint de base violada por una condición de
+    // carrera que el pre-check existsBy... de CatalogAdminService no
+    // alcanza a evitar) no tenía ningún @ExceptionHandler que la mapeara y
+    // llegaba como 500 crudo.
+    @Test
+    void dataIntegrityViolationMapsToControlledConflict() {
+        ResponseEntity<ApiErrorResponse> response = new GlobalExceptionHandler()
+                .handleDataIntegrityViolation(new DataIntegrityViolationException("duplicate key value"));
+
+        assertEquals(409, response.getStatusCode().value());
+        assertEquals("DATA_INTEGRITY_CONFLICT", response.getBody().code());
+        assertEquals("La operación entra en conflicto con datos existentes", response.getBody().message());
+    }
+
     @Test
     void evidenceRequiredUsesSemanticCodeAndUnprocessableContent() {
         ResponseEntity<ApiErrorResponse> response = new GlobalExceptionHandler()
