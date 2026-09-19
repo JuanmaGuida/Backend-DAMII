@@ -117,8 +117,16 @@ public class TicketResolutionService {
         ticket.setResolutionConfirmationDueAt(application.resolvedAt().plus(confirmationDuration));
         ticketRepository.save(ticket);
         saveResolutionActivity(ticket, previousStatus, application);
+        // DDA2-180: data.updatedAt de ticketUpdated tiene que ser "cuándo M2
+        // persistió el cambio" (Eventos V1.69 §7.1/§11), no
+        // application.resolvedAt() — ese es data.updateOccurredAt cuando la
+        // resolución llega por integración externa (TicketStatusUpdateService),
+        // el momento del hecho en el productor, no de M2. resolvedAt() se
+        // sigue usando para el resto del dominio (SLA, TicketResolution,
+        // statusChangedAt): sólo el timestamp publicado en el evento tiene
+        // que ser el propio de M2.
         ticketOutboxService.resolved(ticket, application.type(), application.publicMessage(),
-                application.resolvedAt());
+                clock.instant());
 
         return resolution;
     }

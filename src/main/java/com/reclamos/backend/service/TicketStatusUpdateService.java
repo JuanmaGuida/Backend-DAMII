@@ -34,6 +34,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
@@ -85,6 +86,7 @@ public class TicketStatusUpdateService {
     private final InformationRequestService informationRequestService;
     private final TicketCancellationRepository cancellationRepository;
     private final TicketOutboxService ticketOutboxService;
+    private final Clock clock;
 
     @Transactional
     public TicketResponse applyUpdate(UUID ticketId, UpdateTicketStatusEnvelope envelope) {
@@ -267,11 +269,23 @@ public class TicketStatusUpdateService {
                     envelope.eventId(), request.updateOccurredAt());
         }
 
+        // DDA2-180: data.updatedAt de ticketUpdated tiene que ser "cuándo M2
+        // persistió el cambio" (Eventos V1.69 §7.1/§11), no
+        // request.updateOccurredAt() — ese es data.updateOccurredAt del
+        // request entrante (Eventos §8.1: "momento real del hecho/actualización
+        // operativa en el PRODUCTOR"), un campo del productor externo, no de
+        // M2. Antes se reusaba acá, lo que permitía que un módulo externo
+        // dictara el valor publicado como timestamp de persistencia de M2
+        // (ver diagnóstico QA). request.updateOccurredAt() se sigue usando
+        // para el resto del dominio (statusChangedAt, cancelledAt,
+        // TicketActivity.occurredAt, terminateActiveCycles) — ahí sí es
+        // correcto, es "cuándo pasó el hecho", no el timestamp del evento.
+        Instant persistedAt = clock.instant();
         switch (request.updateType()) {
             case STARTED, RETURNED -> ticketOutboxService.statusChanged(
-                    ticket, request.publicMessage(), request.updateOccurredAt());
+                    ticket, request.publicMessage(), persistedAt);
             case REJECTED -> ticketOutboxService.cancelled(
-                    ticket, cancellationReason, request.publicMessage(), false, request.updateOccurredAt());
+                    ticket, cancellationReason, request.publicMessage(), false, persistedAt);
             default -> {
                 // Los productores PROGRESS e INFORMATION_REQUIRED no forman parte de este bloque.
                 // RESOLVED se publica dentro de TicketResolutionService.
