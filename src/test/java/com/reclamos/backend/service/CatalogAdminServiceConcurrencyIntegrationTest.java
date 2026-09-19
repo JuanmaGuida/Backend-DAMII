@@ -16,6 +16,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.util.UUID;
@@ -73,6 +74,8 @@ class CatalogAdminServiceConcurrencyIntegrationTest {
     private RequestTypeRepository requestTypeRepository;
     @Autowired
     private JdbcTemplate jdbcTemplate;
+    @Autowired
+    private TransactionTemplate transactions;
 
     @Test
     void concurrentCreatesWithTheSameNameLeaveExactlyOneCategoryAndFailTheOtherWithDataIntegrityViolation()
@@ -169,6 +172,24 @@ class CatalogAdminServiceConcurrencyIntegrationTest {
      * sólo difieren en mayúsculas. Los nombres son distintos entre sí (y
      * ambos activos) para que la única carrera forzada sea la de código —
      * el pre-check de nombre no está sincronizado y no debería interferir.
+     *
+     * QA (retest de DDA2-115): a diferencia de createCategory (Category no
+     * tiene relaciones), createRequestType empieza por
+     * requireActiveSubcategory, que hace subcategory.getCategory().isActive()
+     * — un @ManyToOne LAZY — ANTES de llegar siquiera al pre-check
+     * sincronizado por el CyclicBarrier. new CatalogAdminService(...) no pasa
+     * por el proxy @Transactional de Spring (eso sólo lo aplica el
+     * ApplicationContext sobre el bean real), así que subcategoryRepository
+     * .findById(...) corría en su propia mini-transacción de
+     * SimpleJpaRepository que se cerraba apenas devolvía el resultado — para
+     * cuando el código tocaba .getCategory(), la Session ya estaba cerrada y
+     * las dos ramas volaban con LazyInitializationException antes de
+     * validar la carrera real (0 éxitos, 0 conflictos). Se envuelve la
+     * llamada al service en transactions.execute(...) (mismo patrón que
+     * TicketResolutionNumberConcurrencyIntegrationTest.createResolvableTicket)
+     * para que cada hilo tenga una Session/transacción propia y viva durante
+     * toda la llamada, igual que si el service hubiera pasado por el proxy
+     * real — sin tocar los dos tests de arriba, que nunca la necesitaron.
      */
     @Test
     void concurrentCreatesWithCaseVariantCodesLeaveExactlyOneRequestTypeAndFailTheOtherWithDataIntegrityViolation()
@@ -232,7 +253,12 @@ class CatalogAdminServiceConcurrencyIntegrationTest {
     private Exception attemptCreateRequestType(CatalogAdminService service, Long subcategoryId, String code,
             String name) {
         try {
-            service.createRequestType(requestTypeRequest(subcategoryId, code, name));
+            // transactions.execute (no service.createRequestType directo):
+            // ver el javadoc del test de arriba — sin una transacción propia
+            // por hilo, el acceso lazy a subcategory.getCategory() dentro de
+            // requireActiveSubcategory falla antes de llegar al pre-check
+            // sincronizado por el CyclicBarrier.
+            transactions.execute(status -> service.createRequestType(requestTypeRequest(subcategoryId, code, name)));
             return null;
         } catch (Exception exception) {
             return exception;
