@@ -760,10 +760,13 @@ paths:
       tags: [ Tickets ]
       summary: Cancelar un ticket antes de su derivación
       description: |
-        Transición REGISTERED/IN_REVIEW/PENDING_INFORMATION -> CANCELLED.
-        Permitida al ciudadano propietario del ticket o a AGENT/ADMIN. Un
-        ticket ya derivado (ROUTED/IN_PROGRESS) se cancela por el flujo de
-        integración (updateTicketStatus/REJECTED), no por este endpoint.
+        El ciudadano propietario sólo puede cancelar su propio ticket mientras
+        está en REGISTERED, independientemente de su role almacenado. AGENT y
+        ADMIN pueden cancelar administrativamente tickets ajenos en REGISTERED,
+        IN_REVIEW o PENDING_INFORMATION. AREA_RESPONSIBLE no posee capacidad
+        administrativa de cancelación. Un ticket ya derivado
+        (ROUTED/IN_PROGRESS) se cancela por el flujo de integración
+        (updateTicketStatus/REJECTED), no por este endpoint.
       operationId: cancelTicket
       security:
         - bearerAuth: [ ]

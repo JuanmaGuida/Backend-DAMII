@@ -6,9 +6,9 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * POST /tickets/{id}/cancel (Entidades V1.49 §24, tabla de endpoints):
- * cancelación temprana por el ciudadano owner / AGENT / ADMIN, antes de que
- * el ticket llegue a gestión externa. reasonCode es obligatorio
+ * POST /tickets/{id}/cancel: el owner sólo puede cancelar en REGISTERED;
+ * AGENT/ADMIN pueden cancelar administrativamente tickets ajenos en los
+ * estados admitidos por TicketService. reasonCode es obligatorio
  * (TicketCancellation, Entidades §13.3); los mensajes son opcionales.
  * <p>
  * NO VALIDADO A PROPÓSITO: cualquier valor de CancellationReasonCode es

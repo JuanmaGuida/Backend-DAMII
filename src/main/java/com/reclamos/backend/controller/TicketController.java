@@ -155,10 +155,10 @@ public class TicketController {
     }
 
     /**
-     * POST /tickets/{id}/cancel (Entidades V1.49 §24): cancelación temprana
-     * (REGISTERED/IN_REVIEW/PENDING_INFORMATION -&gt; CANCELLED) por el
-     * ciudadano owner o AGENT/ADMIN. El ownership/rol real lo valida
-     * TicketService.requireCancelAuthority.
+     * POST /tickets/{id}/cancel: el owner sólo puede cancelar en REGISTERED;
+     * AGENT/ADMIN conservan la cancelación administrativa de tickets ajenos
+     * en REGISTERED/IN_REVIEW/PENDING_INFORMATION. El ownership/rol real lo
+     * valida TicketService.requireCancelAuthority.
      */
     @PostMapping(path = "/{ticketId}/cancel", consumes = MediaType.APPLICATION_JSON_VALUE)
     public TicketResponse cancel(

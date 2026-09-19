@@ -61,6 +61,7 @@ import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
@@ -549,73 +550,51 @@ class TicketStatusUpdateServiceTest {
     }
 
     @Test
-    void rejectedWhileWaitingInformationTerminatesThePausedSla() {
-        Ticket ticket = ticket(TicketStatus.PENDING_INFORMATION);
-        InformationRequest pending = new InformationRequest();
-        pending.setId(UUID.randomUUID());
-        pending.setTicket(ticket);
-        pending.setStatus(InformationRequestStatus.PENDING);
+    void rejectedMovesInProgressTicketToCancelled() {
+        Ticket ticket = ticket(TicketStatus.IN_PROGRESS);
         when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
-        when(informationRequestRepository.findByTicketIdAndStatusForUpdate(
-                ticketId, InformationRequestStatus.PENDING)).thenReturn(Optional.of(pending));
         when(activityRepository.countByTicketId(ticketId)).thenReturn(0);
         when(locationRepository.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+
         UpdateTicketStatusRequest.Details details = new UpdateTicketStatusRequest.Details(
                 null, null, null, new UpdateTicketStatusRequest.Cancellation("REJECTED_BY_AREA"));
         UpdateTicketStatusRequest data = new UpdateTicketStatusRequest(
                 ticketId, UpdateTicketStatusType.REJECTED, "No es posible continuar.", null, null, details,
                 externalActor, Instant.parse("2026-09-08T11:00:00Z"));
 
-        service.applyUpdate(ticketId, envelope(data));
+        TicketResponse response = service.applyUpdate(ticketId, envelope(data));
 
-        assertThat(ticket.getCurrentStatus()).isEqualTo(TicketStatus.CANCELLED);
-        assertThat(pending.getStatus()).isEqualTo(InformationRequestStatus.CANCELLED);
-        verify(informationRequestRepository).save(pending);
+        assertThat(response.getCurrentStatus()).isEqualTo(TicketStatus.CANCELLED);
         verify(ticketSlaService).terminateActiveCycles(ticket, data.updateOccurredAt());
         verify(cancellationRepository).save(argThat(cancellation ->
                 cancellation.getReasonCode() == CancellationReasonCode.REJECTED_BY_AREA));
+        verify(outbox).cancelled(ticket, CancellationReasonCode.REJECTED_BY_AREA,
+                "No es posible continuar.", false, data.updateOccurredAt());
     }
 
     @Test
-    void duplicateRejectedEventDoesNotRepeatInformationRequestCancellationOrTicketEffects() {
+    void rejectedWhileWaitingInformationIsRejectedWithoutPartialEffects() {
         Ticket ticket = ticket(TicketStatus.PENDING_INFORMATION);
         InformationRequest pending = new InformationRequest();
         pending.setId(UUID.randomUUID());
         pending.setTicket(ticket);
         pending.setStatus(InformationRequestStatus.PENDING);
         when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
-        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
-        when(informationRequestRepository.findByTicketIdAndStatusForUpdate(
-                ticketId, InformationRequestStatus.PENDING)).thenReturn(Optional.of(pending));
-        when(activityRepository.countByTicketId(ticketId)).thenReturn(0);
-        when(locationRepository.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
-
         UpdateTicketStatusRequest.Details details = new UpdateTicketStatusRequest.Details(
                 null, null, null, new UpdateTicketStatusRequest.Cancellation("REJECTED_BY_AREA"));
         UpdateTicketStatusRequest data = new UpdateTicketStatusRequest(
-                ticketId, UpdateTicketStatusType.REJECTED, "No es posible continuar.", null, null, details,
+                ticketId, UpdateTicketStatusType.REJECTED, "No es posible continuar.", "Nota interna", null, details,
                 externalActor, Instant.parse("2026-09-08T11:00:00Z"));
-        UpdateTicketStatusEnvelope envelope = envelope(data);
-        InboxEvent alreadyProcessed = new InboxEvent();
-        alreadyProcessed.setEventId(envelope.eventId());
-        alreadyProcessed.setEventType(envelope.eventType());
-        alreadyProcessed.setProducerModuleId(envelope.producer().moduleId());
-        alreadyProcessed.setStatus(InboxStatus.PROCESSED);
-        when(inboxEventRepository.findById(envelope.eventId()))
-                .thenReturn(Optional.empty(), Optional.of(alreadyProcessed));
 
-        service.applyUpdate(ticketId, envelope);
-        service.applyUpdate(ticketId, envelope);
+        assertThatThrownBy(() -> service.applyUpdate(ticketId, envelope(data)))
+                .isInstanceOf(TicketStateConflictException.class);
 
-        assertThat(ticket.getCurrentStatus()).isEqualTo(TicketStatus.CANCELLED);
-        assertThat(pending.getStatus()).isEqualTo(InformationRequestStatus.CANCELLED);
-        verify(informationRequestRepository, times(1)).save(pending);
-        verify(ticketSlaService, times(1)).terminateActiveCycles(ticket, data.updateOccurredAt());
-        verify(cancellationRepository, times(1)).save(any());
-        verify(activityRepository, times(1)).save(any());
-        verify(outbox, times(1)).cancelled(ticket, CancellationReasonCode.REJECTED_BY_AREA,
-                "No es posible continuar.", false, data.updateOccurredAt());
-        verify(inboxEventRepository, times(1)).save(any());
+        assertThat(ticket.getCurrentStatus()).isEqualTo(TicketStatus.PENDING_INFORMATION);
+        assertThat(pending.getStatus()).isEqualTo(InformationRequestStatus.PENDING);
+        verify(ticketRepository, never()).save(any());
+        verify(inboxEventRepository, never()).save(any());
+        verifyNoInteractions(informationRequestRepository, ticketSlaService, cancellationRepository,
+                activityRepository, messageRepository, outbox);
     }
 
     @Test

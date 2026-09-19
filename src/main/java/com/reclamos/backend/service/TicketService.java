@@ -65,14 +65,8 @@ public class TicketService {
             "currentProgress", "createdAt", "updatedAt"
     );
 
-    /**
-     * Estados desde los que POST /tickets/{id}/cancel permite cancelar
-     * (Entidades V1.49 §24: cancelación temprana, antes de la derivación).
-     * ROUTED/IN_PROGRESS quedan afuera a propósito: ahí el área externa ya
-     * está involucrada y esa cancelación llega por el flujo de integración
-     * (updateTicketStatus/REJECTED, ver TicketStatusUpdateService).
-     */
-    private static final Set<TicketStatus> CANCELLABLE_STATUSES = Set.of(
+    /** Estados habilitados para la cancelación administrativa de tickets ajenos. */
+    private static final Set<TicketStatus> ADMIN_CANCELLABLE_STATUSES = Set.of(
             TicketStatus.REGISTERED, TicketStatus.IN_REVIEW, TicketStatus.PENDING_INFORMATION);
 
     private final RequestTypeRepository requestTypeRepository;
@@ -368,12 +362,12 @@ public class TicketService {
     }
 
     /**
-     * POST /tickets/{id}/cancel (Entidades V1.49 §24: "Ciudadano owner /
-     * propietario anónimo acreditado / AGENT / ADMIN"). Cancelación
-     * TEMPRANA, antes de que el ticket llegue a gestión externa: sólo cubre
-     * {@link #CANCELLABLE_STATUSES} -&gt; CANCELLED. ROUTED/IN_PROGRESS se
-     * cancelan por el flujo de integración (updateTicketStatus/REJECTED),
-     * no por acá. La cancelación de un ticket DUPLICATE (Entidades §14: "se
+     * POST /tickets/{id}/cancel. El propietario actúa con capacidad ciudadana
+     * independientemente de su role y sólo puede cancelar en REGISTERED.
+     * AGENT/ADMIN conservan la cancelación administrativa de tickets ajenos
+     * en {@link #ADMIN_CANCELLABLE_STATUSES}. ROUTED/IN_PROGRESS se cancelan
+     * por el flujo de integración (updateTicketStatus/REJECTED), no por acá.
+     * La cancelación de un ticket DUPLICATE (Entidades §14: "se
      * agrega la transición DUPLICATE -&gt; CANCELLED por
      * WITHDRAWN_BY_CITIZEN") queda pendiente de Story 7.2 (Sprint 5):
      * DUPLICATE todavía no es un estado alcanzable en el sistema.
@@ -391,11 +385,16 @@ public class TicketService {
                 && ticket.getCitizenId().equals(actor.citizenId());
         requireCancelAuthority(actor, isOwnTicket);
 
-        if (!CANCELLABLE_STATUSES.contains(ticket.getCurrentStatus())) {
+        if (isOwnTicket && ticket.getCurrentStatus() != TicketStatus.REGISTERED) {
             throw new TicketStateConflictException(
                     "El ticket está en estado " + ticket.getCurrentStatus()
-                            + " y no puede cancelarse por este endpoint; sólo se puede cancelar antes de la"
-                            + " derivación (REGISTERED, IN_REVIEW o PENDING_INFORMATION)");
+                            + " y el propietario sólo puede cancelarlo directamente en REGISTERED");
+        }
+        if (!isOwnTicket && !ADMIN_CANCELLABLE_STATUSES.contains(ticket.getCurrentStatus())) {
+            throw new TicketStateConflictException(
+                    "El ticket está en estado " + ticket.getCurrentStatus()
+                            + " y no admite cancelación administrativa por este endpoint"
+                            + " (estados permitidos: REGISTERED, IN_REVIEW o PENDING_INFORMATION)");
         }
 
         Instant now = clock.instant();

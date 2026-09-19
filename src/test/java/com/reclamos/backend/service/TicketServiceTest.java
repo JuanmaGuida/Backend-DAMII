@@ -1299,6 +1299,69 @@ class TicketServiceTest {
     }
 
     @Test
+    void cancelTicketByOwnerFromInReviewIsRejectedWithoutEffects() {
+        AuthenticatedIdentity owner = new AuthenticatedIdentity(
+                "citizen-1", UUID.randomUUID(), "Vecino Uno", null, ModuleRole.CITIZEN);
+        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.LOW);
+        ticket.setCitizenId(owner.citizenId());
+        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+
+        CancelTicketRequest request = new CancelTicketRequest();
+        request.setReasonCode(CancellationReasonCode.WITHDRAWN_BY_CITIZEN);
+
+        assertThatThrownBy(() -> service.cancelTicket(ticketId, request, owner))
+                .isInstanceOf(TicketStateConflictException.class);
+
+        assertThat(ticket.getCurrentStatus()).isEqualTo(TicketStatus.IN_REVIEW);
+        verifyNoInteractions(cancellationRepository, informationRequestService, ticketSlaService,
+                activities, ticketOutboxService);
+        verify(tickets, never()).save(any());
+    }
+
+    @Test
+    void cancelTicketByOwnerFromPendingInformationIsRejectedWithoutEffects() {
+        AuthenticatedIdentity owner = new AuthenticatedIdentity(
+                "citizen-1", UUID.randomUUID(), "Vecino Uno", null, ModuleRole.CITIZEN);
+        Ticket ticket = ticket(TicketStatus.PENDING_INFORMATION, Priority.LOW);
+        ticket.setCitizenId(owner.citizenId());
+        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+
+        CancelTicketRequest request = new CancelTicketRequest();
+        request.setReasonCode(CancellationReasonCode.WITHDRAWN_BY_CITIZEN);
+
+        assertThatThrownBy(() -> service.cancelTicket(ticketId, request, owner))
+                .isInstanceOf(TicketStateConflictException.class);
+
+        assertThat(ticket.getCurrentStatus()).isEqualTo(TicketStatus.PENDING_INFORMATION);
+        verifyNoInteractions(cancellationRepository, informationRequestService, ticketSlaService,
+                activities, ticketOutboxService);
+        verify(tickets, never()).save(any());
+    }
+
+    @Test
+    void cancelTicketTreatsInternalRoleOwnersAsCitizensAfterRegistered() {
+        CancelTicketRequest request = new CancelTicketRequest();
+        request.setReasonCode(CancellationReasonCode.WITHDRAWN_BY_CITIZEN);
+
+        for (ModuleRole role : List.of(ModuleRole.AGENT, ModuleRole.ADMIN, ModuleRole.AREA_RESPONSIBLE)) {
+            UUID ownerId = UUID.randomUUID();
+            AuthenticatedIdentity owner = new AuthenticatedIdentity(
+                    "owner-" + role, ownerId, role.name(), "area-obras", role);
+            Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.LOW);
+            ticket.setCitizenId(ownerId);
+            when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+
+            assertThatThrownBy(() -> service.cancelTicket(ticketId, request, owner))
+                    .isInstanceOf(TicketStateConflictException.class);
+            assertThat(ticket.getCurrentStatus()).isEqualTo(TicketStatus.IN_REVIEW);
+        }
+
+        verify(cancellationRepository, never()).save(any());
+        verify(tickets, never()).save(any());
+        verifyNoInteractions(informationRequestService, ticketSlaService, activities, ticketOutboxService);
+    }
+
+    @Test
     void cancelTicketByAgentOnOthersTicketFromPendingInformationSucceeds() {
         Ticket ticket = ticket(TicketStatus.PENDING_INFORMATION, Priority.LOW);
         ticket.setCitizenId(UUID.randomUUID());
@@ -1320,6 +1383,33 @@ class TicketServiceTest {
         verify(informationRequestService).cancelPendingBecauseTicketTerminated(ticket);
         verify(ticketSlaService).terminateActiveCycles(ticket, NOW);
         verify(ticketOutboxService).cancelled(ticket, CancellationReasonCode.OUT_OF_SCOPE, null, true, NOW);
+    }
+
+    @Test
+    void cancelTicketByAdminOnOthersTicketFromInReviewAndPendingInformationSucceeds() {
+        AuthenticatedIdentity admin = new AuthenticatedIdentity(
+                "admin-1", UUID.randomUUID(), "Admin Uno", null, ModuleRole.ADMIN);
+        Ticket inReview = ticket(TicketStatus.IN_REVIEW, Priority.LOW);
+        inReview.setCitizenId(UUID.randomUUID());
+        Ticket pendingInformation = ticket(TicketStatus.PENDING_INFORMATION, Priority.LOW);
+        pendingInformation.setCitizenId(UUID.randomUUID());
+        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(inReview), Optional.of(pendingInformation));
+        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+        when(activities.countByTicketId(ticketId)).thenReturn(0);
+
+        CancelTicketRequest request = new CancelTicketRequest();
+        request.setReasonCode(CancellationReasonCode.OUT_OF_SCOPE);
+
+        TicketResponse first = service.cancelTicket(ticketId, request, admin);
+        TicketResponse second = service.cancelTicket(ticketId, request, admin);
+
+        assertThat(first.getCurrentStatus()).isEqualTo(TicketStatus.CANCELLED);
+        assertThat(second.getCurrentStatus()).isEqualTo(TicketStatus.CANCELLED);
+        verify(cancellationRepository, times(2)).save(argThat(cancellation ->
+                cancellation.getCancelledByType() == ActorType.ADMIN));
+        verify(informationRequestService).cancelPendingBecauseTicketTerminated(pendingInformation);
+        verify(ticketSlaService).terminateActiveCycles(inReview, NOW);
+        verify(ticketSlaService).terminateActiveCycles(pendingInformation, NOW);
     }
 
     @Test
