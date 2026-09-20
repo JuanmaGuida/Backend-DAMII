@@ -1327,7 +1327,11 @@ paths:
     post:
       tags: [Tracking]
       summary: Consultar un ticket por código de seguimiento
-      description: El código se envía en el body para evitar exponer esta capacidad de acceso en URLs y logs de acceso.
+      description: |
+        El código se envía en el body para evitar exponer esta capacidad de acceso en URLs y logs.
+        Sin contraseña mantiene la consulta read-only existente. Para un ticket anónimo, una
+        contraseña correcta acredita las credenciales sólo durante esta llamada: no crea sesión,
+        token ni Authentication. Una contraseña enviada para un ticket identificado nunca concede ownership.
       operationId: accessTracking
       security: []
       requestBody:
@@ -1345,6 +1349,8 @@ paths:
                 $ref: '#/components/schemas/TrackingTicketResponse'
         '400':
           $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/InvalidAnonymousTicketCredentials'
         '404':
           description: El código es inválido, inexistente o no corresponde a una solicitud.
           content:
@@ -1356,6 +1362,125 @@ paths:
                 message: No se encontró una solicitud para el código de seguimiento indicado.
         '415':
           $ref: '#/components/responses/UnsupportedMediaType'
+  /api/tracking/actions/cancel:
+    post:
+      tags: [Tracking]
+      summary: Cancelar un ticket anónimo propio
+      description: Valida tracking y contraseña desde el body y aplica la cancelación ciudadana existente sólo en REGISTERED.
+      operationId: cancelAnonymousTicket
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnonymousCancelTicketRequest'
+      responses:
+        '200':
+          description: Ticket anónimo cancelado.
+          headers:
+            Cache-Control:
+              schema: { type: string, example: no-store }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketResponse'
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/InvalidAnonymousTicketCredentials' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/TicketStateConflict' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+  /api/tracking/actions/information-response:
+    post:
+      tags: [Tracking]
+      summary: Responder una solicitud de información de un ticket anónimo
+      description: Acredita al propietario anónimo y reutiliza la respuesta textual existente. No admite archivos.
+      operationId: answerAnonymousInformationRequest
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnonymousInformationResponseRequest'
+      responses:
+        '200':
+          description: Solicitud respondida.
+          headers:
+            Cache-Control:
+              schema: { type: string, example: no-store }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InformationRequestResponse'
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/InvalidAnonymousTicketCredentials' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/InformationRequestConflict' }
+        '410':
+          description: La solicitud de información expiró.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+  /api/tracking/actions/confirm-resolution:
+    post:
+      tags: [Tracking]
+      summary: Confirmar la resolución de un ticket anónimo
+      description: Acredita al propietario anónimo y aplica la transición existente RESOLVED a CLOSED.
+      operationId: confirmAnonymousResolution
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnonymousTicketCredentialsRequest'
+      responses:
+        '200':
+          description: Resolución confirmada.
+          headers:
+            Cache-Control:
+              schema: { type: string, example: no-store }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TicketResolutionActionResponse' }
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/InvalidAnonymousTicketCredentials' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/TicketResolutionConflict' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+  /api/tracking/actions/reopen:
+    post:
+      tags: [Tracking]
+      summary: Reabrir un ticket anónimo resuelto
+      description: Acredita al propietario anónimo y aplica la reapertura ciudadana existente con un nuevo ciclo SLA.
+      operationId: reopenAnonymousTicket
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnonymousReopenTicketRequest'
+      responses:
+        '200':
+          description: Ticket reabierto.
+          headers:
+            Cache-Control:
+              schema: { type: string, example: no-store }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TicketResolutionActionResponse' }
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/InvalidAnonymousTicketCredentials' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/TicketResolutionConflict' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
 components:
   securitySchemes:
     bearerAuth:
@@ -1419,6 +1544,15 @@ components:
           example:
             code: FORBIDDEN
             message: No está autorizado para realizar esta operación
+    InvalidAnonymousTicketCredentials:
+      description: Tracking y contraseña no acreditan al propietario de un ticket anónimo.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          example:
+            code: INVALID_ANONYMOUS_TICKET_CREDENTIALS
+            message: Las credenciales del ticket anónimo no son válidas
     NotFound:
       description: Recurso no encontrado.
       content:
@@ -2450,7 +2584,48 @@ components:
         trackingCode:
           type: string
           description: Capacidad secreta entregada al crear la solicitud; nunca se incluye en la respuesta.
+        anonymousAccessPassword:
+          type: string
+          format: password
+          nullable: true
+          description: Opcional. Si se envía, sólo puede acreditar un ticket anónimo y se valida únicamente para esta llamada.
       additionalProperties: false
+    AnonymousTicketCredentialsRequest:
+      type: object
+      required: [trackingCode, anonymousAccessPassword]
+      properties:
+        trackingCode:
+          type: string
+          description: Código de seguimiento enviado exclusivamente en el body.
+        anonymousAccessPassword:
+          type: string
+          format: password
+          description: Contraseña propia del ticket anónimo enviada exclusivamente en el body.
+      additionalProperties: false
+    AnonymousCancelTicketRequest:
+      allOf:
+        - $ref: '#/components/schemas/AnonymousTicketCredentialsRequest'
+        - type: object
+          required: [payload]
+          properties:
+            payload:
+              $ref: '#/components/schemas/CancelTicketRequest'
+    AnonymousInformationResponseRequest:
+      allOf:
+        - $ref: '#/components/schemas/AnonymousTicketCredentialsRequest'
+        - type: object
+          required: [payload]
+          properties:
+            payload:
+              $ref: '#/components/schemas/AnswerInformationRequest'
+    AnonymousReopenTicketRequest:
+      allOf:
+        - $ref: '#/components/schemas/AnonymousTicketCredentialsRequest'
+        - type: object
+          required: [payload]
+          properties:
+            payload:
+              $ref: '#/components/schemas/ReopenTicketRequest'
     TrackingTicketResponse:
       type: object
       required: [publicId, status, summary, createdAt, statusChangedAt, requestType, category, subcategory, sla]

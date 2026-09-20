@@ -1420,6 +1420,48 @@ class TicketServiceTest {
     }
 
     @Test
+    void anonymousOwnerCancelsRegisteredTicketWithCitizenNullActor() {
+        Ticket ticket = ticket(TicketStatus.REGISTERED, Priority.LOW);
+        ticket.setAnonymous(true);
+        ticket.setCitizenId(null);
+        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+        when(activities.countByTicketId(ticketId)).thenReturn(0);
+
+        CancelTicketRequest request = new CancelTicketRequest();
+        request.setReasonCode(CancellationReasonCode.WITHDRAWN_BY_CITIZEN);
+        request.setPublicMessage("Retiro anónimo");
+
+        TicketResponse response = service.cancelAnonymousTicket(ticketId, request);
+
+        assertThat(response.getCurrentStatus()).isEqualTo(TicketStatus.CANCELLED);
+        verify(cancellationRepository).save(argThat(cancellation ->
+                cancellation.getCancelledByType() == ActorType.CITIZEN
+                        && cancellation.getCancelledById() == null));
+        verify(activities).save(argThat(activity -> activity.getActorType() == ActorType.CITIZEN
+                && activity.getActorId() == null));
+        verify(ticketSlaService).terminateActiveCycles(ticket, NOW);
+        verify(ticketOutboxService).cancelled(ticket,
+                CancellationReasonCode.WITHDRAWN_BY_CITIZEN, "Retiro anónimo", true, NOW);
+    }
+
+    @Test
+    void anonymousOwnerCancellationUsesTheExistingRegisteredOnlyRule() {
+        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.LOW);
+        ticket.setAnonymous(true);
+        ticket.setCitizenId(null);
+        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+
+        CancelTicketRequest request = new CancelTicketRequest();
+        request.setReasonCode(CancellationReasonCode.WITHDRAWN_BY_CITIZEN);
+
+        assertThatThrownBy(() -> service.cancelAnonymousTicket(ticketId, request))
+                .isInstanceOf(TicketStateConflictException.class);
+        verify(cancellationRepository, never()).save(any());
+        verify(activities, never()).save(any());
+    }
+
+    @Test
     void cancelTicketByOwnerFromInReviewIsRejectedWithoutEffects() {
         AuthenticatedIdentity owner = new AuthenticatedIdentity(
                 "citizen-1", UUID.randomUUID(), "Vecino Uno", null, ModuleRole.CITIZEN);
