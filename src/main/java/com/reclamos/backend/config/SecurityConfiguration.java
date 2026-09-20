@@ -73,6 +73,8 @@ public class SecurityConfiguration {
                                 "/api/catalog/subcategories/{subcategoryId}/request-types",
                                 "/api/catalog/request-types/{requestTypeId}/form").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/auth/me").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/staff/tickets/*/duplicate-candidates")
+                        .hasAnyRole("AGENT", "ADMIN")
                         // GET /me/tickets (Entidades V1.49): listado propio del ciudadano.
                         // Cualquier rol conserva capacidades ciudadanas base, así que
                         // alcanza con estar autenticado — el scoping por citizenId lo

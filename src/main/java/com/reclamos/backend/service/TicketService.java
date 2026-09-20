@@ -620,7 +620,7 @@ public class TicketService {
      * completamente read-only, incluso para ADMIN" — ningún AGENT/ADMIN
      * puede triagear su propio ticket.
      */
-    private void requireTriageAuthority(Ticket ticket, AuthenticatedIdentity actor) {
+    void requireTriageAuthority(Ticket ticket, AuthenticatedIdentity actor) {
         if (actor == null || (actor.role() != ModuleRole.AGENT && actor.role() != ModuleRole.ADMIN)) {
             throw new UnauthorizedTicketOperationException();
         }
