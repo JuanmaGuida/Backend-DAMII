@@ -21,13 +21,17 @@ import static org.junit.jupiter.api.Assertions.*;
 class MockIdentityProviderTest {
     private static final Duration TTL = Duration.ofHours(8);
     private static final Instant START = Instant.parse("2026-08-30T12:00:00Z");
+    private static final String CITIZEN_PASSWORD = "citizen-test-password";
+    private static final String AGENT_PASSWORD = "agent-test-password";
+    private static final String AREA_RESPONSIBLE_PASSWORD = "area-test-password";
+    private static final String ADMIN_PASSWORD = "admin-test-password";
 
     @Test
     void authenticatesCitizenWithExplicitProfileFields() {
         MockIdentityProvider provider = provider(new MutableClock(START));
 
         ExternalIdentityProfile profile = authenticate(provider, MockIdentityProvider.CITIZEN_USERNAME,
-                MockIdentityProvider.CITIZEN_PASSWORD).profile();
+                CITIZEN_PASSWORD).profile();
 
         assertEquals("m1-dev-citizen", profile.subjectId());
         assertEquals(UUID.fromString("10000000-0000-0000-0000-000000000001"), profile.citizenId());
@@ -42,12 +46,12 @@ class MockIdentityProviderTest {
     void authenticatesEveryFixtureWithoutEmbeddingLocalAuthorization() {
         MockIdentityProvider provider = provider(new MutableClock(START));
 
-        assertProfile(provider, MockIdentityProvider.AGENT_USERNAME, MockIdentityProvider.AGENT_PASSWORD,
+        assertProfile(provider, MockIdentityProvider.AGENT_USERNAME, AGENT_PASSWORD,
                 "m1-dev-agent", "10000000-0000-0000-0000-000000000002", "Agente", "de prueba");
         assertProfile(provider, MockIdentityProvider.AREA_RESPONSIBLE_USERNAME,
-                MockIdentityProvider.AREA_RESPONSIBLE_PASSWORD, "m1-dev-area-responsible",
+                AREA_RESPONSIBLE_PASSWORD, "m1-dev-area-responsible",
                 "10000000-0000-0000-0000-000000000003", "Responsable", "de área de prueba");
-        assertProfile(provider, MockIdentityProvider.ADMIN_USERNAME, MockIdentityProvider.ADMIN_PASSWORD,
+        assertProfile(provider, MockIdentityProvider.ADMIN_USERNAME, ADMIN_PASSWORD,
                 "m1-dev-module-admin", "10000000-0000-0000-0000-000000000006", "Administrador",
                 "de módulo de prueba");
 
@@ -74,9 +78,9 @@ class MockIdentityProviderTest {
         MockIdentityProvider provider = provider(new MutableClock(START));
 
         ExternalAuthenticatedSession first = authenticate(provider, MockIdentityProvider.AGENT_USERNAME,
-                MockIdentityProvider.AGENT_PASSWORD);
+                AGENT_PASSWORD);
         ExternalAuthenticatedSession second = authenticate(provider, MockIdentityProvider.AGENT_USERNAME,
-                MockIdentityProvider.AGENT_PASSWORD);
+                AGENT_PASSWORD);
 
         assertNotEquals(first.token(), second.token());
         assertTrue(first.token().length() >= 40);
@@ -99,7 +103,7 @@ class MockIdentityProviderTest {
         MutableClock clock = new MutableClock(START);
         MockIdentityProvider provider = provider(clock);
         ExternalAuthenticatedSession session = authenticate(provider, MockIdentityProvider.AGENT_USERNAME,
-                MockIdentityProvider.AGENT_PASSWORD);
+                AGENT_PASSWORD);
 
         clock.advance(TTL.minusMillis(1));
         assertTrue(provider.resolve(session.token()).isPresent());
@@ -120,7 +124,7 @@ class MockIdentityProviderTest {
         IdentityProvider provider = provider(new MutableClock(START));
 
         assertTrue(provider.authenticate(MockIdentityProvider.CITIZEN_USERNAME,
-                MockIdentityProvider.CITIZEN_PASSWORD).isPresent());
+                CITIZEN_PASSWORD).isPresent());
     }
 
     @Test
@@ -134,11 +138,19 @@ class MockIdentityProviderTest {
     void rejectsInvalidSessionTtl() {
         MutableClock clock = new MutableClock(START);
 
-        assertThrows(IllegalArgumentException.class, () -> new MockIdentityProvider(null, clock, new SecureRandom()));
+        assertThrows(IllegalArgumentException.class, () -> new MockIdentityProvider(
+                null, clock, new SecureRandom(), CITIZEN_PASSWORD, AGENT_PASSWORD,
+                AREA_RESPONSIBLE_PASSWORD, ADMIN_PASSWORD));
         assertThrows(IllegalArgumentException.class,
-                () -> new MockIdentityProvider(Duration.ZERO, clock, new SecureRandom()));
+                () -> new MockIdentityProvider(Duration.ZERO, clock, new SecureRandom(),
+                        CITIZEN_PASSWORD, AGENT_PASSWORD, AREA_RESPONSIBLE_PASSWORD, ADMIN_PASSWORD));
         assertThrows(IllegalArgumentException.class,
-                () -> new MockIdentityProvider(Duration.ofSeconds(-1), clock, new SecureRandom()));
+                () -> new MockIdentityProvider(Duration.ofSeconds(-1), clock, new SecureRandom(),
+                        CITIZEN_PASSWORD, AGENT_PASSWORD, AREA_RESPONSIBLE_PASSWORD, ADMIN_PASSWORD));
+
+        assertThrows(IllegalArgumentException.class,
+                () -> new MockIdentityProvider(TTL, clock, new SecureRandom(),
+                        " ", AGENT_PASSWORD, AREA_RESPONSIBLE_PASSWORD, ADMIN_PASSWORD));
     }
 
     private static void assertProfile(MockIdentityProvider provider, String username, String password,
@@ -158,7 +170,8 @@ class MockIdentityProviderTest {
     }
 
     private static MockIdentityProvider provider(Clock clock) {
-        return new MockIdentityProvider(TTL, clock, new SecureRandom());
+        return new MockIdentityProvider(TTL, clock, new SecureRandom(),
+                CITIZEN_PASSWORD, AGENT_PASSWORD, AREA_RESPONSIBLE_PASSWORD, ADMIN_PASSWORD);
     }
 
     private static boolean hasRecordComponent(Class<?> type, String componentName) {

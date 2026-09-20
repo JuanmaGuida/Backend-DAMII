@@ -51,7 +51,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest
+@SpringBootTest(properties = {
+        "app.identity.mock.citizen-password=citizen-test-password",
+        "app.identity.mock.agent-password=agent-test-password",
+        "app.identity.mock.area-responsible-password=area-test-password",
+        "app.identity.mock.admin-password=admin-test-password"
+})
 @AutoConfigureMockMvc
 @ActiveProfiles("dev")
 class SecurityHardeningIntegrationTest {
@@ -129,7 +134,7 @@ class SecurityHardeningIntegrationTest {
         mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"username":"citizen@example.test","password":"CitizenDev!2026"}
+                                {"username":"citizen@example.test","password":"citizen-test-password"}
                                 """))
                 .andExpect(status().isOk());
 
@@ -330,7 +335,7 @@ class SecurityHardeningIntegrationTest {
     }
 
     private String validToken() {
-        return identityProvider.authenticate("citizen@example.test", "CitizenDev!2026")
+        return identityProvider.authenticate("citizen@example.test", "citizen-test-password")
                 .orElseThrow()
                 .token();
     }

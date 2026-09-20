@@ -38,6 +38,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Import({SecurityConfiguration.class, BearerTokenAuthenticationFilter.class})
 class AuthControllerSecurityTest {
     private static final String TOKEN = "opaque-test-token";
+    private static final String TEST_PASSWORD = "controller-test-password";
     private static final AuthenticatedIdentity AGENT = new AuthenticatedIdentity(
             "m1-dev-agent",
             UUID.fromString("10000000-0000-0000-0000-000000000002"),
@@ -54,7 +55,7 @@ class AuthControllerSecurityTest {
 
     @Test
     void loginIsPublicAndCsrfDoesNotBlockIt() throws Exception {
-        when(authService.authenticate("agent@example.test", "AgentDev!2026"))
+        when(authService.authenticate("agent@example.test", TEST_PASSWORD))
                 .thenReturn(Optional.of(new AuthenticatedSession(
                         TOKEN,
                         Instant.parse("2026-08-30T20:00:00Z"),
@@ -64,7 +65,7 @@ class AuthControllerSecurityTest {
         mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"username":"agent@example.test","password":"AgentDev!2026"}
+                                {"username":"agent@example.test","password":"controller-test-password"}
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.token").value(TOKEN))
@@ -76,7 +77,7 @@ class AuthControllerSecurityTest {
                 .andExpect(jsonPath("$.identity.role").value("AGENT"))
                 .andExpect(jsonPath("$.identity.roles").doesNotExist())
                 .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("password"))))
-                .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("AgentDev!2026"))));
+                .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString(TEST_PASSWORD))));
     }
 
     @Test
@@ -87,9 +88,9 @@ class AuthControllerSecurityTest {
                 AGENT
         );
 
-        String requestDescription = new LoginRequest("agent@example.test", "AgentDev!2026").toString();
+        String requestDescription = new LoginRequest("agent@example.test", TEST_PASSWORD).toString();
         assertFalse(requestDescription.contains("agent@example.test"));
-        assertFalse(requestDescription.contains("AgentDev!2026"));
+        assertFalse(requestDescription.contains(TEST_PASSWORD));
         assertFalse(session.toString().contains(TOKEN));
         String responseDescription = LoginResponse.from(session).toString();
         assertFalse(responseDescription.contains(TOKEN));
