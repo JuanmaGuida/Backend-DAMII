@@ -14,10 +14,15 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     name: Test, coverage and package
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     services:
       postgres:
@@ -61,6 +66,9 @@ jobs:
           MOCK_ADMIN_PASSWORD: ci-admin-password
           SIMULATOR_ENABLED: "false"
         run: ./mvnw -B clean verify
+
+      - name: Build Backend container image
+        run: docker build --tag backend-ci:${{ github.sha }} .
 
       - name: Upload JaCoCo report
         uses: actions/upload-artifact@v7
