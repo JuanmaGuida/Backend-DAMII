@@ -59,6 +59,13 @@ class OpenApiContractTest {
             "GET /api/staff/tickets/{ticketId}",
             "GET /api/staff/tickets/{ticketId}/citizen-view",
             "GET /api/staff/tickets/{ticketId}/duplicate-candidates",
+            "GET /api/staff/labels",
+            "POST /api/staff/labels",
+            "GET /api/staff/labels/{labelId}",
+            "PUT /api/staff/labels/{labelId}",
+            "DELETE /api/staff/labels/{labelId}",
+            "POST /api/staff/tickets/{ticketId}/labels",
+            "DELETE /api/staff/tickets/{ticketId}/labels/{labelId}",
             "POST /api/tickets/{ticketId}/review",
             "PATCH /api/tickets/{ticketId}/classification",
             "POST /api/tickets/{ticketId}/route",
@@ -96,6 +103,13 @@ class OpenApiContractTest {
             "GET /api/staff/tickets/{ticketId}",
             "GET /api/staff/tickets/{ticketId}/citizen-view",
             "GET /api/staff/tickets/{ticketId}/duplicate-candidates",
+            "GET /api/staff/labels",
+            "POST /api/staff/labels",
+            "GET /api/staff/labels/{labelId}",
+            "PUT /api/staff/labels/{labelId}",
+            "DELETE /api/staff/labels/{labelId}",
+            "POST /api/staff/tickets/{ticketId}/labels",
+            "DELETE /api/staff/tickets/{ticketId}/labels/{labelId}",
             "POST /api/tickets/{ticketId}/review",
             "PATCH /api/tickets/{ticketId}/classification",
             "POST /api/tickets/{ticketId}/route",
@@ -132,7 +146,9 @@ class OpenApiContractTest {
             "RequestTypeAdminResponse",
             "FormTemplateAdminResponse",
             "FormFieldAdminResponse",
-            "RiskRuleAdminResponse"
+            "RiskRuleAdminResponse",
+            "LabelResponse",
+            "LabelSummaryResponse"
     );
 
     private static Map<String, Object> spec;
@@ -153,7 +169,7 @@ class OpenApiContractTest {
     void versionedFileIsAValidOpenApi3DocumentWithExactlyTheCurrentBusinessOperations() {
         assertTrue(string(spec.get("openapi")).startsWith("3."));
         assertEquals("3.0.3", parsedOpenApi.getOpenapi());
-        assertEquals(39, parsedOpenApi.getPaths().size());
+        assertEquals(43, parsedOpenApi.getPaths().size());
         assertNotNull(map(spec, "info").get("title"));
         assertNotNull(map(spec, "components").get("schemas"));
         assertEquals(EXPECTED_OPERATIONS, documentedOperations());

@@ -3,6 +3,7 @@ package com.reclamos.backend.dto;
 import com.reclamos.backend.entity.Priority;
 import com.reclamos.backend.entity.TicketStatus;
 
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -20,6 +21,11 @@ public record TicketFilter(
         Priority priority,
         UUID neighborhoodId,
         String responsibleAreaId,
-        TicketStatus status
+        TicketStatus status,
+        Set<UUID> labelIds
 ) {
+    public TicketFilter(Long categoryId, Priority priority, UUID neighborhoodId,
+                        String responsibleAreaId, TicketStatus status) {
+        this(categoryId, priority, neighborhoodId, responsibleAreaId, status, null);
+    }
 }

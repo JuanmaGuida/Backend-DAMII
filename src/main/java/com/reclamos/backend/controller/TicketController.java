@@ -23,6 +23,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.Set;
 import java.util.UUID;
 
 @RestController
@@ -62,9 +63,10 @@ public class TicketController {
             @RequestParam(required = false) UUID neighborhoodId,
             @RequestParam(required = false) String responsibleAreaId,
             @RequestParam(required = false) TicketStatus status,
+            @RequestParam(required = false) Set<UUID> labelIds,
             @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable
     ) {
-        TicketFilter filter = new TicketFilter(categoryId, priority, neighborhoodId, responsibleAreaId, status);
+        TicketFilter filter = new TicketFilter(categoryId, priority, neighborhoodId, responsibleAreaId, status, labelIds);
         return ticketService.listTickets(filter, pageable);
     }
 

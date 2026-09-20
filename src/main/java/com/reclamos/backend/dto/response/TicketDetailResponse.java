@@ -48,4 +48,5 @@ public class TicketDetailResponse {
     private Instant updatedAt;
     private List<TicketAttachmentResponse> attachments = List.of();
     private List<TicketActivityResponse> ticketActivities = List.of();
+    private List<LabelSummaryResponse> labels = List.of();
 }
