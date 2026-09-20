@@ -4,10 +4,7 @@ import com.reclamos.backend.dto.TicketFilter;
 import com.reclamos.backend.dto.TicketResponse;
 import com.reclamos.backend.dto.request.CancelTicketRequest;
 import com.reclamos.backend.dto.request.CreateTicketRequest;
-import com.reclamos.backend.dto.response.CreateTicketResponse;
-import com.reclamos.backend.dto.response.TicketActivityResponse;
-import com.reclamos.backend.dto.response.TicketAttachmentResponse;
-import com.reclamos.backend.dto.response.TicketDetailResponse;
+import com.reclamos.backend.dto.response.*;
 import com.reclamos.backend.entity.*;
 import com.reclamos.backend.exception.EvidenceRequiredException;
 import com.reclamos.backend.exception.InvalidTicketRequestException;
@@ -88,6 +85,7 @@ public class TicketService {
     private final TicketPublicIdGenerator publicIdGenerator;
     private final AttachmentService attachmentService;
     private final ModuleUserRepository moduleUserRepository;
+    private final TicketLabelRepository ticketLabelRepository;
     private final Clock clock;
 
     @Transactional
@@ -744,6 +742,11 @@ public class TicketService {
                 .filter(activity -> staffView || isCitizenVisibleActivity(activity))
                 .map(activity -> toActivityResponse(activity, staffView))
                 .toList());
+        if (staffView) {
+            detail.setLabels(ticketLabelRepository.findLabelsByTicketId(ticket.getId()).stream()
+                    .map(label -> new LabelSummaryResponse(label.getId(), label.getCode(), label.getName(), label.getDescription()))
+                    .toList());
+        }
         return detail;
     }
 

@@ -1,10 +1,7 @@
 package com.reclamos.backend.repository;
 
 import com.reclamos.backend.dto.TicketFilter;
-import com.reclamos.backend.entity.RequestType;
-import com.reclamos.backend.entity.Subcategory;
-import com.reclamos.backend.entity.Ticket;
-import com.reclamos.backend.entity.TicketLocation;
+import com.reclamos.backend.entity.*;
 import jakarta.persistence.criteria.Join;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Root;
@@ -53,6 +50,15 @@ public final class TicketSpecifications {
                                 cb.equal(locationRoot.get("neighborhood").get("id"), filter.neighborhoodId())
                         );
                 predicates.add(cb.exists(locationSubquery));
+            }
+
+            if (filter.labelIds() != null && !filter.labelIds().isEmpty() && query != null) {
+                Subquery<Integer> labels = query.subquery(Integer.class);
+                Root<TicketLabel> assignment = labels.from(TicketLabel.class);
+                labels.select(cb.literal(1)).where(
+                        cb.equal(assignment.get("ticket"), root),
+                        assignment.get("label").get("id").in(filter.labelIds()));
+                predicates.add(cb.exists(labels));
             }
 
             return cb.and(predicates.toArray(new Predicate[0]));

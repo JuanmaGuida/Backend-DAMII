@@ -96,6 +96,8 @@ class TicketServiceTest {
     private TicketCancellationRepository cancellationRepository;
     @Mock
     private ModuleUserRepository moduleUsers;
+    @Mock
+    private TicketLabelRepository ticketLabels;
     @Spy
     private TrackingCodeService trackingCodes = new TrackingCodeService();
     @Mock
@@ -1831,7 +1833,24 @@ class TicketServiceTest {
         TicketDetailResponse response = service.getStaffDetail(ticketId, actor);
 
         assertThat(response.getId()).isEqualTo(ticketId);
+        assertThat(response.getLabels()).isEmpty();
     }
+
+    @Test
+    void getStaffDetailMapsLabelsInRepositoryOrder() {
+        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.MEDIUM);
+        Label alpha = new Label(); alpha.setId(UUID.randomUUID()); alpha.setCode("ALPHA"); alpha.setName("Alpha");
+        Label zeta = new Label(); zeta.setId(UUID.randomUUID()); zeta.setCode("ZETA"); zeta.setName("Zeta");
+        when(tickets.findById(ticketId)).thenReturn(Optional.of(ticket));
+        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+        when(ticketLabels.findLabelsByTicketId(ticketId)).thenReturn(List.of(alpha, zeta));
+
+        TicketDetailResponse response = service.getStaffDetail(ticketId, actor);
+
+        assertThat(response.getLabels()).extracting("code").containsExactly("ALPHA", "ZETA");
+    }
+
+
 
     @Test
     void getStaffDetailReturnsAllAttachmentVisibilitiesAndStaffActivityFields() {
@@ -2080,7 +2099,7 @@ class TicketServiceTest {
     /**
      * baseRisk lo usa correctClassification para recalcular currentPriority
      * (ver correctClassificationCanLowerPriorityWhen...). El overload de 5
-     * argumentos delega acá con Risk.LOW por default para los tests a los
+     * argumentos delega acá con Risk. LOW por default para los tests a los
      * que no les importa ese valor. Nombrado *Sprint2 (en vez de sobrecargar
      * requestType(...)) para no colisionar con el fixture requestType(boolean)
      * de la sección create()/route().

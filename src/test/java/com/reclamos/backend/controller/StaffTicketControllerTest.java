@@ -16,6 +16,7 @@ import com.reclamos.backend.identity.ModuleRole;
 import com.reclamos.backend.security.BearerTokenAuthenticationFilter;
 import com.reclamos.backend.service.AuthService;
 import com.reclamos.backend.service.DuplicateCandidateService;
+import com.reclamos.backend.service.LabelService;
 import com.reclamos.backend.service.TicketService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -86,6 +87,9 @@ class StaffTicketControllerTest {
 
     @MockitoBean
     private DuplicateCandidateService duplicateCandidateService;
+
+    @MockitoBean
+    private LabelService labelService;
 
     @Test
     void getStaffDetailRequiresAuthentication() throws Exception {

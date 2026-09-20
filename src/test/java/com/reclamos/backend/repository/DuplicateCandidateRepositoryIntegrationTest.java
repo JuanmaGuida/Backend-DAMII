@@ -173,9 +173,13 @@ class DuplicateCandidateRepositoryIntegrationTest {
     }
 
     private void setCreatedAt(Ticket ticket, Instant createdAt) {
-        entityManager.createNativeQuery("update tickets set created_at = :createdAt where id = :id")
-                .setParameter("createdAt", createdAt)
-                .setParameter("id", ticket.getId())
+        entityManager.createNativeQuery("""
+                    UPDATE tickets
+                    SET created_at = ?1
+                    WHERE id = ?2
+                    """)
+                .setParameter(1, createdAt)
+                .setParameter(2, ticket.getId())
                 .executeUpdate();
     }
 }

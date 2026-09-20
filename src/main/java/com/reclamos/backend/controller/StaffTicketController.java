@@ -5,6 +5,14 @@ import com.reclamos.backend.dto.response.TicketDetailResponse;
 import com.reclamos.backend.identity.AuthenticatedIdentity;
 import com.reclamos.backend.service.DuplicateCandidateService;
 import com.reclamos.backend.service.TicketService;
+import com.reclamos.backend.service.LabelService;
+import com.reclamos.backend.dto.request.AssignLabelsRequest;
+import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -29,6 +37,21 @@ public class StaffTicketController {
 
     private final TicketService ticketService;
     private final DuplicateCandidateService duplicateCandidateService;
+    private final LabelService labelService;
+
+    @PostMapping("/{ticketId}/labels")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void assignLabels(@PathVariable UUID ticketId, @Valid @RequestBody AssignLabelsRequest request,
+                             @AuthenticationPrincipal AuthenticatedIdentity identity) {
+        labelService.assign(ticketId, request, identity);
+    }
+
+    @DeleteMapping("/{ticketId}/labels/{labelId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void removeLabel(@PathVariable UUID ticketId, @PathVariable UUID labelId,
+                            @AuthenticationPrincipal AuthenticatedIdentity identity) {
+        labelService.remove(ticketId, labelId, identity);
+    }
 
     /**
      * GET /staff/tickets/{id}: detalle staff de un ticket. AGENT/ADMIN

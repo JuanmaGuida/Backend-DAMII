@@ -149,4 +149,9 @@ public class GlobalExceptionHandler {
     private ResponseEntity<ApiErrorResponse> response(HttpStatus status, String code, String message) {
         return ResponseEntity.status(status).body(new ApiErrorResponse(code, message));
     }
+
+    @ExceptionHandler(LabelConflictException.class)
+    public ResponseEntity<ApiErrorResponse> handleLabelConflict(LabelConflictException exception) {
+        return response(HttpStatus.CONFLICT, "LABEL_CONFLICT", exception.getMessage());
+    }
 }
