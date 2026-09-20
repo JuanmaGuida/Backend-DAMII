@@ -54,6 +54,12 @@ jobs:
         run: chmod +x mvnw
 
       - name: Test, generate coverage and package
+        env:
+          MOCK_CITIZEN_PASSWORD: ci-citizen-password
+          MOCK_AGENT_PASSWORD: ci-agent-password
+          MOCK_AREA_RESPONSIBLE_PASSWORD: ci-area-password
+          MOCK_ADMIN_PASSWORD: ci-admin-password
+          SIMULATOR_ENABLED: "false"
         run: ./mvnw -B clean verify
 
       - name: Upload JaCoCo report

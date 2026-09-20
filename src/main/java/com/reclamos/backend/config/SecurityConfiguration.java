@@ -123,11 +123,9 @@ public class SecurityConfiguration {
                         // sin AREA_RESPONSIBLE) lo valida TicketService.requireCancelAuthority.
                         .requestMatchers(HttpMethod.POST, "/api/tickets/*/cancel").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/tracking/access").permitAll()
-                        // BE - Story 3.4/DDA2-61: el simulador de updateTicketStatus simula
-                        // una llamada de un sistema externo (llegaría por bus de eventos, no
-                        // HTTP con bearer token de agente) y sólo existe como bean cuando
-                        // app.simulator.enabled=true (ver TicketSimulationController).
-                        .requestMatchers(HttpMethod.POST, "/api/tickets/*/simulate-status-update").permitAll()
+                        // El simulador sólo existe cuando app.simulator.enabled=true y aun
+                        // entonces requiere una sesión válida; nunca queda público por accidente.
+                        .requestMatchers(HttpMethod.POST, "/api/tickets/*/simulate-status-update").authenticated()
                         // BE - DDA2-114/115/116 (US "Panel de administración del catálogo"):
                         // el panel admin de Categories/Subcategories/Request Types es
                         // exclusivo de ADMIN. La verificación exhaustiva de esta

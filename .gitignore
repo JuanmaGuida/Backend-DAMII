@@ -47,6 +47,13 @@ logs/
 .env.*
 !.env.example
 
+### Claves privadas y certificados ###
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+
 ### Configuración local ###
 application-local.properties
 application-local.yml
