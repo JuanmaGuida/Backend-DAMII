@@ -1,10 +1,13 @@
 package com.reclamos.backend.service;
 
 import com.reclamos.backend.entity.CancellationReasonCode;
+import com.reclamos.backend.entity.ActorType;
+import com.reclamos.backend.entity.Attachment;
 import com.reclamos.backend.entity.AnonymousContactChannel;
 import com.reclamos.backend.entity.Category;
 import com.reclamos.backend.entity.OutboxEvent;
 import com.reclamos.backend.entity.Priority;
+import com.reclamos.backend.entity.MessageVisibility;
 import com.reclamos.backend.entity.RequestType;
 import com.reclamos.backend.entity.ResolutionType;
 import com.reclamos.backend.entity.Subcategory;
@@ -124,6 +127,47 @@ class TicketOutboxServiceTest {
         service.informationProvided(ticket(true, "M2", TicketStatus.IN_PROGRESS), "Dato", false, NOW);
 
         verify(repository, times(3)).save(any());
+    }
+
+    @Test
+    void informationProvidedContainsRestoredTicketTextAttachmentAndCitizenActor() {
+        Ticket ticket = ticket(true, "M6", TicketStatus.IN_PROGRESS);
+        Attachment attachment = new Attachment();
+        attachment.setTicket(ticket);
+        attachment.setFileName("proof.pdf");
+        attachment.setContentType("application/pdf");
+        attachment.setSizeBytes(42);
+        attachment.setStorageKey("tickets/one/proof");
+        attachment.setVisibility(MessageVisibility.PUBLIC);
+
+        service.informationProvided(ticket, "Detalle", List.of(attachment),
+                ActorType.CITIZEN, null, true, NOW);
+
+        ArgumentCaptor<OutboxEvent> captor = ArgumentCaptor.forClass(OutboxEvent.class);
+        verify(repository).save(captor.capture());
+        OutboxEvent event = captor.getValue();
+        assertThat(event.getUpdateType()).isEqualTo(TicketUpdatedType.INFORMATION_PROVIDED);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> data = (Map<String, Object>) event.getPayload().get("data");
+        assertThat(data).containsEntry("citizenId", null)
+                .containsEntry("isAnonymous", true)
+                .containsEntry("responsibleAreaId", "M6")
+                .containsEntry("currentStatus", "IN_PROGRESS")
+                .containsEntry("currentPriority", "MEDIUM")
+                .containsEntry("updatedAt", NOW.toString());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> details = (Map<String, Object>) data.get("details");
+        assertThat((Map<String, Object>) details.get("informationResponse"))
+                .containsEntry("message", "Detalle");
+        assertThat((List<Map<String, Object>>) data.get("attachments"))
+                .singleElement().satisfies(value -> assertThat(value)
+                        .containsEntry("fileName", "proof.pdf")
+                        .containsEntry("contentType", "application/pdf")
+                        .containsEntry("url", "tickets/one/proof")
+                        .containsEntry("sizeBytes", 42L));
+        assertThat((Map<String, Object>) data.get("updatedBy"))
+                .containsEntry("type", "CITIZEN")
+                .containsEntry("id", null);
     }
 
     @Test

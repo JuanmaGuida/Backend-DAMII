@@ -20,6 +20,13 @@ public class TrackingTicketResponse {
     private CategorySummary category;
     private SubcategorySummary subcategory;
     private SlaSummary sla;
+    private PendingInformationRequestResponse pendingInformationRequest;
+
+    public TrackingTicketResponse(String publicId, TicketStatus status, String summary, Instant createdAt,
+                                  Instant statusChangedAt, RequestTypeSummary requestType,
+                                  CategorySummary category, SubcategorySummary subcategory, SlaSummary sla) {
+        this(publicId, status, summary, createdAt, statusChangedAt, requestType, category, subcategory, sla, null);
+    }
 
     @Data
     @NoArgsConstructor

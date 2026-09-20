@@ -7,6 +7,8 @@ import com.reclamos.backend.dto.request.CreateTicketRequest;
 import com.reclamos.backend.dto.response.CreateTicketResponse;
 import com.reclamos.backend.dto.response.StaffTicketDetailResponse;
 import com.reclamos.backend.dto.response.TicketDetailResponse;
+import com.reclamos.backend.dto.response.PendingInformationRequestResponse;
+import com.reclamos.backend.dto.response.StaffInformationRequestContextResponse;
 import com.reclamos.backend.entity.*;
 import com.reclamos.backend.exception.*;
 import com.reclamos.backend.identity.AuthenticatedIdentity;
@@ -108,6 +110,8 @@ class TicketServiceTest {
     private TicketSlaService ticketSlaService;
     @Mock
     private InformationRequestService informationRequestService;
+    @Mock
+    private InformationRequestProjectionService informationRequestProjectionService;
     private final AttachmentService attachments = mock(AttachmentService.class);
     @Mock
     private AnonymousTicketCredentialService anonymousTicketCredentialService;
@@ -394,7 +398,8 @@ class TicketServiceTest {
         when(ticketSlaService.findDeadlineSnapshot(ticket))
                 .thenReturn(new TicketSlaService.DeadlineSnapshot(null, null));
 
-        var tracked = new TrackingService(tickets, trackingCodes, ticketSlaService)
+        var tracked = new TrackingService(tickets, trackingCodes, ticketSlaService,
+                informationRequestProjectionService)
                 .findByTrackingCode(created.trackingCode());
 
         assertEquals(created.publicId(), tracked.getPublicId());
@@ -1866,6 +1871,12 @@ class TicketServiceTest {
                 ticketId, MessageVisibility.PUBLIC)).thenReturn(List.of(publicAttachment));
         when(activities.findAllByTicket_IdOrderBySequenceAsc(ticketId))
                 .thenReturn(List.of(returned, internalMessage));
+        var citizenRequest = new PendingInformationRequestResponse(InformationRequestStatus.PENDING,
+                "Adjunte una foto", NOW, NOW.plusSeconds(3600), List.of());
+        when(informationRequestProjectionService.findPending(ticketId)).thenReturn(
+                new InformationRequestProjectionService.Projection(citizenRequest,
+                        new StaffInformationRequestContextResponse("privado", "M6",
+                                ActorType.EXTERNAL_USER, TicketStatus.IN_REVIEW)));
 
         TicketDetailResponse response = service.getById(ticketId, actor);
 
@@ -1879,6 +1890,7 @@ class TicketServiceTest {
         assertThat(response.getTicketActivities().getFirst().getReasonCode()).isNull();
         assertThat(response.getTicketActivities().getFirst().getActorType()).isNull();
         assertThat(response.getTicketActivities().getFirst().getMessage()).isNull();
+        assertThat(response.getPendingInformationRequest()).isEqualTo(citizenRequest);
         verify(attachmentRepository, never()).findAllByTicket_IdOrderByCreatedAtAsc(any());
     }
 
@@ -2003,11 +2015,19 @@ class TicketServiceTest {
         // fixture ticket() usa responsibleAreaId="obras-viales"; actor es AGENT de "area-obras".
         when(tickets.findById(ticketId)).thenReturn(Optional.of(ticket));
         when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+        var citizenRequest = new PendingInformationRequestResponse(InformationRequestStatus.PENDING,
+                "Dato", NOW, NOW.plusSeconds(3600), List.of());
+        var staffContext = new StaffInformationRequestContextResponse(
+                "interno", "M6", ActorType.EXTERNAL_USER, TicketStatus.IN_REVIEW);
+        when(informationRequestProjectionService.findPending(ticketId)).thenReturn(
+                new InformationRequestProjectionService.Projection(citizenRequest, staffContext));
 
-        TicketDetailResponse response = service.getStaffDetail(ticketId, actor);
+        StaffTicketDetailResponse response = service.getStaffDetail(ticketId, actor);
 
         assertThat(response.getId()).isEqualTo(ticketId);
         assertThat(response.getLabels()).isEmpty();
+        assertThat(response.getPendingInformationRequest()).isEqualTo(citizenRequest);
+        assertThat(response.getPendingInformationRequestContext()).isEqualTo(staffContext);
     }
 
     @Test

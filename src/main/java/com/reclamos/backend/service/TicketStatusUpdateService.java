@@ -108,6 +108,15 @@ public class TicketStatusUpdateService {
         Ticket ticket = ticketRepository.findByIdForUpdate(ticketId)
                 .orElseThrow(() -> new ResourceNotFoundException("El ticket solicitado no existe"));
 
+        // Otra entrega del mismo eventId puede haber esperado este lock después
+        // de consultar el Inbox. Al adquirirlo, la primera transacción ya terminó:
+        // se vuelve a consultar para responder idempotentemente antes de validar
+        // el estado que esa primera entrega acaba de cambiar.
+        Optional<InboxEvent> committedWhileWaiting = inboxEventRepository.findById(envelope.eventId());
+        if (committedWhileWaiting.isPresent()) {
+            return handleDuplicateEvent(ticketId, committedWhileWaiting.get());
+        }
+
         if (!envelope.producer().moduleId().equalsIgnoreCase(ticket.getResponsibleAreaId())) {
             throw new InvalidTicketRequestException(
                     "producer.moduleId ('" + envelope.producer().moduleId()

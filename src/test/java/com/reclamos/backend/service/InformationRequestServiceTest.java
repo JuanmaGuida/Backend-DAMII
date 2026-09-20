@@ -9,6 +9,7 @@ import com.reclamos.backend.identity.ModuleRole;
 import com.reclamos.backend.repository.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.mock.web.MockMultipartFile;
 
 import java.time.*;
 import java.util.*;
@@ -26,15 +27,21 @@ class InformationRequestServiceTest {
             mock(InformationRequestExpirationService.class);
     private final TicketSlaService ticketSlaService = mock(TicketSlaService.class);
     private final TicketOutboxService outbox = mock(TicketOutboxService.class);
+    private final AttachmentService attachmentService = mock(AttachmentService.class);
+    private final InformationRequestAttachmentRepository requestAttachments =
+            mock(InformationRequestAttachmentRepository.class);
     private InformationRequestService service;
     private Ticket ticket;
 
     @BeforeEach
     void setUp() {
-        reset(tickets, requests, activities, expirationService, ticketSlaService, outbox);
+        reset(tickets, requests, activities, expirationService, ticketSlaService, outbox,
+                attachmentService, requestAttachments);
         service = new InformationRequestService(tickets, requests, activities,
                 new InformationRequestDeadlineService(Clock.fixed(NOW, ZoneOffset.UTC), Duration.ofHours(72)),
-                expirationService, ticketSlaService, outbox);
+                expirationService, ticketSlaService, outbox, attachmentService, requestAttachments);
+        lenient().when(attachmentService.validate(any())).thenReturn(List.of());
+        lenient().when(attachmentService.storeForTicket(any(), any(), anyList(), any())).thenReturn(List.of());
         ticket = ticket(TicketStatus.IN_PROGRESS, false);
         when(tickets.findByIdForUpdate(ticket.getId())).thenReturn(Optional.of(ticket));
         when(requests.save(any())).thenAnswer(invocation -> {
@@ -138,7 +145,8 @@ class InformationRequestServiceTest {
                 && actor.citizenId().toString().equals(value.getActorId())
                 && "M2".equals(value.getSourceModuleId())));
         verify(ticketSlaService).resumeActiveResolutionCycle(ticket, NOW);
-        verify(outbox).informationProvided(ticket, "Respuesta", false, NOW);
+        verify(outbox).informationProvided(ticket, "Respuesta", List.of(), ActorType.CITIZEN,
+                actor.citizenId().toString(), false, NOW);
     }
 
     @Test
@@ -221,7 +229,110 @@ class InformationRequestServiceTest {
         verify(activities).save(argThat(activity -> activity.getActorType() == ActorType.CITIZEN
                 && activity.getActorId() == null));
         verify(ticketSlaService).resumeActiveResolutionCycle(ticket, NOW);
-        verify(outbox).informationProvided(ticket, "Respuesta", true, NOW);
+        verify(outbox).informationProvided(ticket, "Respuesta", List.of(), ActorType.CITIZEN,
+                null, true, NOW);
+    }
+
+    @Test
+    void externalRequiredByCanShortenButNeverExtendM2Deadline() {
+        ticket.setCurrentStatus(TicketStatus.ROUTED);
+
+        InformationRequest shorter = service.requestInformationFromExternal(ticket, "M6",
+                ActorType.EXTERNAL_USER, "external-1", "Dato", null, NOW,
+                NOW.plus(Duration.ofHours(24)), UUID.randomUUID());
+        assertEquals(NOW.plus(Duration.ofHours(24)), shorter.getDueAt());
+
+        ticket.setCurrentStatus(TicketStatus.ROUTED);
+        InformationRequest later = service.requestInformationFromExternal(ticket, "M6",
+                ActorType.EXTERNAL_USER, "external-1", "Dato", null, NOW,
+                NOW.plus(Duration.ofHours(96)), UUID.randomUUID());
+        assertEquals(NOW.plus(Duration.ofHours(72)), later.getDueAt());
+    }
+
+    @Test
+    void externalRequiredByMustBeFuture() {
+        ticket.setCurrentStatus(TicketStatus.ROUTED);
+        assertThrows(InvalidTicketRequestException.class, () -> service.requestInformationFromExternal(
+                ticket, "M6", ActorType.SYSTEM, null, "Dato", null, NOW, NOW, UUID.randomUUID()));
+    }
+
+    @Test
+    void citizenCanAnswerWithFilesOnlyAndLinksResponseAttachment() {
+        InformationRequest pending = pending(ticket, NOW.plusSeconds(1));
+        pending.setRequestedByModuleId("M6");
+        ticket.setCurrentStatus(TicketStatus.PENDING_INFORMATION);
+        when(requests.findByTicketIdAndStatusForUpdate(ticket.getId(), InformationRequestStatus.PENDING))
+                .thenReturn(Optional.of(pending));
+        var file = new MockMultipartFile("attachments", "proof.png", "image/png", new byte[]{1});
+        var validated = new AttachmentService.ValidatedAttachment(file, "proof.png", "image/png", 1);
+        when(attachmentService.validate(any())).thenReturn(List.of(validated));
+        Attachment stored = new Attachment();
+        stored.setId(10L);
+        stored.setTicket(ticket);
+        stored.setFileName("proof.png");
+        stored.setContentType("image/png");
+        stored.setSizeBytes(1);
+        stored.setVisibility(MessageVisibility.PUBLIC);
+        stored.setCreatedAt(NOW);
+        when(attachmentService.storeForTicket(eq(ticket), any(), eq(List.of(validated)), eq(NOW)))
+                .thenReturn(List.of(stored));
+
+        var response = service.answerInformation(ticket.getId(), new AnswerInformationRequest(null), citizen(),
+                new org.springframework.web.multipart.MultipartFile[]{file});
+
+        assertNull(response.getResponseMessage());
+        assertEquals(1, response.getAttachments().size());
+        verify(requestAttachments).saveAll(argThat(links -> {
+            InformationRequestAttachment link = links.iterator().next();
+            return link.getInformationRequest() == pending && link.getAttachment() == stored
+                    && link.getRole() == InformationAttachmentRole.RESPONSE;
+        }));
+        verify(outbox).informationProvided(eq(ticket), isNull(), eq(List.of(stored)),
+                eq(ActorType.CITIZEN), eq(ticket.getCitizenId().toString()), eq(true), eq(NOW));
+    }
+
+    @Test
+    void anonymousCitizenCanAnswerWithTextAndFilesUsingNullActorId() {
+        ticket = ticket(TicketStatus.PENDING_INFORMATION, true);
+        InformationRequest pending = pending(ticket, NOW.plusSeconds(1));
+        pending.setRequestedByModuleId("M6");
+        when(tickets.findByIdForUpdate(ticket.getId())).thenReturn(Optional.of(ticket));
+        when(requests.findByTicketIdAndStatusForUpdate(ticket.getId(), InformationRequestStatus.PENDING))
+                .thenReturn(Optional.of(pending));
+        var file = new MockMultipartFile("attachments", "proof.pdf", "application/pdf", new byte[]{1});
+        var validated = new AttachmentService.ValidatedAttachment(file, "proof.pdf", "application/pdf", 1);
+        when(attachmentService.validate(any())).thenReturn(List.of(validated));
+        Attachment stored = new Attachment();
+        stored.setId(11L);
+        stored.setTicket(ticket);
+        stored.setFileName("proof.pdf");
+        stored.setContentType("application/pdf");
+        stored.setSizeBytes(1);
+        stored.setVisibility(MessageVisibility.PUBLIC);
+        stored.setCreatedAt(NOW);
+        when(attachmentService.storeForTicket(eq(ticket), isNull(), eq(List.of(validated)), eq(NOW)))
+                .thenReturn(List.of(stored));
+
+        var response = service.answerAnonymousFromTracking(ticket.getId(),
+                new AnswerInformationRequest("  detalle  "),
+                new org.springframework.web.multipart.MultipartFile[]{file});
+
+        assertEquals("detalle", response.getResponseMessage());
+        assertNull(pending.getAnsweredById());
+        verify(attachmentService).storeForTicket(ticket, null, List.of(validated), NOW);
+        verify(requestAttachments).saveAll(argThat(links -> links.iterator().next().getRole()
+                == InformationAttachmentRole.RESPONSE));
+        verify(outbox).informationProvided(ticket, "detalle", List.of(stored), ActorType.CITIZEN,
+                null, true, NOW);
+    }
+
+    @Test
+    void emptyTextAndNoAttachmentsAreRejectedBeforeLockingTicket() {
+        when(attachmentService.validate(any())).thenReturn(List.of());
+        assertThrows(InvalidTicketRequestException.class, () -> service.answerInformation(
+                ticket.getId(), new AnswerInformationRequest("  "), citizen(),
+                new org.springframework.web.multipart.MultipartFile[0]));
+        verify(tickets, never()).findByIdForUpdate(any());
     }
 
     private InformationRequest pending(Ticket owner, Instant dueAt) {

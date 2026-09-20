@@ -14,6 +14,8 @@ import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.mock.web.MockPart;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -26,6 +28,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -206,6 +209,27 @@ class TrackingControllerTest {
         verify(ticketResolutionService).confirmAnonymous(ticketId);
         verify(ticketResolutionService).reopenAnonymous(eq(ticketId), any());
         verify(anonymousTicketAccessService, times(4)).authenticate(CODE, "correct-password");
+    }
+
+    @Test
+    void anonymousInformationResponseAcceptsMultipartOnlyAfterPasswordAuthentication() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+        when(anonymousTicketAccessService.authenticate(CODE, "correct-password"))
+                .thenReturn(new AnonymousTicketAccessService.AnonymousTicketAccess(ticketId));
+        MockPart data = new MockPart("data", actionJson("{}").getBytes());
+        data.getHeaders().setContentType(MediaType.APPLICATION_JSON);
+        MockMultipartFile attachment = new MockMultipartFile(
+                "attachments", "proof.pdf", "application/pdf", new byte[]{1});
+
+        mockMvc.perform(multipart("/api/tracking/actions/information-response")
+                        .file(attachment)
+                        .part(data))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, containsString("no-store")));
+
+        verify(anonymousTicketAccessService).authenticate(CODE, "correct-password");
+        verify(informationRequestService).answerAnonymousFromTracking(eq(ticketId), any(),
+                argThat(files -> files.length == 1 && "proof.pdf".equals(files[0].getOriginalFilename())));
     }
 
     void formerPublicGetRouteIsNoLongerExposed() throws Exception {

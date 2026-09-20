@@ -1,6 +1,7 @@
 package com.reclamos.backend.service;
 
 import com.reclamos.backend.entity.Attachment;
+import com.reclamos.backend.entity.ActorType;
 import com.reclamos.backend.entity.CancellationReasonCode;
 import com.reclamos.backend.entity.OutboxEvent;
 import com.reclamos.backend.entity.OutboxStatus;
@@ -118,14 +119,25 @@ public class TicketOutboxService {
     @Transactional(propagation = Propagation.MANDATORY)
     public void informationProvided(Ticket ticket, String responseMessage,
                                     boolean requestedByExternalArea, Instant updatedAt) {
+        informationProvided(ticket, responseMessage, List.of(), ActorType.CITIZEN, null,
+                requestedByExternalArea, updatedAt);
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void informationProvided(Ticket ticket, String responseMessage, List<Attachment> attachments,
+                                    ActorType actorType, String actorId,
+                                    boolean requestedByExternalArea, Instant updatedAt) {
         if (ticket.isAnonymous() && (!requestedByExternalArea || isSelfManaged(ticket))) {
             return;
         }
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("message", responseMessage);
+        Map<String, Object> updatedBy = new LinkedHashMap<>();
+        updatedBy.put("type", actorType.name());
+        updatedBy.put("id", actorId);
         saveUpdated(ticket, TicketUpdatedType.INFORMATION_PROVIDED,
                 "El ciudadano aportó la información solicitada.",
-                Map.of("informationResponse", response), List.of(), updatedAt);
+                Map.of("informationResponse", response), eventAttachments(attachments), updatedBy, updatedAt);
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
@@ -161,6 +173,12 @@ public class TicketOutboxService {
     private void saveUpdated(Ticket ticket, TicketUpdatedType updateType, String publicMessage,
                              Map<String, Object> details, List<Map<String, Object>> attachments,
                              Instant updatedAt) {
+        saveUpdated(ticket, updateType, publicMessage, details, attachments, null, updatedAt);
+    }
+
+    private void saveUpdated(Ticket ticket, TicketUpdatedType updateType, String publicMessage,
+                             Map<String, Object> details, List<Map<String, Object>> attachments,
+                             Map<String, Object> updatedBy, Instant updatedAt) {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("ticketId", ticket.getId());
         data.put("publicId", ticket.getPublicId());
@@ -174,6 +192,9 @@ public class TicketOutboxService {
         data.put("publicMessage", publicMessage);
         data.put("details", details);
         data.put("attachments", attachments);
+        if (updatedBy != null) {
+            data.put("updatedBy", updatedBy);
+        }
         data.put("updatedAt", updatedAt.toString());
         save(ticket, "ticketUpdated", updateType, data);
     }

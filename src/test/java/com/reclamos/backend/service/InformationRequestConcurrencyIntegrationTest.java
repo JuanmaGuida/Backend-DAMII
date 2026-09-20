@@ -145,7 +145,28 @@ class InformationRequestConcurrencyIntegrationTest {
         cleanup(ticket.getId());
     }
 
+    @Test
+    void anonymousAnswerPersistsAnsweredWithNullActorIdOnPostgres() {
+        Ticket ticket = createPendingInformationTicket(true);
+
+        informationRequestService.answerAnonymousFromTracking(
+                ticket.getId(), new AnswerInformationRequest("Respuesta anónima"));
+
+        assertEquals("ANSWERED", scalar("SELECT status FROM information_requests WHERE ticket_id=?", ticket.getId()));
+        assertEquals("CITIZEN", scalar(
+                "SELECT answered_by_type FROM information_requests WHERE ticket_id=?", ticket.getId()));
+        assertNull(database.queryForObject(
+                "SELECT answered_by_id FROM information_requests WHERE ticket_id=?", String.class, ticket.getId()));
+        assertEquals("Respuesta anónima", scalar(
+                "SELECT response_message FROM information_requests WHERE ticket_id=?", ticket.getId()));
+        cleanup(ticket.getId());
+    }
+
     private Ticket createPendingInformationTicket() {
+        return createPendingInformationTicket(false);
+    }
+
+    private Ticket createPendingInformationTicket(boolean anonymous) {
         clock.setDefault(DEADLINE.minus(Duration.ofDays(3)));
         RequestType requestType = requestTypeRepository.findAll().stream()
                 .filter(RequestType::isActive)
@@ -154,8 +175,9 @@ class InformationRequestConcurrencyIntegrationTest {
         Ticket ticket = new Ticket();
         ticket.setPublicId("OP-RACE-" + UUID.randomUUID().toString().substring(0, 12));
         ticket.setTrackingCodeHash("race-" + UUID.randomUUID());
-        ticket.setCitizenId(CITIZEN_ID);
-        ticket.setAnonymous(false);
+        ticket.setCitizenId(anonymous ? null : CITIZEN_ID);
+        ticket.setAnonymous(anonymous);
+        ticket.setAnonymousAccessPasswordHash(anonymous ? "integration-test-hash" : null);
         ticket.setRequestType(requestType);
         ticket.setTicketType(requestType.getTicketType());
         ticket.setResponsibleAreaId(requestType.getResponsibleAreaId());

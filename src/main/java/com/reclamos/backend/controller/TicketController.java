@@ -151,6 +151,15 @@ public class TicketController {
         return informationRequestService.answerInformation(ticketId, request, identity);
     }
 
+    @PostMapping(path = "/{ticketId}/information-response", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public InformationRequestResponse answerInformationMultipart(
+            @PathVariable UUID ticketId,
+            @Valid @RequestPart("data") AnswerInformationRequest request,
+            @RequestPart(value = "attachments", required = false) MultipartFile[] attachments,
+            @AuthenticationPrincipal AuthenticatedIdentity identity) {
+        return informationRequestService.answerInformation(ticketId, request, identity, attachments);
+    }
+
     @PostMapping(path = "/{ticketId}/resolution", consumes = MediaType.APPLICATION_JSON_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
     public TicketResolutionResponse resolve(

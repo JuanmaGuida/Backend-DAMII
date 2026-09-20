@@ -310,6 +310,7 @@ class OpenApiContractTest {
         assertTrue(detailProperties.containsKey("description"));
         assertTrue(detailProperties.containsKey("attachments"));
         assertTrue(detailProperties.containsKey("ticketActivities"));
+        assertTrue(detailProperties.containsKey("pendingInformationRequest"));
         assertTrue(detailProperties.containsKey("neighborhoodName"));
         assertFalse(detailProperties.containsKey("neighborhoodId"));
         assertFalse(detailProperties.containsKey("anonymousContact"));
@@ -319,9 +320,11 @@ class OpenApiContractTest {
         java.util.List<String> staffDetailAllOf = list(map(schemas, "StaffTicketDetailResponse"), "allOf");
         assertEquals("#/components/schemas/TicketDetailResponse", map(staffDetailAllOf.getFirst()).get("$ref"));
         Map<String, Object> staffProperties = map(map(staffDetailAllOf.get(1)), "properties");
-        assertEquals(Set.of("anonymousContact"), staffProperties.keySet());
+        assertEquals(Set.of("anonymousContact", "pendingInformationRequestContext"), staffProperties.keySet());
         assertEquals("#/components/schemas/AnonymousContact",
                 map(list(map(staffProperties, "anonymousContact"), "allOf").getFirst()).get("$ref"));
+        assertTrue(map(schemas, "TrackingTicketResponse", "properties")
+                .containsKey("pendingInformationRequest"));
 
         Map<String, Object> activityProperties = map(schemas, "TicketActivityResponse", "properties");
         assertTrue(list(map(schemas, "TicketActivityResponse"), "required").contains("occurredAt"));
