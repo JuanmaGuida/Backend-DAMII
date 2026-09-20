@@ -60,7 +60,7 @@ class InformationRequestServiceTest {
         assertEquals(InformationRequestStatus.PENDING, result.getStatus());
         assertEquals(NOW, result.getRequestedAt());
         assertEquals(NOW.plus(Duration.ofHours(72)), result.getDueAt());
-        assertEquals(TicketStatus.IN_PROGRESS, result.getResumeStatus());
+        assertEquals(TicketStatus.PENDING_INFORMATION, result.getCurrentStatus());
         assertEquals(TicketStatus.PENDING_INFORMATION, ticket.getCurrentStatus());
         verify(requests).save(argThat(value -> value.getStatus() == InformationRequestStatus.PENDING
                 && value.getResumeStatus() == TicketStatus.IN_PROGRESS
@@ -234,26 +234,69 @@ class InformationRequestServiceTest {
     }
 
     @Test
-    void externalRequiredByCanShortenButNeverExtendM2Deadline() {
+    void externalRequestWithoutRequiredByUsesM2ClockForDefaultDeadline() {
         ticket.setCurrentStatus(TicketStatus.ROUTED);
 
-        InformationRequest shorter = service.requestInformationFromExternal(ticket, "M6",
-                ActorType.EXTERNAL_USER, "external-1", "Dato", null, NOW,
-                NOW.plus(Duration.ofHours(24)), UUID.randomUUID());
-        assertEquals(NOW.plus(Duration.ofHours(24)), shorter.getDueAt());
+        InformationRequest result = externalRequest(ticket, NOW, null);
 
-        ticket.setCurrentStatus(TicketStatus.ROUTED);
-        InformationRequest later = service.requestInformationFromExternal(ticket, "M6",
-                ActorType.EXTERNAL_USER, "external-1", "Dato", null, NOW,
-                NOW.plus(Duration.ofHours(96)), UUID.randomUUID());
-        assertEquals(NOW.plus(Duration.ofHours(72)), later.getDueAt());
+        assertEquals(NOW.plus(Duration.ofHours(72)), result.getDueAt());
     }
 
     @Test
-    void externalRequiredByMustBeFuture() {
+    void externalRequiredByBeforeDefaultShortensM2Deadline() {
         ticket.setCurrentStatus(TicketStatus.ROUTED);
-        assertThrows(InvalidTicketRequestException.class, () -> service.requestInformationFromExternal(
-                ticket, "M6", ActorType.SYSTEM, null, "Dato", null, NOW, NOW, UUID.randomUUID()));
+
+        InformationRequest result = externalRequest(ticket, NOW, NOW.plus(Duration.ofHours(24)));
+
+        assertEquals(NOW.plus(Duration.ofHours(24)), result.getDueAt());
+    }
+
+    @Test
+    void externalRequiredByAfterDefaultCannotExtendM2Deadline() {
+        ticket.setCurrentStatus(TicketStatus.ROUTED);
+
+        InformationRequest result = externalRequest(ticket, NOW, NOW.plus(Duration.ofHours(96)));
+
+        assertEquals(NOW.plus(Duration.ofHours(72)), result.getDueAt());
+    }
+
+    @Test
+    void externalRequiredByPastRelativeToM2IsRejected() {
+        ticket.setCurrentStatus(TicketStatus.ROUTED);
+
+        assertThrows(InvalidTicketRequestException.class,
+                () -> externalRequest(ticket, NOW.minus(Duration.ofDays(2)), NOW.minusSeconds(1)));
+    }
+
+    @Test
+    void futureExternalTimestampCannotExtendM2Deadline() {
+        ticket.setCurrentStatus(TicketStatus.ROUTED);
+
+        InformationRequest result = externalRequest(ticket, NOW.plus(Duration.ofDays(30)), null);
+
+        assertEquals(NOW.plus(Duration.ofHours(72)), result.getDueAt());
+        assertEquals(NOW.plus(Duration.ofDays(30)), result.getRequestedAt());
+    }
+
+    @Test
+    void historicalExternalTimestampDoesNotShortenM2Deadline() {
+        ticket.setCurrentStatus(TicketStatus.ROUTED);
+
+        InformationRequest result = externalRequest(ticket, NOW.minus(Duration.ofDays(30)), null);
+
+        assertEquals(NOW.plus(Duration.ofHours(72)), result.getDueAt());
+        assertEquals(NOW.minus(Duration.ofDays(30)), result.getRequestedAt());
+    }
+
+    @Test
+    void requiredByFutureRelativeToEventButPastRelativeToM2IsRejected() {
+        ticket.setCurrentStatus(TicketStatus.ROUTED);
+        Instant delayedEvent = NOW.minus(Duration.ofDays(2));
+        Instant alreadyExpiredSuggestion = NOW.minus(Duration.ofDays(1));
+
+        assertTrue(alreadyExpiredSuggestion.isAfter(delayedEvent));
+        assertThrows(InvalidTicketRequestException.class,
+                () -> externalRequest(ticket, delayedEvent, alreadyExpiredSuggestion));
     }
 
     @Test
@@ -333,6 +376,11 @@ class InformationRequestServiceTest {
                 ticket.getId(), new AnswerInformationRequest("  "), citizen(),
                 new org.springframework.web.multipart.MultipartFile[0]));
         verify(tickets, never()).findByIdForUpdate(any());
+    }
+
+    private InformationRequest externalRequest(Ticket owner, Instant updateOccurredAt, Instant requiredBy) {
+        return service.requestInformationFromExternal(owner, "M6", ActorType.EXTERNAL_USER,
+                "external-1", "Dato", null, updateOccurredAt, requiredBy, UUID.randomUUID());
     }
 
     private InformationRequest pending(Ticket owner, Instant dueAt) {

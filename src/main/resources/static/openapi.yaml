@@ -2730,16 +2730,12 @@ components:
       additionalProperties: false
     InformationRequestResponse:
       type: object
-      required: [informationRequestId, ticketId, status, messageForCitizen, requestedAt, dueAt, resumeStatus, responseMessage, answeredAt, attachments]
+      required: [status, currentStatus, messageForCitizen, requestedAt, dueAt, responseMessage, answeredAt, attachments]
       properties:
-        informationRequestId:
-          type: string
-          format: uuid
-        ticketId:
-          type: string
-          format: uuid
         status:
           $ref: '#/components/schemas/InformationRequestStatus'
+        currentStatus:
+          $ref: '#/components/schemas/TicketStatus'
         messageForCitizen:
           type: string
         requestedAt:
@@ -2748,8 +2744,6 @@ components:
         dueAt:
           type: string
           format: date-time
-        resumeStatus:
-          $ref: '#/components/schemas/TicketStatus'
         responseMessage:
           type: string
           nullable: true
