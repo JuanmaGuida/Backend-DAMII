@@ -40,6 +40,14 @@ public class GlobalExceptionHandler {
                 .body(new ApiErrorResponse(TrackingTicketNotFoundException.CODE, exception.getMessage()));
     }
 
+    @ExceptionHandler(InvalidAnonymousTicketCredentialsException.class)
+    public ResponseEntity<ApiErrorResponse> handleInvalidAnonymousCredentials(
+            InvalidAnonymousTicketCredentialsException exception) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .cacheControl(CacheControl.noStore())
+                .body(new ApiErrorResponse(InvalidAnonymousTicketCredentialsException.CODE, exception.getMessage()));
+    }
+
     @ExceptionHandler({InvalidTicketRequestException.class, InvalidCatalogRequestException.class,
             MethodArgumentNotValidException.class})
     public ResponseEntity<ApiErrorResponse> handleBadRequest(Exception exception) {

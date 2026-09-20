@@ -5,6 +5,7 @@ import com.reclamos.backend.entity.InformationRequestStatus;
 import com.reclamos.backend.entity.TicketStatus;
 import com.reclamos.backend.identity.IdentityProvider;
 import com.reclamos.backend.service.CatalogService;
+import com.reclamos.backend.service.AnonymousTicketAccessService;
 import com.reclamos.backend.service.FormService;
 import com.reclamos.backend.service.InformationRequestService;
 import com.reclamos.backend.service.NeighborhoodService;
@@ -76,6 +77,8 @@ class SecurityHardeningIntegrationTest {
     @MockitoBean
     private TrackingService trackingService;
     @MockitoBean
+    private AnonymousTicketAccessService anonymousTicketAccessService;
+    @MockitoBean
     private TicketService ticketService;
     @MockitoBean
     private InformationRequestService informationRequestService;
@@ -108,6 +111,8 @@ class SecurityHardeningIntegrationTest {
                 new TrackingTicketResponse.SubcategorySummary("Subcategoría"),
                 new TrackingTicketResponse.SlaSummary(null, null)
         ));
+        when(anonymousTicketAccessService.authenticate(any(), any()))
+                .thenReturn(new AnonymousTicketAccessService.AnonymousTicketAccess(TICKET_ID));
 
         when(ticketService.create(any(), any(), any())).thenReturn(new CreateTicketResponse(
                 TICKET_ID, "TK-2026-000123", "tracking-code", TicketStatus.REGISTERED));
@@ -148,6 +153,23 @@ class SecurityHardeningIntegrationTest {
                         .content("{\"trackingCode\":\"tracking-code\"}"))
                 .andExpect(status().isOk());
 
+        mockMvc.perform(post("/api/tracking/actions/cancel")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(anonymousAction("{\"reasonCode\":\"WITHDRAWN_BY_CITIZEN\"}")))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/tracking/actions/information-response")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(anonymousAction("{\"responseMessage\":\"Respuesta\"}")))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/tracking/actions/confirm-resolution")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(anonymousCredentials()))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/tracking/actions/reopen")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(anonymousAction("{\"reason\":\"Continúa\"}")))
+                .andExpect(status().isOk());
+
         mockMvc.perform(ticketJsonRequest()).andExpect(status().isCreated())
                 .andExpect(header().string("Cache-Control", org.hamcrest.Matchers.containsString("no-store")));
         mockMvc.perform(multipartTicketRequest()).andExpect(status().isCreated())
@@ -179,6 +201,16 @@ class SecurityHardeningIntegrationTest {
         assertCanonicalUnauthorized(patch("/api/tracking/access"));
         assertCanonicalUnauthorized(delete("/api/tracking/access"));
         assertCanonicalUnauthorized(get("/api/public/tickets/track/tracking-code"));
+
+        assertCanonicalUnauthorized(post("/api/tickets/" + TICKET_ID + "/cancel")
+                .contentType(MediaType.APPLICATION_JSON).content(anonymousCredentials()));
+        assertCanonicalUnauthorized(get("/api/staff/tickets/" + TICKET_ID)
+                .header("X-Tracking-Code", "tracking-code")
+                .header("X-Anonymous-Access-Password", "correct-password"));
+        assertCanonicalUnauthorized(post("/api/admin/catalog/categories")
+                .contentType(MediaType.APPLICATION_JSON).content(anonymousCredentials()));
+        assertCanonicalUnauthorized(post("/api/tracking/actions/unknown")
+                .contentType(MediaType.APPLICATION_JSON).content(anonymousCredentials()));
     }
 
     @Test
@@ -352,6 +384,18 @@ class SecurityHardeningIntegrationTest {
                           "formData": {}
                         }
                         """);
+    }
+
+    private String anonymousCredentials() {
+        return """
+                {"trackingCode":"tracking-code","anonymousAccessPassword":"correct-password"}
+                """;
+    }
+
+    private String anonymousAction(String payload) {
+        return """
+                {"trackingCode":"tracking-code","anonymousAccessPassword":"correct-password","payload":%s}
+                """.formatted(payload);
     }
 
     private MockMultipartHttpServletRequestBuilder multipartTicketRequest() {

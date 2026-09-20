@@ -130,6 +130,11 @@ public class SecurityConfiguration {
                         // sin AREA_RESPONSIBLE) lo valida TicketService.requireCancelAuthority.
                         .requestMatchers(HttpMethod.POST, "/api/tickets/*/cancel").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/tracking/access").permitAll()
+                        .requestMatchers(HttpMethod.POST,
+                                "/api/tracking/actions/cancel",
+                                "/api/tracking/actions/information-response",
+                                "/api/tracking/actions/confirm-resolution",
+                                "/api/tracking/actions/reopen").permitAll()
                         // El simulador sólo existe cuando app.simulator.enabled=true y aun
                         // entonces requiere una sesión válida; nunca queda público por accidente.
                         .requestMatchers(HttpMethod.POST, "/api/tickets/*/simulate-status-update").authenticated()

@@ -392,12 +392,6 @@ public class TicketService {
      * agrega la transición DUPLICATE -&gt; CANCELLED por
      * WITHDRAWN_BY_CITIZEN") queda pendiente de Story 7.2 (Sprint 5):
      * DUPLICATE todavía no es un estado alcanzable en el sistema.
-     * <p>
-     * ALCANCE REDUCIDO A PROPÓSITO: el "propietario anónimo acreditado" de
-     * la tabla de endpoints no está cubierto acá — requiere el mecanismo de
-     * acreditación por trackingAccessCode + contraseña (POST
-     * /tracking/access) que todavía no expone una AuthenticatedIdentity
-     * utilizable en este endpoint.
      */
     @Transactional
     public TicketResponse cancelTicket(UUID ticketId, CancelTicketRequest request, AuthenticatedIdentity actor) {
@@ -406,12 +400,28 @@ public class TicketService {
                 && ticket.getCitizenId().equals(actor.citizenId());
         requireCancelAuthority(actor, isOwnTicket);
 
-        if (isOwnTicket && ticket.getCurrentStatus() != TicketStatus.REGISTERED) {
+        ActorType actorType = isOwnTicket ? ActorType.CITIZEN
+                : (actor.role() == ModuleRole.ADMIN ? ActorType.ADMIN : ActorType.AGENT);
+        return cancelTicket(ticket, request, actorType, actor.citizenId().toString(), isOwnTicket);
+    }
+
+    @Transactional
+    public TicketResponse cancelAnonymousTicket(UUID ticketId, CancelTicketRequest request) {
+        Ticket ticket = loadForUpdate(ticketId);
+        if (!ticket.isAnonymous() || ticket.getCitizenId() != null) {
+            throw new UnauthorizedTicketOperationException();
+        }
+        return cancelTicket(ticket, request, ActorType.CITIZEN, null, true);
+    }
+
+    private TicketResponse cancelTicket(Ticket ticket, CancelTicketRequest request, ActorType actorType,
+                                        String actorId, boolean ownerAction) {
+        if (ownerAction && ticket.getCurrentStatus() != TicketStatus.REGISTERED) {
             throw new TicketStateConflictException(
                     "El ticket está en estado " + ticket.getCurrentStatus()
                             + " y el propietario sólo puede cancelarlo directamente en REGISTERED");
         }
-        if (!isOwnTicket && !ADMIN_CANCELLABLE_STATUSES.contains(ticket.getCurrentStatus())) {
+        if (!ownerAction && !ADMIN_CANCELLABLE_STATUSES.contains(ticket.getCurrentStatus())) {
             throw new TicketStateConflictException(
                     "El ticket está en estado " + ticket.getCurrentStatus()
                             + " y no admite cancelación administrativa por este endpoint"
@@ -419,8 +429,6 @@ public class TicketService {
         }
 
         Instant now = clock.instant();
-        ActorType actorType = isOwnTicket ? ActorType.CITIZEN
-                : (actor.role() == ModuleRole.ADMIN ? ActorType.ADMIN : ActorType.AGENT);
 
         TicketCancellation cancellation = new TicketCancellation();
         cancellation.setTicket(ticket);
@@ -428,7 +436,7 @@ public class TicketService {
         cancellation.setPublicMessage(request.getPublicMessage());
         cancellation.setInternalMessage(request.getInternalMessage());
         cancellation.setCancelledByType(actorType);
-        cancellation.setCancelledById(actor.citizenId().toString());
+        cancellation.setCancelledById(actorId);
         cancellation.setCancelledByModuleId(SELF_MANAGED_AREA_ID);
         cancellation.setCancelledAt(now);
         cancellationRepository.save(cancellation);
@@ -442,7 +450,7 @@ public class TicketService {
         ticket.setStatusChangedAt(now);
         ticketRepository.save(ticket);
 
-        recordCancellationActivity(ticket, previousStatus, actorType, actor, request.getReasonCode(),
+        recordCancellationActivity(ticket, previousStatus, actorType, actorId, request.getReasonCode(),
                 request.getPublicMessage() != null ? request.getPublicMessage() : request.getInternalMessage(), now);
 
         // Eventos V1.69 §2.1/§7.7: sólo tickets identificados publican
@@ -452,7 +460,7 @@ public class TicketService {
         // es si M1 tiene que actualizar su proyección.
         ticketOutboxService.cancelled(ticket, request.getReasonCode(), request.getPublicMessage(), true, now);
 
-        return toResponse(ticket, locationRepository.findByTicket_Id(ticketId).orElse(null));
+        return toResponse(ticket, locationRepository.findByTicket_Id(ticket.getId()).orElse(null));
     }
 
     private void requireCancelAuthority(AuthenticatedIdentity actor, boolean isOwnTicket) {
@@ -466,7 +474,7 @@ public class TicketService {
     }
 
     private void recordCancellationActivity(Ticket ticket, TicketStatus previousStatus, ActorType actorType,
-                                             AuthenticatedIdentity actor, CancellationReasonCode reasonCode,
+                                             String actorId, CancellationReasonCode reasonCode,
                                              String message, Instant occurredAt) {
         TicketActivity activity = new TicketActivity();
         activity.setTicket(ticket);
@@ -475,7 +483,7 @@ public class TicketService {
         activity.setPreviousStatus(previousStatus);
         activity.setNewStatus(TicketStatus.CANCELLED);
         activity.setActorType(actorType);
-        activity.setActorId(actor.citizenId().toString());
+        activity.setActorId(actorId);
         activity.setSourceModuleId(SELF_MANAGED_AREA_ID);
         activity.setReasonCode(reasonCode.name());
         activity.setMessage(message);
