@@ -1346,6 +1346,9 @@ paths:
       responses:
         '200':
           description: Vista pública del ticket.
+          headers:
+            Cache-Control:
+              schema: { type: string, example: no-store }
           content:
             application/json:
               schema:
@@ -2088,7 +2091,7 @@ components:
           $ref: '#/components/schemas/AnonymousContactChannel'
         value:
           type: string
-          maxLength: 320
+          maxLength: 254
           description: Email válido o teléfono con 7 a 15 dígitos; el teléfono admite +, espacios, guiones y paréntesis.
       additionalProperties: false
     AnonymousContactChannel:

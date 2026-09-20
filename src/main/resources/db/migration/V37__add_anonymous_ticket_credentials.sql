@@ -1,7 +1,7 @@
 ALTER TABLE tickets
     ADD COLUMN anonymous_access_password_hash VARCHAR(255),
     ADD COLUMN anonymous_contact_channel VARCHAR(20),
-    ADD COLUMN anonymous_contact_value VARCHAR(320);
+    ADD COLUMN anonymous_contact_value VARCHAR(254);
 
 DO $$
 BEGIN

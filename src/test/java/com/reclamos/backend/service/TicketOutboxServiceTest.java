@@ -137,7 +137,7 @@ class TicketOutboxServiceTest {
     }
 
     @Test
-    void cancelledAvoidsAnonymousExternalEchoButPublishesM2OriginatedExternalCancellation() {
+    void cancelledPublishesLegitimatePostRoutingExternalFactButSkipsEchoAndSelfManagedAnonymousFact() {
         service.cancelled(ticket(false, "M2", TicketStatus.CANCELLED),
                 CancellationReasonCode.INFO_TIMEOUT, "Cancelado", true, NOW);
         service.cancelled(ticket(false, "M6", TicketStatus.CANCELLED),

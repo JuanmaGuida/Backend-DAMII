@@ -45,6 +45,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.argThat;
@@ -1421,7 +1422,7 @@ class TicketServiceTest {
     }
 
     @Test
-    void anonymousOwnerCancelsRegisteredTicketWithCitizenNullActor() {
+    void anonymousExternalOwnerCancelsRegisteredTicketWithoutPublishingPreRoutedEvent() {
         Ticket ticket = ticket(TicketStatus.REGISTERED, Priority.LOW);
         ticket.setAnonymous(true);
         ticket.setCitizenId(null);
@@ -1442,8 +1443,28 @@ class TicketServiceTest {
         verify(activities).save(argThat(activity -> activity.getActorType() == ActorType.CITIZEN
                 && activity.getActorId() == null));
         verify(ticketSlaService).terminateActiveCycles(ticket, NOW);
-        verify(ticketOutboxService).cancelled(ticket,
-                CancellationReasonCode.WITHDRAWN_BY_CITIZEN, "Retiro anónimo", true, NOW);
+        verify(ticketOutboxService, never()).cancelled(any(), any(), any(), anyBoolean(), any());
+    }
+
+    @Test
+    void anonymousSelfManagedOwnerCancelsRegisteredTicketWithoutPublishingEvent() {
+        Ticket ticket = ticket(TicketStatus.REGISTERED, Priority.LOW);
+        ticket.setAnonymous(true);
+        ticket.setCitizenId(null);
+        ticket.setResponsibleAreaId("M2");
+        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+        when(activities.countByTicketId(ticketId)).thenReturn(0);
+
+        CancelTicketRequest request = new CancelTicketRequest();
+        request.setReasonCode(CancellationReasonCode.WITHDRAWN_BY_CITIZEN);
+
+        TicketResponse response = service.cancelAnonymousTicket(ticketId, request);
+
+        assertThat(response.getCurrentStatus()).isEqualTo(TicketStatus.CANCELLED);
+        verify(cancellationRepository).save(any(TicketCancellation.class));
+        verify(ticketSlaService).terminateActiveCycles(ticket, NOW);
+        verify(ticketOutboxService, never()).cancelled(any(), any(), any(), anyBoolean(), any());
     }
 
     @Test
@@ -1635,13 +1656,9 @@ class TicketServiceTest {
         verify(cancellationRepository, never()).save(any());
     }
 
-    /**
-     * Eventos V1.69 §2.1: en este punto (pre-ROUTED) nunca hubo un área
-     * externa involucrada, así que un ticket anónimo no publica
-     * ticketUpdated/CANCELLED — no hay a quién avisar del otro lado.
-     */
+    /** La cancelación administrativa conserva el gate central del outbox. */
     @Test
-    void cancelTicketSkipsOutboxEventForAnonymousTicket() {
+    void administrativeCancellationKeepsDelegatingPublicationPolicyToOutboxService() {
         Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.LOW);
         ticket.setAnonymous(true);
 
@@ -2008,8 +2025,9 @@ class TicketServiceTest {
             assertThat(response.getAnonymousContact()).isNotNull();
             assertThat(response.getAnonymousContact().channel()).isEqualTo(AnonymousContactChannel.EMAIL);
             assertThat(response.getAnonymousContact().value()).isEqualTo("private@example.test");
-            assertThat(response.toString()).doesNotContain("private@example.test");
-            assertThat(response.getAnonymousContact().toString()).doesNotContain("private@example.test");
+            assertThat(ticket.toString()).doesNotContain("EMAIL", "private@example.test");
+            assertThat(response.toString()).doesNotContain("EMAIL", "private@example.test");
+            assertThat(response.getAnonymousContact().toString()).doesNotContain("EMAIL", "private@example.test");
         }
     }
 

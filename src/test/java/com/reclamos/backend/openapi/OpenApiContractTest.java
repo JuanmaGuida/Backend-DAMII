@@ -217,6 +217,7 @@ class OpenApiContractTest {
         assertEquals(Set.of("channel", "value"), map(schemas, "AnonymousContact", "properties").keySet());
         assertEquals(Set.of("EMAIL", "PHONE"),
                 Set.copyOf(list(map(schemas, "AnonymousContactChannel"), "enum")));
+        assertEquals(254, map(schemas, "AnonymousContact", "properties", "value").get("maxLength"));
 
         Map<String, Object> responseProperties = map(schemas, "CreateTicketResponse", "properties");
         assertTrue(responseProperties.containsKey("generatedAnonymousAccessPassword"));
@@ -231,6 +232,8 @@ class OpenApiContractTest {
                 map(schemas, "AnonymousTicketCredentialsRequest", "properties").keySet());
         assertTrue(map(schemas, "TrackingAccessRequest", "properties")
                 .containsKey("anonymousAccessPassword"));
+        assertEquals("no-store", map(operation("POST /api/tracking/access"),
+                "responses", "200", "headers", "Cache-Control", "schema").get("example"));
 
         for (String operationName : Set.of(
                 "POST /api/tracking/actions/cancel",

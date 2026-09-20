@@ -45,7 +45,7 @@ public record CreateTicketRequest(
     ) {
         @Override
         public String toString() {
-            return "AnonymousContact[channel=" + channel + ", value=<redacted>]";
+            return "AnonymousContact[channel=<redacted>, value=<redacted>]";
         }
     }
 

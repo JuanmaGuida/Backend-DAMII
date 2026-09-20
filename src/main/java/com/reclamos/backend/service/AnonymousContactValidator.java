@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
 @Component
 @RequiredArgsConstructor
 public class AnonymousContactValidator {
-    private static final int MAX_CONTACT_LENGTH = 320;
+    private static final int MAX_CONTACT_LENGTH = 254;
 
     private final Validator validator;
 

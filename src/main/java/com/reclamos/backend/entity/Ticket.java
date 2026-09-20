@@ -73,9 +73,10 @@ public class Ticket {
 
     @Enumerated(EnumType.STRING)
     @Column(name = "anonymous_contact_channel", length = 20)
+    @ToString.Exclude
     private AnonymousContactChannel anonymousContactChannel;
 
-    @Column(name = "anonymous_contact_value", length = 320)
+    @Column(name = "anonymous_contact_value", length = 254)
     @ToString.Exclude
     private String anonymousContactValue;
 
