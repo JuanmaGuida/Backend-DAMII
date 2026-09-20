@@ -814,7 +814,13 @@ paths:
       tags: [Tickets]
       summary: Crear un ticket
       description: |
-        Crea un ticket autenticado. La misma operación acepta JSON puro o multipart.
+        Crea un ticket identificado cuando se presenta un Bearer válido, o anónimo cuando no se
+        presenta Authorization y el RequestType admite anonimato. Un Authorization presente pero
+        inválido, malformado o expirado devuelve 401 y nunca se degrada a creación anónima.
+        La misma operación acepta JSON puro o multipart.
+
+        La contraseña y el contacto anónimos no aplican a tickets identificados. Si el ciudadano
+        anónimo omite la contraseña, Backend genera una individual y la devuelve una única vez.
 
         En JSON no se adjuntan archivos; si el riesgo calculado internamente es HIGH o CRITICAL,
         responde 422 EVIDENCE_REQUIRED. En multipart, `data` es un part JSON obligatorio y
@@ -822,6 +828,7 @@ paths:
         MIME admitidos: image/jpeg, image/png, image/webp, image/heic, image/heif y application/pdf.
       operationId: createTicket
       security:
+        - {}
         - bearerAuth: []
       requestBody:
         required: true
@@ -851,6 +858,12 @@ paths:
       responses:
         '201':
           description: Ticket creado.
+          headers:
+            Cache-Control:
+              description: Impide almacenar la respuesta que contiene credenciales one-time.
+              schema:
+                type: string
+                example: no-store
           content:
             application/json:
               schema:
@@ -946,7 +959,9 @@ paths:
         gestión interna. AGENT y ADMIN acceden a cualquier ticket ajeno sin
         restricción de área; AREA_RESPONSIBLE sólo a los de su propia areaId
         (o al suyo propio como ciudadano). El endpoint citizen-view expone
-        en cambio la misma proyección pública que recibe el propietario.
+        en cambio la misma proyección pública que recibe el propietario. Para
+        tickets anónimos, anonymousContact sólo se incluye para AGENT y ADMIN;
+        AREA_RESPONSIBLE nunca recibe ese dato.
       operationId: getStaffTicketDetail
       security:
         - bearerAuth: [ ]
@@ -958,7 +973,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TicketDetailResponse'
+                $ref: '#/components/schemas/StaffTicketDetailResponse'
         '401':
           $ref: '#/components/responses/InvalidToken'
         '403':
@@ -976,7 +991,8 @@ paths:
         propietario. Mismo control de acceso que
         GET /staff/tickets/{id}: AGENT y ADMIN acceden a cualquier ticket
         ajeno; AREA_RESPONSIBLE sólo a los de su propia areaId (o al suyo
-        propio como ciudadano).
+        propio como ciudadano). Esta proyección nunca incluye el contacto
+        anónimo ni credenciales de seguimiento/acceso.
       operationId: getStaffTicketCitizenView
       security:
         - bearerAuth: [ ]
@@ -1348,7 +1364,11 @@ paths:
     post:
       tags: [Tracking]
       summary: Consultar un ticket por código de seguimiento
-      description: El código se envía en el body para evitar exponer esta capacidad de acceso en URLs y logs de acceso.
+      description: |
+        El código se envía en el body para evitar exponer esta capacidad de acceso en URLs y logs.
+        Sin contraseña mantiene la consulta read-only existente. Para un ticket anónimo, una
+        contraseña correcta acredita las credenciales sólo durante esta llamada: no crea sesión,
+        token ni Authentication. Una contraseña enviada para un ticket identificado nunca concede ownership.
       operationId: accessTracking
       security: []
       requestBody:
@@ -1360,12 +1380,17 @@ paths:
       responses:
         '200':
           description: Vista pública del ticket.
+          headers:
+            Cache-Control:
+              schema: { type: string, example: no-store }
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/TrackingTicketResponse'
         '400':
           $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/InvalidAnonymousTicketCredentials'
         '404':
           description: El código es inválido, inexistente o no corresponde a una solicitud.
           content:
@@ -1377,6 +1402,125 @@ paths:
                 message: No se encontró una solicitud para el código de seguimiento indicado.
         '415':
           $ref: '#/components/responses/UnsupportedMediaType'
+  /api/tracking/actions/cancel:
+    post:
+      tags: [Tracking]
+      summary: Cancelar un ticket anónimo propio
+      description: Valida tracking y contraseña desde el body y aplica la cancelación ciudadana existente sólo en REGISTERED.
+      operationId: cancelAnonymousTicket
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnonymousCancelTicketRequest'
+      responses:
+        '200':
+          description: Ticket anónimo cancelado.
+          headers:
+            Cache-Control:
+              schema: { type: string, example: no-store }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketResponse'
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/InvalidAnonymousTicketCredentials' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/TicketStateConflict' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+  /api/tracking/actions/information-response:
+    post:
+      tags: [Tracking]
+      summary: Responder una solicitud de información de un ticket anónimo
+      description: Acredita al propietario anónimo y reutiliza la respuesta textual existente. No admite archivos.
+      operationId: answerAnonymousInformationRequest
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnonymousInformationResponseRequest'
+      responses:
+        '200':
+          description: Solicitud respondida.
+          headers:
+            Cache-Control:
+              schema: { type: string, example: no-store }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InformationRequestResponse'
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/InvalidAnonymousTicketCredentials' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/InformationRequestConflict' }
+        '410':
+          description: La solicitud de información expiró.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+  /api/tracking/actions/confirm-resolution:
+    post:
+      tags: [Tracking]
+      summary: Confirmar la resolución de un ticket anónimo
+      description: Acredita al propietario anónimo y aplica la transición existente RESOLVED a CLOSED.
+      operationId: confirmAnonymousResolution
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnonymousTicketCredentialsRequest'
+      responses:
+        '200':
+          description: Resolución confirmada.
+          headers:
+            Cache-Control:
+              schema: { type: string, example: no-store }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TicketResolutionActionResponse' }
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/InvalidAnonymousTicketCredentials' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/TicketResolutionConflict' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+  /api/tracking/actions/reopen:
+    post:
+      tags: [Tracking]
+      summary: Reabrir un ticket anónimo resuelto
+      description: Acredita al propietario anónimo y aplica la reapertura ciudadana existente con un nuevo ciclo SLA.
+      operationId: reopenAnonymousTicket
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnonymousReopenTicketRequest'
+      responses:
+        '200':
+          description: Ticket reabierto.
+          headers:
+            Cache-Control:
+              schema: { type: string, example: no-store }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TicketResolutionActionResponse' }
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/InvalidAnonymousTicketCredentials' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/TicketResolutionConflict' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
 components:
   securitySchemes:
     bearerAuth:
@@ -1440,6 +1584,15 @@ components:
           example:
             code: FORBIDDEN
             message: No está autorizado para realizar esta operación
+    InvalidAnonymousTicketCredentials:
+      description: Tracking y contraseña no acreditan al propietario de un ticket anónimo.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          example:
+            code: INVALID_ANONYMOUS_TICKET_CREDENTIALS
+            message: Las credenciales del ticket anónimo no son válidas
     NotFound:
       description: Recurso no encontrado.
       content:
@@ -1947,7 +2100,37 @@ components:
           allOf:
             - $ref: '#/components/schemas/LocationData'
           nullable: true
+        anonymousAccessPassword:
+          type: string
+          minLength: 8
+          nullable: true
+          description: |
+            Contraseña propia opcional para creación anónima. No se recorta ni normaliza, debe
+            contener al menos 8 caracteres y no puede superar 72 bytes UTF-8. Si se omite, Backend
+            genera una contraseña aleatoria. Se rechaza cuando la creación es identificada.
+        anonymousContact:
+          allOf:
+            - $ref: '#/components/schemas/AnonymousContact'
+          nullable: true
       additionalProperties: false
+    AnonymousContact:
+      type: object
+      description: |
+        Canal privado separado de la identidad. En respuestas sólo aparece en
+        el detalle staff de un ticket anónimo autorizado para AGENT o ADMIN;
+        nunca en tracking, vistas ciudadanas, citizen-view, listados o eventos.
+      required: [channel, value]
+      properties:
+        channel:
+          $ref: '#/components/schemas/AnonymousContactChannel'
+        value:
+          type: string
+          maxLength: 254
+          description: Email válido o teléfono con 7 a 15 dígitos; el teléfono admite +, espacios, guiones y paréntesis.
+      additionalProperties: false
+    AnonymousContactChannel:
+      type: string
+      enum: [EMAIL, PHONE]
     LocationData:
       type: object
       properties:
@@ -2188,6 +2371,20 @@ components:
           description: Historial ordenado por sequence ascendente.
           items:
             $ref: '#/components/schemas/TicketActivityResponse'
+    StaffTicketDetailResponse:
+      description: |
+        Detalle interno. Extiende la proyección común con el contacto privado
+        de un ticket anónimo únicamente para AGENT y ADMIN. AREA_RESPONSIBLE
+        recibe el resto del detalle autorizado, pero nunca anonymousContact.
+        Ninguna credencial o hash forma parte de esta respuesta.
+      allOf:
+        - $ref: '#/components/schemas/TicketDetailResponse'
+        - type: object
+          properties:
+            anonymousContact:
+              allOf:
+                - $ref: '#/components/schemas/AnonymousContact'
+              nullable: true
     TicketAttachmentResponse:
       type: object
       description: Metadatos seguros de un adjunto, sin claves ni internals de almacenamiento.
@@ -2346,7 +2543,7 @@ components:
       additionalProperties: false
     CreateTicketResponse:
       type: object
-      required: [ticketId, publicId, trackingCode, status]
+      required: [ticketId, publicId, trackingCode, status, generatedAnonymousAccessPassword]
       properties:
         ticketId:
           type: string
@@ -2358,6 +2555,12 @@ components:
           description: Código que permite consultar el ticket mediante el endpoint público de tracking.
         status:
           $ref: '#/components/schemas/TicketStatus'
+        generatedAnonymousAccessPassword:
+          type: string
+          nullable: true
+          description: |
+            Contraseña plaintext entregada una única vez sólo cuando Backend la generó para un
+            ticket anónimo. Es null para tickets identificados y cuando el usuario eligió la contraseña.
     CreateInformationRequest:
       type: object
       required: [messageForCitizen]
@@ -2482,7 +2685,48 @@ components:
         trackingCode:
           type: string
           description: Capacidad secreta entregada al crear la solicitud; nunca se incluye en la respuesta.
+        anonymousAccessPassword:
+          type: string
+          format: password
+          nullable: true
+          description: Opcional. Si se envía, sólo puede acreditar un ticket anónimo y se valida únicamente para esta llamada.
       additionalProperties: false
+    AnonymousTicketCredentialsRequest:
+      type: object
+      required: [trackingCode, anonymousAccessPassword]
+      properties:
+        trackingCode:
+          type: string
+          description: Código de seguimiento enviado exclusivamente en el body.
+        anonymousAccessPassword:
+          type: string
+          format: password
+          description: Contraseña propia del ticket anónimo enviada exclusivamente en el body.
+      additionalProperties: false
+    AnonymousCancelTicketRequest:
+      allOf:
+        - $ref: '#/components/schemas/AnonymousTicketCredentialsRequest'
+        - type: object
+          required: [payload]
+          properties:
+            payload:
+              $ref: '#/components/schemas/CancelTicketRequest'
+    AnonymousInformationResponseRequest:
+      allOf:
+        - $ref: '#/components/schemas/AnonymousTicketCredentialsRequest'
+        - type: object
+          required: [payload]
+          properties:
+            payload:
+              $ref: '#/components/schemas/AnswerInformationRequest'
+    AnonymousReopenTicketRequest:
+      allOf:
+        - $ref: '#/components/schemas/AnonymousTicketCredentialsRequest'
+        - type: object
+          required: [payload]
+          properties:
+            payload:
+              $ref: '#/components/schemas/ReopenTicketRequest'
     TrackingTicketResponse:
       type: object
       required: [publicId, status, summary, createdAt, statusChangedAt, requestType, category, subcategory, sla]

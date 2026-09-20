@@ -106,6 +106,44 @@ class TicketResolutionServiceTest {
     }
 
     @Test
+    void anonymousOwnerConfirmsAndReopensWithCitizenNullActor() {
+        ticket.setAnonymous(true);
+        ticket.setCitizenId(null);
+        ticket.setCurrentStatus(TicketStatus.RESOLVED);
+        ticket.setResolutionConfirmationDueAt(NOW.plusSeconds(3600));
+
+        var confirmed = service.confirmAnonymous(ticket.getId());
+
+        assertEquals(TicketStatus.CLOSED, confirmed.getStatus());
+        verify(activities).save(argThat(value -> value.getActionType() == ActivityType.CLOSED
+                && value.getActorType() == ActorType.CITIZEN && value.getActorId() == null));
+
+        clearInvocations(tickets, activities);
+        ticket.setCurrentStatus(TicketStatus.RESOLVED);
+        var reopened = service.reopenAnonymous(ticket.getId(), new ReopenTicketRequest("Continúa"));
+
+        assertEquals(TicketStatus.IN_PROGRESS, reopened.getStatus());
+        assertEquals(1, reopened.getReopenCount());
+        verify(ticketSlaService).startReopenedResolutionCycle(ticket, NOW);
+        verify(activities).save(argThat(value -> value.getActionType() == ActivityType.REOPENED
+                && value.getActorType() == ActorType.CITIZEN && value.getActorId() == null));
+        verify(outbox).reopened(ticket, "Continúa", NOW);
+    }
+
+    @Test
+    void anonymousEntryPointsRejectIdentifiedTicketWithoutEffects() {
+        ticket.setCurrentStatus(TicketStatus.RESOLVED);
+
+        assertThrows(UnauthorizedTicketOperationException.class,
+                () -> service.confirmAnonymous(ticket.getId()));
+        assertThrows(UnauthorizedTicketOperationException.class,
+                () -> service.reopenAnonymous(ticket.getId(), new ReopenTicketRequest("Motivo")));
+
+        verify(tickets, never()).save(any());
+        verify(activities, never()).save(any());
+    }
+
+    @Test
     void citizenActionsRejectMissingDifferentAndAnonymousOwners() {
         ticket.setCurrentStatus(TicketStatus.RESOLVED);
         assertThrows(UnauthorizedTicketOperationException.class,

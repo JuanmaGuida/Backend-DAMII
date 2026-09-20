@@ -68,7 +68,11 @@ class OpenApiContractTest {
             "POST /api/tickets/{ticketId}/resolution/confirm",
             "POST /api/tickets/{ticketId}/resolution/reopen",
             "POST /api/tickets/{ticketId}/cancel",
-            "POST /api/tracking/access"
+            "POST /api/tracking/access",
+            "POST /api/tracking/actions/cancel",
+            "POST /api/tracking/actions/information-response",
+            "POST /api/tracking/actions/confirm-resolution",
+            "POST /api/tracking/actions/reopen"
     );
     private static final Set<String> PROTECTED_OPERATIONS = Set.of(
             "GET /api/auth/me",
@@ -91,7 +95,6 @@ class OpenApiContractTest {
             "PUT /api/admin/catalog/request-types/{requestTypeId}/form",
             "GET /api/me/tickets",
             "GET /api/tickets",
-            "POST /api/tickets",
             "GET /api/tickets/{ticketId}",
             "GET /api/staff/tickets/{ticketId}",
             "GET /api/staff/tickets/{ticketId}/citizen-view",
@@ -153,7 +156,7 @@ class OpenApiContractTest {
     void versionedFileIsAValidOpenApi3DocumentWithExactlyTheCurrentBusinessOperations() {
         assertTrue(string(spec.get("openapi")).startsWith("3."));
         assertEquals("3.0.3", parsedOpenApi.getOpenapi());
-        assertEquals(39, parsedOpenApi.getPaths().size());
+        assertEquals(43, parsedOpenApi.getPaths().size());
         assertNotNull(map(spec, "info").get("title"));
         assertNotNull(map(spec, "components").get("schemas"));
         assertEquals(EXPECTED_OPERATIONS, documentedOperations());
@@ -174,7 +177,10 @@ class OpenApiContractTest {
 
         for (String operation : EXPECTED_OPERATIONS) {
             Map<String, Object> operationNode = operation(operation);
-            if (PROTECTED_OPERATIONS.contains(operation)) {
+            if (operation.equals("POST /api/tickets")) {
+                assertEquals(java.util.List.of(Map.of(), Map.of("bearerAuth", java.util.List.of())),
+                        operationNode.get("security"), operation);
+            } else if (PROTECTED_OPERATIONS.contains(operation)) {
                 assertEquals("bearerAuth", firstSecurityScheme(operationNode), operation);
             } else if (operation.startsWith("GET /api/catalog/neighborhoods")) {
                 assertEquals(java.util.List.of(), operationNode.get("security"), operation);
@@ -202,6 +208,53 @@ class OpenApiContractTest {
         Map<String, Object> response422 = map(operation, "responses", "422", "content", "application/json");
         assertEquals("#/components/schemas/ApiError", map(response422, "schema").get("$ref"));
         assertEquals("EVIDENCE_REQUIRED", map(response422, "example").get("code"));
+
+        Map<String, Object> schemas = map(spec, "components", "schemas");
+        Map<String, Object> requestProperties = map(schemas, "CreateTicketRequest", "properties");
+        assertEquals(Set.of("requestTypeId", "summary", "description", "formData", "location",
+                        "anonymousAccessPassword", "anonymousContact"),
+                requestProperties.keySet());
+        assertEquals("#/components/schemas/AnonymousContact",
+                map(list(map(requestProperties, "anonymousContact"), "allOf").getFirst()).get("$ref"));
+        assertEquals(Set.of("channel", "value"), map(schemas, "AnonymousContact", "properties").keySet());
+        assertEquals(Set.of("EMAIL", "PHONE"),
+                Set.copyOf(list(map(schemas, "AnonymousContactChannel"), "enum")));
+        assertEquals(254, map(schemas, "AnonymousContact", "properties", "value").get("maxLength"));
+
+        Map<String, Object> responseProperties = map(schemas, "CreateTicketResponse", "properties");
+        assertTrue(responseProperties.containsKey("generatedAnonymousAccessPassword"));
+        assertTrue(nullableProperty(schemas, "CreateTicketResponse", "generatedAnonymousAccessPassword"));
+        assertEquals("no-store", map(operation, "responses", "201", "headers", "Cache-Control", "schema").get("example"));
+    }
+
+    @Test
+    void anonymousOwnerActionsDocumentBodyCredentialsWithoutSessionsOrHashes() {
+        Map<String, Object> schemas = map(spec, "components", "schemas");
+        assertEquals(Set.of("trackingCode", "anonymousAccessPassword"),
+                map(schemas, "AnonymousTicketCredentialsRequest", "properties").keySet());
+        assertTrue(map(schemas, "TrackingAccessRequest", "properties")
+                .containsKey("anonymousAccessPassword"));
+        assertEquals("no-store", map(operation("POST /api/tracking/access"),
+                "responses", "200", "headers", "Cache-Control", "schema").get("example"));
+
+        for (String operationName : Set.of(
+                "POST /api/tracking/actions/cancel",
+                "POST /api/tracking/actions/information-response",
+                "POST /api/tracking/actions/confirm-resolution",
+                "POST /api/tracking/actions/reopen")) {
+            Map<String, Object> operation = operation(operationName);
+            assertEquals(java.util.List.of(), operation.get("security"), operationName);
+            assertEquals("#/components/responses/InvalidAnonymousTicketCredentials",
+                    map(operation, "responses", "401").get("$ref"), operationName);
+            assertEquals("no-store",
+                    map(operation, "responses", "200", "headers", "Cache-Control", "schema").get("example"),
+                    operationName);
+        }
+
+        String serialized = spec.toString();
+        assertFalse(serialized.contains("anonymousAccessPasswordHash"));
+        assertFalse(serialized.contains("trackingCodeHash"));
+        assertFalse(serialized.contains("sessionToken"));
     }
 
     @Test
@@ -219,6 +272,8 @@ class OpenApiContractTest {
         assertFalse(serialized.contains("storageKey"));
         assertFalse(serialized.contains("trackingCodeHash"));
         assertFalse(serialized.contains("trackingAccessCode"));
+        assertFalse(serialized.contains("anonymousAccessPasswordHash"));
+        assertFalse(serialized.contains("anonymousContactValue"));
 
         assertFalse(map(schemas, "TrackingTicketResponse", "properties").containsKey("ticketId"));
         assertEquals(Set.of("name"), map(schemas, "TrackingRequestTypeSummary", "properties").keySet());
@@ -241,6 +296,16 @@ class OpenApiContractTest {
         assertTrue(detailProperties.containsKey("ticketActivities"));
         assertTrue(detailProperties.containsKey("neighborhoodName"));
         assertFalse(detailProperties.containsKey("neighborhoodId"));
+        assertFalse(detailProperties.containsKey("anonymousContact"));
+        assertFalse(map(schemas, "TicketResponse", "properties").containsKey("anonymousContact"));
+        assertFalse(map(schemas, "TrackingTicketResponse", "properties").containsKey("anonymousContact"));
+
+        java.util.List<String> staffDetailAllOf = list(map(schemas, "StaffTicketDetailResponse"), "allOf");
+        assertEquals("#/components/schemas/TicketDetailResponse", map(staffDetailAllOf.getFirst()).get("$ref"));
+        Map<String, Object> staffProperties = map(map(staffDetailAllOf.get(1)), "properties");
+        assertEquals(Set.of("anonymousContact"), staffProperties.keySet());
+        assertEquals("#/components/schemas/AnonymousContact",
+                map(list(map(staffProperties, "anonymousContact"), "allOf").getFirst()).get("$ref"));
 
         Map<String, Object> activityProperties = map(schemas, "TicketActivityResponse", "properties");
         assertTrue(list(map(schemas, "TicketActivityResponse"), "required").contains("occurredAt"));
@@ -348,12 +413,14 @@ class OpenApiContractTest {
     void detailOperationsUseTheDedicatedResponseWithoutChangingSharedTicketResponses() {
         for (String operationName : Set.of(
                 "GET /api/tickets/{ticketId}",
-                "GET /api/staff/tickets/{ticketId}",
                 "GET /api/staff/tickets/{ticketId}/citizen-view")) {
             assertEquals("#/components/schemas/TicketDetailResponse",
                     map(operation(operationName), "responses", "200", "content", "application/json", "schema")
                             .get("$ref"), operationName);
         }
+        assertEquals("#/components/schemas/StaffTicketDetailResponse",
+                map(operation("GET /api/staff/tickets/{ticketId}"),
+                        "responses", "200", "content", "application/json", "schema").get("$ref"));
         for (String operationName : Set.of(
                 "POST /api/tickets/{ticketId}/review",
                 "PATCH /api/tickets/{ticketId}/classification",

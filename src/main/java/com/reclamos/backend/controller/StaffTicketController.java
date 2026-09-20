@@ -1,5 +1,6 @@
 package com.reclamos.backend.controller;
 
+import com.reclamos.backend.dto.response.StaffTicketDetailResponse;
 import com.reclamos.backend.dto.response.DuplicateCandidateResponse;
 import com.reclamos.backend.dto.response.TicketDetailResponse;
 import com.reclamos.backend.identity.AuthenticatedIdentity;
@@ -39,7 +40,7 @@ public class StaffTicketController {
      * TicketService.requireStaffAccess.
      */
     @GetMapping("/{ticketId}")
-    public TicketDetailResponse getStaffDetail(
+    public StaffTicketDetailResponse getStaffDetail(
             @PathVariable UUID ticketId,
             @AuthenticationPrincipal AuthenticatedIdentity identity
     ) {

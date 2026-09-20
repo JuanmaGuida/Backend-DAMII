@@ -207,6 +207,7 @@ class TicketControllerTest {
                 .andExpect(jsonPath("$.description").value("Descripción completa"))
                 .andExpect(jsonPath("$.neighborhoodName").value("Recoleta"))
                 .andExpect(jsonPath("$.neighborhoodId").doesNotExist())
+                .andExpect(jsonPath("$.anonymousContact").doesNotExist())
                 .andExpect(jsonPath("$.attachments[0].fileName").value("foto.jpg"))
                 .andExpect(jsonPath("$.attachments[0].storageKey").doesNotExist())
                 .andExpect(jsonPath("$.ticketActivities[0].sequence").value(1))
