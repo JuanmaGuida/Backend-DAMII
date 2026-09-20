@@ -4,7 +4,9 @@ import com.reclamos.backend.dto.TicketFilter;
 import com.reclamos.backend.dto.TicketResponse;
 import com.reclamos.backend.dto.request.CancelTicketRequest;
 import com.reclamos.backend.dto.request.CreateTicketRequest;
+import com.reclamos.backend.dto.response.AnonymousContactResponse;
 import com.reclamos.backend.dto.response.CreateTicketResponse;
+import com.reclamos.backend.dto.response.StaffTicketDetailResponse;
 import com.reclamos.backend.dto.response.TicketActivityResponse;
 import com.reclamos.backend.dto.response.TicketAttachmentResponse;
 import com.reclamos.backend.dto.response.TicketDetailResponse;
@@ -87,19 +89,26 @@ public class TicketService {
     private final TrackingCodeService trackingCodeService;
     private final TicketPublicIdGenerator publicIdGenerator;
     private final AttachmentService attachmentService;
+    private final AnonymousTicketCredentialService anonymousTicketCredentialService;
+    private final AnonymousContactValidator anonymousContactValidator;
     private final ModuleUserRepository moduleUserRepository;
     private final Clock clock;
 
     @Transactional
     public CreateTicketResponse create(CreateTicketRequest request, AuthenticatedIdentity identity,
                                        MultipartFile[] evidence) {
-        if (identity == null) {
-            throw new InvalidTicketRequestException("Se requiere la identidad del ciudadano");
+        boolean anonymous = identity == null;
+        if (!anonymous && request.containsAnonymousData()) {
+            throw new InvalidTicketRequestException(
+                    "Los datos de acceso o contacto anónimo no aplican a un ticket identificado");
         }
         RequestType requestType = requestTypeRepository.findByIdForUpdate(request.requestTypeId())
                 .orElseThrow(() -> new ResourceNotFoundException("Request Type no encontrado"));
         if (!requestType.isActive()) {
             throw new InvalidTicketRequestException("El Request Type seleccionado está inactivo");
+        }
+        if (anonymous && !requestType.isAllowsAnonymous()) {
+            throw new InvalidTicketRequestException("El Request Type seleccionado no admite creación anónima");
         }
         ResolvedForm resolvedForm = formValidationService.resolveAndValidate(requestType, request.formData());
         RiskAssessment assessment = riskCalculationService.calculateRisk(requestType, resolvedForm);
@@ -109,6 +118,13 @@ public class TicketService {
             throw new EvidenceRequiredException();
         }
         validateLocation(requestType, request.location());
+
+        AnonymousContactValidator.ValidatedContact anonymousContact = anonymous
+                ? anonymousContactValidator.validate(request.anonymousContact())
+                : null;
+        AnonymousTicketCredentialService.CredentialMaterial anonymousCredential = anonymous
+                ? anonymousTicketCredentialService.prepare(request.anonymousAccessPassword())
+                : null;
 
         String trackingCode;
         String trackingHash;
@@ -122,8 +138,11 @@ public class TicketService {
         Ticket ticket = new Ticket();
         ticket.setPublicId(publicId);
         ticket.setTrackingCodeHash(trackingHash);
-        ticket.setCitizenId(identity.citizenId());
-        ticket.setAnonymous(false);
+        ticket.setCitizenId(anonymous ? null : identity.citizenId());
+        ticket.setAnonymous(anonymous);
+        ticket.setAnonymousAccessPasswordHash(anonymous ? anonymousCredential.passwordHash() : null);
+        ticket.setAnonymousContactChannel(anonymousContact == null ? null : anonymousContact.channel());
+        ticket.setAnonymousContactValue(anonymousContact == null ? null : anonymousContact.value());
         ticket.setRequestType(requestType);
         ticket.setFormTemplateId(resolvedForm.formTemplateId());
         ticket.setTicketType(requestType.getTicketType());
@@ -159,7 +178,7 @@ public class TicketService {
         activity.setPreviousStatus(null);
         activity.setNewStatus(TicketStatus.REGISTERED);
         activity.setActorType(ActorType.CITIZEN);
-        activity.setActorId(identity.citizenId().toString());
+        activity.setActorId(anonymous ? null : identity.citizenId().toString());
         activity.setOccurredAt(now);
         activityRepository.save(activity);
         activateCriticalEscalationIfNeeded(ticket, now);
@@ -167,7 +186,7 @@ public class TicketService {
                 resolutionSla.map(TicketSla::getDueAt).orElse(null));
         ticketRepository.flush();
         return new CreateTicketResponse(ticket.getId(), ticket.getPublicId(), trackingCode,
-                TicketStatus.REGISTERED);
+                TicketStatus.REGISTERED, anonymous ? anonymousCredential.generatedPassword() : null);
     }
 
     /**
@@ -375,12 +394,6 @@ public class TicketService {
      * agrega la transición DUPLICATE -&gt; CANCELLED por
      * WITHDRAWN_BY_CITIZEN") queda pendiente de Story 7.2 (Sprint 5):
      * DUPLICATE todavía no es un estado alcanzable en el sistema.
-     * <p>
-     * ALCANCE REDUCIDO A PROPÓSITO: el "propietario anónimo acreditado" de
-     * la tabla de endpoints no está cubierto acá — requiere el mecanismo de
-     * acreditación por trackingAccessCode + contraseña (POST
-     * /tracking/access) que todavía no expone una AuthenticatedIdentity
-     * utilizable en este endpoint.
      */
     @Transactional
     public TicketResponse cancelTicket(UUID ticketId, CancelTicketRequest request, AuthenticatedIdentity actor) {
@@ -389,12 +402,28 @@ public class TicketService {
                 && ticket.getCitizenId().equals(actor.citizenId());
         requireCancelAuthority(actor, isOwnTicket);
 
-        if (isOwnTicket && ticket.getCurrentStatus() != TicketStatus.REGISTERED) {
+        ActorType actorType = isOwnTicket ? ActorType.CITIZEN
+                : (actor.role() == ModuleRole.ADMIN ? ActorType.ADMIN : ActorType.AGENT);
+        return cancelTicket(ticket, request, actorType, actor.citizenId().toString(), isOwnTicket, true);
+    }
+
+    @Transactional
+    public TicketResponse cancelAnonymousTicket(UUID ticketId, CancelTicketRequest request) {
+        Ticket ticket = loadForUpdate(ticketId);
+        if (!ticket.isAnonymous() || ticket.getCitizenId() != null) {
+            throw new UnauthorizedTicketOperationException();
+        }
+        return cancelTicket(ticket, request, ActorType.CITIZEN, null, true, false);
+    }
+
+    private TicketResponse cancelTicket(Ticket ticket, CancelTicketRequest request, ActorType actorType,
+                                        String actorId, boolean ownerAction, boolean publishCancellation) {
+        if (ownerAction && ticket.getCurrentStatus() != TicketStatus.REGISTERED) {
             throw new TicketStateConflictException(
                     "El ticket está en estado " + ticket.getCurrentStatus()
                             + " y el propietario sólo puede cancelarlo directamente en REGISTERED");
         }
-        if (!isOwnTicket && !ADMIN_CANCELLABLE_STATUSES.contains(ticket.getCurrentStatus())) {
+        if (!ownerAction && !ADMIN_CANCELLABLE_STATUSES.contains(ticket.getCurrentStatus())) {
             throw new TicketStateConflictException(
                     "El ticket está en estado " + ticket.getCurrentStatus()
                             + " y no admite cancelación administrativa por este endpoint"
@@ -402,8 +431,6 @@ public class TicketService {
         }
 
         Instant now = clock.instant();
-        ActorType actorType = isOwnTicket ? ActorType.CITIZEN
-                : (actor.role() == ModuleRole.ADMIN ? ActorType.ADMIN : ActorType.AGENT);
 
         TicketCancellation cancellation = new TicketCancellation();
         cancellation.setTicket(ticket);
@@ -411,7 +438,7 @@ public class TicketService {
         cancellation.setPublicMessage(request.getPublicMessage());
         cancellation.setInternalMessage(request.getInternalMessage());
         cancellation.setCancelledByType(actorType);
-        cancellation.setCancelledById(actor.citizenId().toString());
+        cancellation.setCancelledById(actorId);
         cancellation.setCancelledByModuleId(SELF_MANAGED_AREA_ID);
         cancellation.setCancelledAt(now);
         cancellationRepository.save(cancellation);
@@ -425,17 +452,17 @@ public class TicketService {
         ticket.setStatusChangedAt(now);
         ticketRepository.save(ticket);
 
-        recordCancellationActivity(ticket, previousStatus, actorType, actor, request.getReasonCode(),
+        recordCancellationActivity(ticket, previousStatus, actorType, actorId, request.getReasonCode(),
                 request.getPublicMessage() != null ? request.getPublicMessage() : request.getInternalMessage(), now);
 
-        // Eventos V1.69 §2.1/§7.7: sólo tickets identificados publican
-        // ticketUpdated/CANCELLED acá. En este punto (pre-ROUTED) nunca hubo
-        // un área externa involucrada, así que a diferencia de routeToArea
-        // no hay ningún gate por SELF_MANAGED_AREA_ID — lo único que importa
-        // es si M1 tiene que actualizar su proyección.
-        ticketOutboxService.cancelled(ticket, request.getReasonCode(), request.getPublicMessage(), true, now);
+        // La cancelación directa del propietario anónimo ocurre únicamente en
+        // REGISTERED, antes de ROUTED, por lo que no existe un consumidor externo.
+        // Los flujos identificados y administrativos conservan su política previa.
+        if (publishCancellation) {
+            ticketOutboxService.cancelled(ticket, request.getReasonCode(), request.getPublicMessage(), true, now);
+        }
 
-        return toResponse(ticket, locationRepository.findByTicket_Id(ticketId).orElse(null));
+        return toResponse(ticket, locationRepository.findByTicket_Id(ticket.getId()).orElse(null));
     }
 
     private void requireCancelAuthority(AuthenticatedIdentity actor, boolean isOwnTicket) {
@@ -449,7 +476,7 @@ public class TicketService {
     }
 
     private void recordCancellationActivity(Ticket ticket, TicketStatus previousStatus, ActorType actorType,
-                                             AuthenticatedIdentity actor, CancellationReasonCode reasonCode,
+                                             String actorId, CancellationReasonCode reasonCode,
                                              String message, Instant occurredAt) {
         TicketActivity activity = new TicketActivity();
         activity.setTicket(ticket);
@@ -458,7 +485,7 @@ public class TicketService {
         activity.setPreviousStatus(previousStatus);
         activity.setNewStatus(TicketStatus.CANCELLED);
         activity.setActorType(actorType);
-        activity.setActorId(actor.citizenId().toString());
+        activity.setActorId(actorId);
         activity.setSourceModuleId(SELF_MANAGED_AREA_ID);
         activity.setReasonCode(reasonCode.name());
         activity.setMessage(message);
@@ -548,12 +575,21 @@ public class TicketService {
      * no aplica acá porque este endpoint es de sólo lectura.
      */
     @Transactional(readOnly = true)
-    public TicketDetailResponse getStaffDetail(UUID ticketId, AuthenticatedIdentity identity) {
+    public StaffTicketDetailResponse getStaffDetail(UUID ticketId, AuthenticatedIdentity identity) {
         Ticket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(() -> new ResourceNotFoundException("El ticket solicitado no existe"));
         requireStaffAccess(ticket, identity);
         TicketLocation location = locationRepository.findByTicket_Id(ticketId).orElse(null);
-        return toDetailResponse(ticket, location, true);
+        StaffTicketDetailResponse detail = toDetailResponse(
+                ticket, location, true, new StaffTicketDetailResponse());
+        if (ticket.isAnonymous()
+                && (identity.role() == ModuleRole.AGENT || identity.role() == ModuleRole.ADMIN)
+                && ticket.getAnonymousContactChannel() != null
+                && ticket.getAnonymousContactValue() != null) {
+            detail.setAnonymousContact(new AnonymousContactResponse(
+                    ticket.getAnonymousContactChannel(), ticket.getAnonymousContactValue()));
+        }
+        return detail;
     }
 
     private void requireStaffAccess(Ticket ticket, AuthenticatedIdentity identity) {
@@ -701,8 +737,12 @@ public class TicketService {
     }
 
     private TicketDetailResponse toDetailResponse(Ticket ticket, TicketLocation location, boolean staffView) {
+        return toDetailResponse(ticket, location, staffView, new TicketDetailResponse());
+    }
+
+    private <T extends TicketDetailResponse> T toDetailResponse(
+            Ticket ticket, TicketLocation location, boolean staffView, T detail) {
         TicketResponse base = toResponse(ticket, location);
-        TicketDetailResponse detail = new TicketDetailResponse();
         detail.setId(base.getId());
         detail.setPublicId(base.getPublicId());
         detail.setRequestTypeCode(base.getRequestTypeCode());

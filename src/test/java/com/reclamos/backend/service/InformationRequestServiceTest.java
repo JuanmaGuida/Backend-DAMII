@@ -214,8 +214,13 @@ class InformationRequestServiceTest {
         when(requests.findByTicketIdAndStatusForUpdate(ticket.getId(), InformationRequestStatus.PENDING))
                 .thenReturn(Optional.of(pending));
 
-        assertDoesNotThrow(() -> service.answerAnonymousFromTracking(ticket.getId(), "Respuesta", "tracking"));
+        assertDoesNotThrow(() -> service.answerAnonymousFromTracking(
+                ticket.getId(), new AnswerInformationRequest("Respuesta")));
         assertEquals(InformationRequestStatus.ANSWERED, pending.getStatus());
+        assertNull(pending.getAnsweredById());
+        verify(activities).save(argThat(activity -> activity.getActorType() == ActorType.CITIZEN
+                && activity.getActorId() == null));
+        verify(ticketSlaService).resumeActiveResolutionCycle(ticket, NOW);
         verify(outbox).informationProvided(ticket, "Respuesta", true, NOW);
     }
 

@@ -135,6 +135,17 @@ public class TicketResolutionService {
     public TicketResolutionActionResponse confirm(UUID ticketId, AuthenticatedIdentity identity) {
         Ticket ticket = lockedTicket(ticketId);
         requireOwner(ticket, identity);
+        return confirm(ticket, identity.citizenId().toString());
+    }
+
+    @Transactional
+    public TicketResolutionActionResponse confirmAnonymous(UUID ticketId) {
+        Ticket ticket = lockedTicket(ticketId);
+        requireAnonymousOwner(ticket);
+        return confirm(ticket, null);
+    }
+
+    private TicketResolutionActionResponse confirm(Ticket ticket, String actorId) {
         requireResolved(ticket, "El estado actual del ticket no permite confirmar la resolución");
 
         Instant now = clock.instant();
@@ -142,7 +153,7 @@ public class TicketResolutionService {
         ticket.setStatusChangedAt(now);
         ticket.setResolutionConfirmationDueAt(null);
         ticketRepository.save(ticket);
-        saveCitizenActivity(ticket, ActivityType.CLOSED, TicketStatus.CLOSED, identity,
+        saveCitizenActivity(ticket, ActivityType.CLOSED, TicketStatus.CLOSED, actorId,
                 "CITIZEN_CONFIRMED", "El ciudadano confirmó la resolución", now);
         return actionResponse(ticket);
     }
@@ -152,6 +163,17 @@ public class TicketResolutionService {
                                                  AuthenticatedIdentity identity) {
         Ticket ticket = lockedTicket(ticketId);
         requireOwner(ticket, identity);
+        return reopen(ticket, request, identity.citizenId().toString());
+    }
+
+    @Transactional
+    public TicketResolutionActionResponse reopenAnonymous(UUID ticketId, ReopenTicketRequest request) {
+        Ticket ticket = lockedTicket(ticketId);
+        requireAnonymousOwner(ticket);
+        return reopen(ticket, request, null);
+    }
+
+    private TicketResolutionActionResponse reopen(Ticket ticket, ReopenTicketRequest request, String actorId) {
         requireResolved(ticket, "El estado actual del ticket no permite reabrir el ticket");
 
         Instant now = clock.instant();
@@ -161,7 +183,7 @@ public class TicketResolutionService {
         ticket.setResolutionConfirmationDueAt(null);
         ticketSlaService.startReopenedResolutionCycle(ticket, now);
         ticketRepository.save(ticket);
-        saveCitizenActivity(ticket, ActivityType.REOPENED, TicketStatus.IN_PROGRESS, identity,
+        saveCitizenActivity(ticket, ActivityType.REOPENED, TicketStatus.IN_PROGRESS, actorId,
                 null, request.getReason(), now);
         ticketOutboxService.reopened(ticket, request.getReason(), now);
         return actionResponse(ticket);
@@ -185,6 +207,12 @@ public class TicketResolutionService {
         }
     }
 
+    private void requireAnonymousOwner(Ticket ticket) {
+        if (!ticket.isAnonymous() || ticket.getCitizenId() != null) {
+            throw new UnauthorizedTicketOperationException();
+        }
+    }
+
     private void requireResolved(Ticket ticket, String message) {
         if (ticket.getCurrentStatus() != TicketStatus.RESOLVED) {
             throw new TicketResolutionConflictException(message);
@@ -192,7 +220,7 @@ public class TicketResolutionService {
     }
 
     private void saveCitizenActivity(Ticket ticket, ActivityType actionType, TicketStatus newStatus,
-                                     AuthenticatedIdentity identity, String reasonCode, String message,
+                                     String actorId, String reasonCode, String message,
                                      Instant occurredAt) {
         TicketActivity activity = new TicketActivity();
         activity.setTicket(ticket);
@@ -201,7 +229,7 @@ public class TicketResolutionService {
         activity.setPreviousStatus(TicketStatus.RESOLVED);
         activity.setNewStatus(newStatus);
         activity.setActorType(ActorType.CITIZEN);
-        activity.setActorId(identity.citizenId().toString());
+        activity.setActorId(actorId);
         activity.setSourceModuleId(MODULE_ID);
         activity.setReasonCode(reasonCode);
         activity.setMessage(message);

@@ -122,6 +122,22 @@ class AttachmentServiceTest {
     }
 
     @Test
+    void anonymousInitialUploadUsesCitizenActorWithoutInventingAnId() {
+        Ticket ticket = ticket();
+        Instant now = Instant.parse("2026-09-06T12:00:00Z");
+        when(storage.store(eq(ticket.getId()), any(InputStream.class)))
+                .thenReturn(new StoredFile("tickets/" + ticket.getId() + "/anonymous", 1));
+
+        Attachment saved = service.storeForTicket(ticket, null, service.validate(new MultipartFile[]{
+                file("anonymous.jpg", "image/jpeg", 1)
+        }), now).getFirst();
+
+        assertEquals(ActorType.CITIZEN, saved.getUploadedByType());
+        assertNull(saved.getUploadedById());
+        assertNull(saved.getSourceModuleId());
+    }
+
+    @Test
     void failureOnSecondFileCleansTheFirstAndDoesNotPersistMetadata() {
         Ticket ticket = ticket();
         String firstKey = "tickets/" + ticket.getId() + "/first";
