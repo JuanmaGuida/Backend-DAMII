@@ -995,6 +995,40 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+  /api/staff/tickets/{ticketId}/duplicate-candidates:
+    get:
+      tags: [ Tickets ]
+      summary: Sugerir posibles tickets duplicados
+      description: |
+        Busca tickets activos de la misma categoría dentro del radio geográfico
+        y de la ventana temporal configurados. Sólo AGENT y ADMIN pueden usar
+        esta herramienta de triage. La operación es de sólo lectura: no vincula
+        tickets ni modifica sus estados. Una lista vacía es una respuesta válida
+        e indica que no se encontraron candidatos.
+      operationId: getDuplicateCandidates
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - $ref: '#/components/parameters/TicketId'
+      responses:
+        '200':
+          description: Sugerencias ordenadas por distancia y diferencia temporal; puede ser una lista vacía.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DuplicateCandidateResponse'
+        '401':
+          $ref: '#/components/responses/InvalidToken'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: El ticket origen no existe.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
   /api/tickets/{ticketId}/review:
     post:
       tags: [ Tickets ]
@@ -2225,6 +2259,49 @@ components:
         message:
           type: string
           nullable: true
+    DuplicateCandidateResponse:
+      type: object
+      description: Sugerencia explicable de un posible duplicado; no representa una vinculación automática.
+      required: [ ticketId, publicId, summary, currentStatus, categoryId, categoryName,
+                  requestTypeCode, requestTypeName, neighborhoodId, neighborhoodName,
+                  distanceMeters, timeDifferenceMinutes, createdAt ]
+      properties:
+        ticketId:
+          type: string
+          format: uuid
+        publicId:
+          $ref: '#/components/schemas/TicketPublicId'
+        summary:
+          type: string
+        currentStatus:
+          $ref: '#/components/schemas/TicketStatus'
+        categoryId:
+          type: integer
+          format: int64
+        categoryName:
+          type: string
+        requestTypeCode:
+          type: string
+        requestTypeName:
+          type: string
+        neighborhoodId:
+          type: string
+          format: uuid
+          nullable: true
+        neighborhoodName:
+          type: string
+          nullable: true
+        distanceMeters:
+          type: number
+          format: double
+          minimum: 0
+        timeDifferenceMinutes:
+          type: integer
+          format: int64
+          minimum: 0
+        createdAt:
+          type: string
+          format: date-time
     PagedTicketResponse:
       type: object
       description: |

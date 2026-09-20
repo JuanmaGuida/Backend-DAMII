@@ -1,7 +1,9 @@
 package com.reclamos.backend.controller;
 
+import com.reclamos.backend.dto.response.DuplicateCandidateResponse;
 import com.reclamos.backend.dto.response.TicketDetailResponse;
 import com.reclamos.backend.identity.AuthenticatedIdentity;
+import com.reclamos.backend.service.DuplicateCandidateService;
 import com.reclamos.backend.service.TicketService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -10,6 +12,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -25,6 +28,7 @@ import java.util.UUID;
 public class StaffTicketController {
 
     private final TicketService ticketService;
+    private final DuplicateCandidateService duplicateCandidateService;
 
     /**
      * GET /staff/tickets/{id}: detalle staff de un ticket. AGENT/ADMIN
@@ -54,5 +58,13 @@ public class StaffTicketController {
             @AuthenticationPrincipal AuthenticatedIdentity identity
     ) {
         return ticketService.getStaffCitizenView(ticketId, identity);
+    }
+
+    @GetMapping("/{ticketId}/duplicate-candidates")
+    public List<DuplicateCandidateResponse> getDuplicateCandidates(
+            @PathVariable UUID ticketId,
+            @AuthenticationPrincipal AuthenticatedIdentity identity
+    ) {
+        return duplicateCandidateService.findCandidates(ticketId, identity);
     }
 }
