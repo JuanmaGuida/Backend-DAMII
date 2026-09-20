@@ -23,6 +23,10 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
     boolean existsByRequestType_Id(Long requestTypeId);
 
     @EntityGraph(attributePaths = {"requestType.subcategory.category"})
+    @Query("select t from Ticket t where t.id = :id")
+    Optional<Ticket> findWithClassificationById(@Param("id") UUID id);
+
+    @EntityGraph(attributePaths = {"requestType.subcategory.category"})
     Optional<Ticket> findByTrackingCodeHash(String trackingCodeHash);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
