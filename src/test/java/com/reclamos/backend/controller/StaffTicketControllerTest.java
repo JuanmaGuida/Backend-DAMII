@@ -123,7 +123,8 @@ class StaffTicketControllerTest {
         response.setDescription("Descripción staff");
         response.setAttachments(List.of(new TicketAttachmentResponse(
                 2L, "interno.pdf", "application/pdf", 456L,
-                MessageVisibility.INTERNAL, Instant.EPOCH)));
+                MessageVisibility.INTERNAL, Instant.EPOCH,
+                "https://m2.example/api/attachments/2/content")));
         response.setTicketActivities(List.of(new TicketActivityResponse(
                 1, ActivityType.PRIORITY_CHANGED, TicketStatus.REGISTERED, TicketStatus.IN_REVIEW,
                 Instant.EPOCH, "STAFF_REASON", ActorType.AGENT, Priority.LOW, Priority.HIGH, "nota staff")));
@@ -136,6 +137,8 @@ class StaffTicketControllerTest {
                 .andExpect(jsonPath("$.neighborhoodId").doesNotExist())
                 .andExpect(jsonPath("$.attachments[0].visibility").value("INTERNAL"))
                 .andExpect(jsonPath("$.attachments[0].storageKey").doesNotExist())
+                .andExpect(jsonPath("$.attachments[0].downloadUrl")
+                        .value("https://m2.example/api/attachments/2/content"))
                 .andExpect(jsonPath("$.ticketActivities[0].actorType").value("AGENT"))
                 .andExpect(jsonPath("$.ticketActivities[0].message").value("nota staff"))
                 .andExpect(jsonPath("$.ticketActivities[0].actorId").doesNotExist());
@@ -235,7 +238,8 @@ class StaffTicketControllerTest {
         response.setCurrentStatus(TicketStatus.IN_REVIEW);
         response.setAttachments(List.of(new TicketAttachmentResponse(
                 1L, "publico.pdf", "application/pdf", 123L,
-                MessageVisibility.PUBLIC, Instant.EPOCH)));
+                MessageVisibility.PUBLIC, Instant.EPOCH,
+                "https://m2.example/api/attachments/1/content")));
         response.setTicketActivities(List.of(new TicketActivityResponse(
                 1, ActivityType.PROGRESS_REPORTED, TicketStatus.IN_PROGRESS, TicketStatus.IN_PROGRESS,
                 Instant.EPOCH, null, null, null, null, null)));

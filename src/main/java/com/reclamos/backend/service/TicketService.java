@@ -91,6 +91,7 @@ public class TicketService {
     private final TrackingCodeService trackingCodeService;
     private final TicketPublicIdGenerator publicIdGenerator;
     private final AttachmentService attachmentService;
+    private final AttachmentReferenceService attachmentReferenceService;
     private final AnonymousTicketCredentialService anonymousTicketCredentialService;
     private final AnonymousContactValidator anonymousContactValidator;
     private final ModuleUserRepository moduleUserRepository;
@@ -805,7 +806,7 @@ public class TicketService {
     private TicketAttachmentResponse toAttachmentResponse(Attachment attachment) {
         return new TicketAttachmentResponse(attachment.getId(), attachment.getFileName(),
                 attachment.getContentType(), attachment.getSizeBytes(), attachment.getVisibility(),
-                attachment.getCreatedAt());
+                attachment.getCreatedAt(), attachmentReferenceService.downloadUrl(attachment));
     }
 
     private boolean isCitizenVisibleActivity(TicketActivity activity) {

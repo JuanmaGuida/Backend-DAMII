@@ -199,7 +199,8 @@ class TicketControllerTest {
         response.setDescription("Descripción completa");
         response.setNeighborhoodName("Recoleta");
         response.setAttachments(List.of(new TicketAttachmentResponse(
-                1L, "foto.jpg", "image/jpeg", 123L, MessageVisibility.PUBLIC, Instant.EPOCH)));
+                1L, "foto.jpg", "image/jpeg", 123L, MessageVisibility.PUBLIC, Instant.EPOCH,
+                "https://m2.example/api/attachments/1/content")));
         response.setTicketActivities(List.of(new TicketActivityResponse(
                 1, ActivityType.TICKET_CREATED, null, TicketStatus.REGISTERED, Instant.EPOCH,
                 null, null, null, null, null)));
@@ -214,6 +215,8 @@ class TicketControllerTest {
                 .andExpect(jsonPath("$.anonymousContact").doesNotExist())
                 .andExpect(jsonPath("$.attachments[0].fileName").value("foto.jpg"))
                 .andExpect(jsonPath("$.attachments[0].storageKey").doesNotExist())
+                .andExpect(jsonPath("$.attachments[0].downloadUrl")
+                        .value("https://m2.example/api/attachments/1/content"))
                 .andExpect(jsonPath("$.ticketActivities[0].sequence").value(1))
                 .andExpect(jsonPath("$.ticketActivities[0].actorId").doesNotExist())
                 .andExpect(jsonPath("$.ticketActivities[0].sourceModuleId").doesNotExist())

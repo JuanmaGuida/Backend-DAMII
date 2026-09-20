@@ -17,8 +17,9 @@ class InformationRequestProjectionServiceTest {
     private final InformationRequestRepository requests = mock(InformationRequestRepository.class);
     private final InformationRequestAttachmentRepository attachments =
             mock(InformationRequestAttachmentRepository.class);
+    private final AttachmentReferenceService attachmentReferenceService = mock(AttachmentReferenceService.class);
     private final InformationRequestProjectionService service =
-            new InformationRequestProjectionService(requests, attachments);
+            new InformationRequestProjectionService(requests, attachments, attachmentReferenceService);
 
     @Test
     void pendingProjectionSeparatesCitizenFieldsFromStaffContext() {
@@ -36,13 +37,27 @@ class InformationRequestProjectionServiceTest {
         request.setDueAt(Instant.parse("2026-09-22T10:00:00Z"));
         when(requests.findByTicketIdAndStatus(ticketId, InformationRequestStatus.PENDING))
                 .thenReturn(Optional.of(request));
+        Attachment contextAttachment = new Attachment();
+        contextAttachment.setId(7L);
+        contextAttachment.setFileName("context.pdf");
+        contextAttachment.setContentType("application/pdf");
+        contextAttachment.setSizeBytes(12);
+        contextAttachment.setVisibility(MessageVisibility.PUBLIC);
+        contextAttachment.setCreatedAt(request.getRequestedAt());
+        InformationRequestAttachment link = new InformationRequestAttachment();
+        link.setInformationRequest(request);
+        link.setAttachment(contextAttachment);
+        link.setRole(InformationAttachmentRole.REQUEST_CONTEXT);
         when(attachments.findAllByInformationRequest_IdAndRoleOrderByAttachment_CreatedAtAsc(
-                request.getId(), InformationAttachmentRole.REQUEST_CONTEXT)).thenReturn(List.of());
+                request.getId(), InformationAttachmentRole.REQUEST_CONTEXT)).thenReturn(List.of(link));
+        when(attachmentReferenceService.downloadUrl(contextAttachment))
+                .thenReturn("https://m2.example/api/attachments/7/content");
 
         var projection = service.findPending(ticketId);
 
         assertEquals("Adjunte una foto", projection.citizen().messageForCitizen());
-        assertEquals(List.of(), projection.citizen().attachments());
+        assertEquals("https://m2.example/api/attachments/7/content",
+                projection.citizen().attachments().getFirst().getDownloadUrl());
         assertEquals("Contexto privado", projection.staff().internalMessage());
         assertEquals("M6", projection.staff().requestedByModuleId());
         assertEquals(ActorType.EXTERNAL_USER, projection.staff().requestedByActorType());

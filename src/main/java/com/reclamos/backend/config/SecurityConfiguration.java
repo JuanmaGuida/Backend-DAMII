@@ -73,6 +73,7 @@ public class SecurityConfiguration {
                                 "/api/catalog/subcategories/{subcategoryId}/request-types",
                                 "/api/catalog/request-types/{requestTypeId}/form").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/auth/me").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/attachments/*/content").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/staff/labels", "/api/staff/labels/*")
                         .hasAnyRole("AGENT", "ADMIN")
                         .requestMatchers("/api/staff/labels/**").hasRole("ADMIN")
@@ -141,7 +142,8 @@ public class SecurityConfiguration {
                                 "/api/tracking/actions/cancel",
                                 "/api/tracking/actions/information-response",
                                 "/api/tracking/actions/confirm-resolution",
-                                "/api/tracking/actions/reopen").permitAll()
+                                "/api/tracking/actions/reopen",
+                                "/api/tracking/actions/attachments/*/content").permitAll()
                         // El simulador sólo existe cuando app.simulator.enabled=true y aun
                         // entonces requiere una sesión válida; nunca queda público por accidente.
                         .requestMatchers(HttpMethod.POST, "/api/tickets/*/simulate-status-update").authenticated()

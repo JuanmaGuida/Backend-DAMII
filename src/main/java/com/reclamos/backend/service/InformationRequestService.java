@@ -36,6 +36,7 @@ public class InformationRequestService {
     private final TicketSlaService ticketSlaService;
     private final TicketOutboxService ticketOutboxService;
     private final AttachmentService attachmentService;
+    private final AttachmentReferenceService attachmentReferenceService;
     private final InformationRequestAttachmentRepository informationRequestAttachmentRepository;
 
     @Transactional
@@ -253,7 +254,8 @@ public class InformationRequestService {
                 request.getResponseMessage(), request.getAnsweredAt(),
                 attachments.stream().map(attachment -> new com.reclamos.backend.dto.response.TicketAttachmentResponse(
                         attachment.getId(), attachment.getFileName(), attachment.getContentType(),
-                        attachment.getSizeBytes(), attachment.getVisibility(), attachment.getCreatedAt())).toList());
+                        attachment.getSizeBytes(), attachment.getVisibility(), attachment.getCreatedAt(),
+                        attachmentReferenceService.downloadUrl(attachment))).toList());
     }
 
     private List<AttachmentService.ValidatedAttachment> validateAnswer(

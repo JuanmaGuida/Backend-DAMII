@@ -114,6 +114,8 @@ class TicketServiceTest {
     private InformationRequestProjectionService informationRequestProjectionService;
     private final AttachmentService attachments = mock(AttachmentService.class);
     @Mock
+    private AttachmentReferenceService attachmentReferenceService;
+    @Mock
     private AnonymousTicketCredentialService anonymousTicketCredentialService;
     @Mock
     private AnonymousContactValidator anonymousContactValidator;
@@ -171,6 +173,9 @@ class TicketServiceTest {
                 });
 
         lenient().when(attachments.storeForTicket(any(), any(), anyList(), any())).thenReturn(List.of());
+        lenient().when(attachmentReferenceService.downloadUrl(any()))
+                .thenAnswer(invocation -> "https://m2.example/api/attachments/"
+                        + ((Attachment) invocation.getArgument(0)).getId() + "/content");
     }
 
     // ==================================================================
