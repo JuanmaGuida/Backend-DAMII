@@ -1,16 +1,11 @@
 package com.reclamos.backend.controller;
 
-import com.reclamos.backend.exception.EvidenceRequiredException;
-import com.reclamos.backend.exception.GlobalExceptionHandler;
-import com.reclamos.backend.exception.InformationRequestConflictException;
-import com.reclamos.backend.exception.AttachmentStorageUnavailableException;
-import com.reclamos.backend.exception.UnsupportedAttachmentMediaTypeException;
-import com.reclamos.backend.exception.UnauthorizedTicketOperationException;
+import com.reclamos.backend.exception.*;
 import com.reclamos.backend.identity.AuthenticatedIdentity;
 import com.reclamos.backend.service.InformationRequestService;
+import com.reclamos.backend.service.SatisfactionSurveyService;
 import com.reclamos.backend.service.TicketService;
 import com.reclamos.backend.service.TicketResolutionService;
-import com.reclamos.backend.exception.TicketResolutionConflictException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
@@ -38,12 +33,14 @@ class TicketControllerErrorTest {
     private final TicketService ticketService = mock(TicketService.class);
     private final InformationRequestService informationRequestService = mock(InformationRequestService.class);
     private final TicketResolutionService ticketResolutionService = mock(TicketResolutionService.class);
+    private final SatisfactionSurveyService satisfactionSurveyService = mock(SatisfactionSurveyService.class);
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
         mockMvc = MockMvcBuilders.standaloneSetup(
-                        new TicketController(ticketService, informationRequestService, ticketResolutionService))
+                        new TicketController(ticketService, informationRequestService, ticketResolutionService,
+                                satisfactionSurveyService))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
                 .build();
@@ -86,6 +83,35 @@ class TicketControllerErrorTest {
                 .andExpect(jsonPath("$.message").value("Estado incompatible"))
                 .andExpect(jsonPath("$.length()").value(2));
     }
+
+    @Test
+    void satisfactionSurveyValidatesScore() throws Exception {
+        String endpoint = "/api/tickets/10000000-0000-0000-0000-000000000001/satisfaction-survey";
+        for (String body : new String[]{"{}", "{\"score\":0}", "{\"score\":6}"}) {
+            mockMvc.perform(post(endpoint).contentType(MediaType.APPLICATION_JSON).content(body))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+        }
+        verifyNoInteractions(satisfactionSurveyService);
+    }
+
+    @Test
+    void satisfactionSurveyUsesControlledBusinessErrors() throws Exception {
+        String endpoint = "/api/tickets/10000000-0000-0000-0000-000000000001/satisfaction-survey";
+        when(satisfactionSurveyService.create(any(), any(), nullable(AuthenticatedIdentity.class)))
+                .thenThrow(new SatisfactionSurveyConflictException("Ticket no cerrado"))
+                .thenThrow(new UnauthorizedTicketOperationException())
+                .thenThrow(new ResourceNotFoundException("Ticket no encontrado"));
+
+        mockMvc.perform(post(endpoint).contentType(MediaType.APPLICATION_JSON).content("{\"score\":5}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("SATISFACTION_SURVEY_CONFLICT"));
+        mockMvc.perform(post(endpoint).contentType(MediaType.APPLICATION_JSON).content("{\"score\":5}"))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post(endpoint).contentType(MediaType.APPLICATION_JSON).content("{\"score\":5}"))
+                .andExpect(status().isNotFound());
+    }
+
 
     @Test
     void resolutionRequiresTypeAndNonBlankPublicMessage() throws Exception {

@@ -74,6 +74,7 @@ class OpenApiContractTest {
             "POST /api/tickets/{ticketId}/resolution",
             "POST /api/tickets/{ticketId}/resolution/confirm",
             "POST /api/tickets/{ticketId}/resolution/reopen",
+            "POST /api/tickets/{ticketId}/satisfaction-survey",
             "POST /api/tickets/{ticketId}/cancel",
             "POST /api/tracking/access",
             "POST /api/tracking/actions/cancel",
@@ -121,6 +122,7 @@ class OpenApiContractTest {
             "POST /api/tickets/{ticketId}/resolution",
             "POST /api/tickets/{ticketId}/resolution/confirm",
             "POST /api/tickets/{ticketId}/resolution/reopen",
+            "POST /api/tickets/{ticketId}/satisfaction-survey",
             "POST /api/tickets/{ticketId}/cancel"
     );
     private static final Set<String> RESPONSE_SCHEMAS_WITH_STABLE_PRESENCE = Set.of(
@@ -137,6 +139,7 @@ class OpenApiContractTest {
             "InformationRequestResponse",
             "TicketResolutionResponse",
             "TicketResolutionActionResponse",
+            "SatisfactionSurveyResponse",
             "TicketDetailResponse",
             "TicketAttachmentResponse",
             "TicketActivityResponse",
@@ -172,7 +175,7 @@ class OpenApiContractTest {
     void versionedFileIsAValidOpenApi3DocumentWithExactlyTheCurrentBusinessOperations() {
         assertTrue(string(spec.get("openapi")).startsWith("3."));
         assertEquals("3.0.3", parsedOpenApi.getOpenapi());
-        assertEquals(47, parsedOpenApi.getPaths().size());
+        assertEquals(48, parsedOpenApi.getPaths().size());
         assertNotNull(map(spec, "info").get("title"));
         assertNotNull(map(spec, "components").get("schemas"));
         assertEquals(EXPECTED_OPERATIONS, documentedOperations());

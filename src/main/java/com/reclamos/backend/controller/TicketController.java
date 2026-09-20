@@ -10,6 +10,7 @@ import com.reclamos.backend.entity.TicketStatus;
 import com.reclamos.backend.exception.InvalidAuthenticationException;
 import com.reclamos.backend.identity.AuthenticatedIdentity;
 import com.reclamos.backend.service.InformationRequestService;
+import com.reclamos.backend.service.SatisfactionSurveyService;
 import com.reclamos.backend.service.TicketResolutionService;
 import com.reclamos.backend.service.TicketService;
 import jakarta.validation.Valid;
@@ -38,6 +39,7 @@ public class TicketController {
     private final TicketService ticketService;
     private final InformationRequestService informationRequestService;
     private final TicketResolutionService ticketResolutionService;
+    private final SatisfactionSurveyService satisfactionSurveyService;
 
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<CreateTicketResponse> create(
@@ -173,6 +175,15 @@ public class TicketController {
             @Valid @RequestBody ReopenTicketRequest request,
             @AuthenticationPrincipal AuthenticatedIdentity identity) {
         return ticketResolutionService.reopen(ticketId, request, identity);
+    }
+
+    @PostMapping(path = "/{ticketId}/satisfaction-survey", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @ResponseStatus(HttpStatus.CREATED)
+    public SatisfactionSurveyResponse createSatisfactionSurvey(
+            @PathVariable UUID ticketId,
+            @Valid @RequestBody SatisfactionSurveyRequest request,
+            @AuthenticationPrincipal AuthenticatedIdentity identity) {
+        return satisfactionSurveyService.create(ticketId, request, identity);
     }
 
     /**
