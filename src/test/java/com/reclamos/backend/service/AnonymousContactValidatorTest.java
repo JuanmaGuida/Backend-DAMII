@@ -43,6 +43,25 @@ class AnonymousContactValidatorTest {
                 () -> validator.validate(contact(AnonymousContactChannel.PHONE, "1234567890123456")));
     }
 
+    @Test
+    void contactLengthMatchesThe254CharacterPersistenceContract() {
+        String email254 = "a".repeat(64) + "@" + "b".repeat(63) + "."
+                + "c".repeat(63) + "." + "d".repeat(57) + ".com";
+
+        assertEquals(254, email254.length());
+        assertEquals(email254, validator.validate(contact(AnonymousContactChannel.EMAIL, email254)).value());
+        assertThrows(InvalidTicketRequestException.class,
+                () -> validator.validate(contact(AnonymousContactChannel.EMAIL, "x" + email254)));
+    }
+
+    @Test
+    void requestContactToStringRedactsChannelAndValue() {
+        var contact = contact(AnonymousContactChannel.EMAIL, "private@example.test");
+
+        assertFalse(contact.toString().contains("EMAIL"));
+        assertFalse(contact.toString().contains("private@example.test"));
+    }
+
     private CreateTicketRequest.AnonymousContact contact(AnonymousContactChannel channel, String value) {
         return new CreateTicketRequest.AnonymousContact(channel, value);
     }

@@ -13,6 +13,6 @@ public record AnonymousContactResponse(
 ) {
     @Override
     public String toString() {
-        return "AnonymousContactResponse[channel=" + channel + ", value=<redacted>]";
+        return "AnonymousContactResponse[channel=<redacted>, value=<redacted>]";
     }
 }

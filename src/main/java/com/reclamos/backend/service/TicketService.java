@@ -404,7 +404,7 @@ public class TicketService {
 
         ActorType actorType = isOwnTicket ? ActorType.CITIZEN
                 : (actor.role() == ModuleRole.ADMIN ? ActorType.ADMIN : ActorType.AGENT);
-        return cancelTicket(ticket, request, actorType, actor.citizenId().toString(), isOwnTicket);
+        return cancelTicket(ticket, request, actorType, actor.citizenId().toString(), isOwnTicket, true);
     }
 
     @Transactional
@@ -413,11 +413,11 @@ public class TicketService {
         if (!ticket.isAnonymous() || ticket.getCitizenId() != null) {
             throw new UnauthorizedTicketOperationException();
         }
-        return cancelTicket(ticket, request, ActorType.CITIZEN, null, true);
+        return cancelTicket(ticket, request, ActorType.CITIZEN, null, true, false);
     }
 
     private TicketResponse cancelTicket(Ticket ticket, CancelTicketRequest request, ActorType actorType,
-                                        String actorId, boolean ownerAction) {
+                                        String actorId, boolean ownerAction, boolean publishCancellation) {
         if (ownerAction && ticket.getCurrentStatus() != TicketStatus.REGISTERED) {
             throw new TicketStateConflictException(
                     "El ticket está en estado " + ticket.getCurrentStatus()
@@ -455,12 +455,12 @@ public class TicketService {
         recordCancellationActivity(ticket, previousStatus, actorType, actorId, request.getReasonCode(),
                 request.getPublicMessage() != null ? request.getPublicMessage() : request.getInternalMessage(), now);
 
-        // Eventos V1.69 §2.1/§7.7: sólo tickets identificados publican
-        // ticketUpdated/CANCELLED acá. En este punto (pre-ROUTED) nunca hubo
-        // un área externa involucrada, así que a diferencia de routeToArea
-        // no hay ningún gate por SELF_MANAGED_AREA_ID — lo único que importa
-        // es si M1 tiene que actualizar su proyección.
-        ticketOutboxService.cancelled(ticket, request.getReasonCode(), request.getPublicMessage(), true, now);
+        // La cancelación directa del propietario anónimo ocurre únicamente en
+        // REGISTERED, antes de ROUTED, por lo que no existe un consumidor externo.
+        // Los flujos identificados y administrativos conservan su política previa.
+        if (publishCancellation) {
+            ticketOutboxService.cancelled(ticket, request.getReasonCode(), request.getPublicMessage(), true, now);
+        }
 
         return toResponse(ticket, locationRepository.findByTicket_Id(ticket.getId()).orElse(null));
     }

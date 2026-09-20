@@ -27,6 +27,11 @@ class AnonymousTicketCredentialsMigrationIntegrationTest {
         JdbcTemplate database = new JdbcTemplate(dataSource);
         try {
             flyway(schema, "37").migrate();
+            assertEquals(254, database.queryForObject(
+                    "SELECT character_maximum_length FROM information_schema.columns "
+                            + "WHERE table_schema=? AND table_name='tickets' "
+                            + "AND column_name='anonymous_contact_value'",
+                    Integer.class, schema));
             UUID citizenId = UUID.randomUUID();
             insertModuleUser(database, schema, citizenId);
 
