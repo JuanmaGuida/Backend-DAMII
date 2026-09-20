@@ -19,6 +19,8 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.RequestPart;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/api/tracking")
@@ -57,6 +59,17 @@ public class TrackingController {
                 request.trackingCode(), request.anonymousAccessPassword());
         return noStore(informationRequestService.answerAnonymousFromTracking(
                 access.ticketId(), request.payload()));
+    }
+
+    @PostMapping(value = "/actions/information-response", consumes = MediaType.MULTIPART_FORM_DATA_VALUE,
+            produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<InformationRequestResponse> answerInformationMultipart(
+            @Valid @RequestPart("data") AnonymousTicketActionRequest<@Valid AnswerInformationRequest> request,
+            @RequestPart(value = "attachments", required = false) MultipartFile[] attachments) {
+        var access = anonymousTicketAccessService.authenticate(
+                request.trackingCode(), request.anonymousAccessPassword());
+        return noStore(informationRequestService.answerAnonymousFromTracking(
+                access.ticketId(), request.payload(), attachments));
     }
 
     @PostMapping(value = "/actions/confirm-resolution", consumes = MediaType.APPLICATION_JSON_VALUE,

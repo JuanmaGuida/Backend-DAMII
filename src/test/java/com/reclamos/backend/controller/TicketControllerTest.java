@@ -34,6 +34,8 @@ import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.mock.web.MockPart;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
@@ -43,10 +45,12 @@ import java.time.Instant;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -413,6 +417,25 @@ class TicketControllerTest {
                         .content("{\"reasonCode\":\"" + CancellationReasonCode.OUT_OF_SCOPE + "\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.currentStatus").value("CANCELLED"));
+    }
+
+    @Test
+    void identifiedInformationResponseAcceptsMultipartDataAndAttachments() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+        MockPart data = new MockPart("data", "{\"responseMessage\":\"Detalle\"}".getBytes());
+        data.getHeaders().setContentType(MediaType.APPLICATION_JSON);
+        MockMultipartFile attachment = new MockMultipartFile(
+                "attachments", "proof.png", "image/png", new byte[]{1});
+
+        mockMvc.perform(multipart("/api/tickets/{ticketId}/information-response", ticketId)
+                        .file(attachment)
+                        .part(data)
+                        .with(authentication(CITIZEN_AUTHENTICATION)))
+                .andExpect(status().isOk());
+
+        verify(informationRequestService).answerInformation(eq(ticketId), any(), eq(CITIZEN),
+                org.mockito.ArgumentMatchers.argThat(files -> files.length == 1
+                        && "proof.png".equals(files[0].getOriginalFilename())));
     }
 
     @Test

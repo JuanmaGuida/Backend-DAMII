@@ -84,6 +84,7 @@ public class TicketService {
     private final TicketCancellationRepository cancellationRepository;
     private final TicketSlaService ticketSlaService;
     private final InformationRequestService informationRequestService;
+    private final InformationRequestProjectionService informationRequestProjectionService;
     private final FormValidationService formValidationService;
     private final RiskCalculationService riskCalculationService;
     private final TicketOutboxService ticketOutboxService;
@@ -775,6 +776,13 @@ public class TicketService {
         detail.setStatusChangedAt(base.getStatusChangedAt());
         detail.setCreatedAt(base.getCreatedAt());
         detail.setUpdatedAt(base.getUpdatedAt());
+
+        InformationRequestProjectionService.Projection pending =
+                informationRequestProjectionService.findPending(ticket.getId());
+        detail.setPendingInformationRequest(pending == null ? null : pending.citizen());
+        if (detail instanceof StaffTicketDetailResponse staffDetail) {
+            staffDetail.setPendingInformationRequestContext(pending == null ? null : pending.staff());
+        }
 
         List<Attachment> attachments = staffView
                 ? attachmentRepository.findAllByTicket_IdOrderByCreatedAtAsc(ticket.getId())

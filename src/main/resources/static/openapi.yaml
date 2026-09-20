@@ -1264,6 +1264,18 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/AnswerInformationRequest'
+          multipart/form-data:
+            schema:
+              type: object
+              required: [data]
+              properties:
+                data:
+                  $ref: '#/components/schemas/AnswerInformationRequest'
+                attachments:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
       responses:
         '200':
           description: Solicitud de información respondida.
@@ -1506,7 +1518,7 @@ paths:
     post:
       tags: [Tracking]
       summary: Responder una solicitud de información de un ticket anónimo
-      description: Acredita al propietario anónimo y reutiliza la respuesta textual existente. No admite archivos.
+      description: Acredita al propietario anónimo y admite respuesta con texto, archivos o ambos.
       operationId: answerAnonymousInformationRequest
       security: []
       requestBody:
@@ -1515,6 +1527,18 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/AnonymousInformationResponseRequest'
+          multipart/form-data:
+            schema:
+              type: object
+              required: [data]
+              properties:
+                data:
+                  $ref: '#/components/schemas/AnonymousInformationResponseRequest'
+                attachments:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
       responses:
         '200':
           description: Solicitud respondida.
@@ -2392,7 +2416,7 @@ components:
                  escalatedAt, firstResponseDueAt, firstResponseNearDue, firstResponseBreached,
                  resolutionDueAt, slaNearDue, slaBreached, resolutionNearDueAt, neighborhoodName,
                  classificationFinalizedAt, statusChangedAt, createdAt, updatedAt, attachments,
-                 ticketActivities, labels]
+                 ticketActivities, labels, pendingInformationRequest]
       properties:
         id:
           type: string
@@ -2488,6 +2512,10 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/LabelSummaryResponse'
+        pendingInformationRequest:
+          allOf:
+            - $ref: '#/components/schemas/PendingInformationRequestResponse'
+          nullable: true
     StaffTicketDetailResponse:
       description: |
         Detalle interno. Extiende la proyección común con el contacto privado
@@ -2501,6 +2529,10 @@ components:
             anonymousContact:
               allOf:
                 - $ref: '#/components/schemas/AnonymousContact'
+              nullable: true
+            pendingInformationRequestContext:
+              allOf:
+                - $ref: '#/components/schemas/StaffInformationRequestContextResponse'
               nullable: true
     TicketAttachmentResponse:
       type: object
@@ -2690,14 +2722,15 @@ components:
       additionalProperties: false
     AnswerInformationRequest:
       type: object
-      required: [responseMessage]
       properties:
         responseMessage:
           type: string
+          nullable: true
+          description: Opcional cuando se adjunta al menos un archivo válido.
       additionalProperties: false
     InformationRequestResponse:
       type: object
-      required: [informationRequestId, ticketId, status, messageForCitizen, requestedAt, dueAt, resumeStatus, responseMessage, answeredAt]
+      required: [informationRequestId, ticketId, status, messageForCitizen, requestedAt, dueAt, resumeStatus, responseMessage, answeredAt, attachments]
       properties:
         informationRequestId:
           type: string
@@ -2724,6 +2757,41 @@ components:
           type: string
           format: date-time
           nullable: true
+        attachments:
+          type: array
+          items:
+            $ref: '#/components/schemas/TicketAttachmentResponse'
+    PendingInformationRequestResponse:
+      type: object
+      required: [status, messageForCitizen, requestedAt, dueAt, attachments]
+      properties:
+        status:
+          $ref: '#/components/schemas/InformationRequestStatus'
+        messageForCitizen:
+          type: string
+        requestedAt:
+          type: string
+          format: date-time
+        dueAt:
+          type: string
+          format: date-time
+        attachments:
+          type: array
+          items:
+            $ref: '#/components/schemas/TicketAttachmentResponse'
+    StaffInformationRequestContextResponse:
+      type: object
+      required: [internalMessage, requestedByModuleId, requestedByActorType, resumeStatus]
+      properties:
+        internalMessage:
+          type: string
+          nullable: true
+        requestedByModuleId:
+          type: string
+        requestedByActorType:
+          $ref: '#/components/schemas/ActorType'
+        resumeStatus:
+          $ref: '#/components/schemas/TicketStatus'
     ResolveTicketRequest:
       type: object
       required: [ type, publicMessage ]
@@ -2846,7 +2914,7 @@ components:
               $ref: '#/components/schemas/ReopenTicketRequest'
     TrackingTicketResponse:
       type: object
-      required: [publicId, status, summary, createdAt, statusChangedAt, requestType, category, subcategory, sla]
+      required: [publicId, status, summary, createdAt, statusChangedAt, requestType, category, subcategory, sla, pendingInformationRequest]
       properties:
         publicId:
           $ref: '#/components/schemas/TicketPublicId'
@@ -2868,6 +2936,10 @@ components:
           $ref: '#/components/schemas/TrackingSubcategorySummary'
         sla:
           $ref: '#/components/schemas/TrackingSlaSummary'
+        pendingInformationRequest:
+          allOf:
+            - $ref: '#/components/schemas/PendingInformationRequestResponse'
+          nullable: true
     TrackingSlaSummary:
       type: object
       required: [ firstResponseDueAt, resolutionDueAt ]
