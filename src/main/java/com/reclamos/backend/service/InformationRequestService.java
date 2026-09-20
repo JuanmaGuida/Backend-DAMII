@@ -61,9 +61,11 @@ public class InformationRequestService {
                                                         String messageForCitizen, String internalMessage,
                                                         Instant requestedAt, Instant requiredBy,
                                                         UUID externalEventId) {
-        Instant defaultDueAt = deadlineService.calculateDueAt(requestedAt);
-        if (requiredBy != null && !requiredBy.isAfter(requestedAt)) {
-            throw new InvalidTicketRequestException("details.informationRequest.requiredBy debe ser posterior a updateOccurredAt");
+        Instant m2Now = deadlineService.now();
+        Instant defaultDueAt = deadlineService.calculateDueAt(m2Now);
+        if (requiredBy != null && !requiredBy.isAfter(m2Now)) {
+            throw new InvalidTicketRequestException(
+                    "details.informationRequest.requiredBy debe ser posterior al momento actual de M2");
         }
         Instant dueAt = requiredBy == null || requiredBy.isAfter(defaultDueAt) ? defaultDueAt : requiredBy;
         return createPending(lockedTicket, new InformationRequestApplication(
@@ -246,9 +248,9 @@ public class InformationRequestService {
     }
 
     private InformationRequestResponse response(InformationRequest request, List<Attachment> attachments) {
-        return new InformationRequestResponse(request.getId(), request.getTicket().getId(), request.getStatus(),
+        return new InformationRequestResponse(request.getStatus(), request.getTicket().getCurrentStatus(),
                 request.getMessageForCitizen(), request.getRequestedAt(), request.getDueAt(),
-                request.getResumeStatus(), request.getResponseMessage(), request.getAnsweredAt(),
+                request.getResponseMessage(), request.getAnsweredAt(),
                 attachments.stream().map(attachment -> new com.reclamos.backend.dto.response.TicketAttachmentResponse(
                         attachment.getId(), attachment.getFileName(), attachment.getContentType(),
                         attachment.getSizeBytes(), attachment.getVisibility(), attachment.getCreatedAt())).toList());

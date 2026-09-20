@@ -338,6 +338,12 @@ class OpenApiContractTest {
                 Set.copyOf(list(map(schemas, "EscalationReasonCode"), "enum")));
         assertEquals(Set.of("PENDING", "ANSWERED", "EXPIRED", "CANCELLED"),
                 Set.copyOf(list(map(schemas, "InformationRequestStatus"), "enum")));
+        Map<String, Object> informationResponse = map(schemas, "InformationRequestResponse", "properties");
+        assertTrue(informationResponse.containsKey("currentStatus"));
+        assertFalse(informationResponse.containsKey("informationRequestId"));
+        assertFalse(informationResponse.containsKey("resumeStatus"));
+        assertFalse(informationResponse.containsKey("internalMessage"));
+        assertFalse(informationResponse.containsKey("requestedByActorId"));
     }
 
     @Test

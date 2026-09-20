@@ -59,9 +59,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ActiveProfiles("dev")
 class SecurityHardeningIntegrationTest {
     private static final UUID TICKET_ID = UUID.fromString("20000000-0000-0000-0000-000000000001");
-    private static final UUID INFORMATION_REQUEST_ID =
-            UUID.fromString("30000000-0000-0000-0000-000000000001");
-
     @Autowired
     private MockMvc mockMvc;
 
@@ -117,11 +114,12 @@ class SecurityHardeningIntegrationTest {
         when(ticketService.create(any(), any(), any())).thenReturn(new CreateTicketResponse(
                 TICKET_ID, "TK-2026-000123", "tracking-code", TicketStatus.REGISTERED));
         InformationRequestResponse informationResponse = new InformationRequestResponse(
-                INFORMATION_REQUEST_ID, TICKET_ID, InformationRequestStatus.PENDING, "Dato requerido",
+                InformationRequestStatus.PENDING, TicketStatus.PENDING_INFORMATION, "Dato requerido",
                 Instant.parse("2026-09-01T10:00:00Z"), Instant.parse("2026-09-04T10:00:00Z"),
-                TicketStatus.IN_PROGRESS, null, null);
+                null, null);
         when(informationRequestService.requestInformation(any(), any(), any())).thenReturn(informationResponse);
         when(informationRequestService.answerInformation(any(), any(), any())).thenReturn(informationResponse);
+        when(informationRequestService.answerAnonymousFromTracking(any(), any())).thenReturn(informationResponse);
         when(ticketResolutionService.resolveManually(any(), any(), any())).thenReturn(new TicketResolutionResponse(
                 UUID.randomUUID(), TICKET_ID, TicketStatus.RESOLVED, ResolutionType.ACTION_COMPLETED,
                 "Listo", null, Instant.parse("2026-09-01T10:00:00Z")));
@@ -160,7 +158,10 @@ class SecurityHardeningIntegrationTest {
         mockMvc.perform(post("/api/tracking/actions/information-response")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(anonymousAction("{\"responseMessage\":\"Respuesta\"}")))
-                .andExpect(status().isOk());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.currentStatus").value("PENDING_INFORMATION"))
+                .andExpect(jsonPath("$.informationRequestId").doesNotExist())
+                .andExpect(jsonPath("$.resumeStatus").doesNotExist());
         mockMvc.perform(post("/api/tracking/actions/confirm-resolution")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(anonymousCredentials()))
@@ -310,7 +311,11 @@ class SecurityHardeningIntegrationTest {
         mockMvc.perform(withBearer(ticketJsonRequest(), token)).andExpect(status().isCreated());
         mockMvc.perform(withBearer(multipartTicketRequest(), token)).andExpect(status().isCreated());
         mockMvc.perform(withBearer(informationRequest(), token)).andExpect(status().isCreated());
-        mockMvc.perform(withBearer(informationResponse(), token)).andExpect(status().isOk());
+        mockMvc.perform(withBearer(informationResponse(), token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.currentStatus").value("PENDING_INFORMATION"))
+                .andExpect(jsonPath("$.informationRequestId").doesNotExist())
+                .andExpect(jsonPath("$.resumeStatus").doesNotExist());
         mockMvc.perform(withBearer(resolutionRequest(), token)).andExpect(status().isCreated());
         mockMvc.perform(withBearer(confirmResolutionRequest(), token)).andExpect(status().isOk());
         mockMvc.perform(withBearer(reopenResolutionRequest(), token)).andExpect(status().isOk());
