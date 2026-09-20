@@ -88,9 +88,11 @@ class TrackingServiceTest {
     @Test
     void publicDtoContainsNoReservedPropertiesIncludingNestedInternalIds() {
         Set<String> forbidden = Set.of("ticketId", "citizenId", "subjectId", "trackingCode", "trackingCodeHash",
-                "trackingAccessCode",
+                "trackingAccessCode", "anonymousAccessPassword", "anonymousAccessPasswordHash",
+                "anonymousContact", "anonymousContactChannel", "anonymousContactValue",
                 "riskScore", "riskLevel", "internalMessage", "actorId", "resolvedById", "sourceModuleId",
-                "responsibleAreaId", "firstResponseDueAt", "resolutionDueAt", "policyId", "cycleNumber");        Set<String> fieldNames = Arrays.stream(TrackingTicketResponse.class.getDeclaredFields())
+                "responsibleAreaId", "firstResponseDueAt", "resolutionDueAt", "policyId", "cycleNumber");
+        Set<String> fieldNames = Arrays.stream(TrackingTicketResponse.class.getDeclaredFields())
                 .map(java.lang.reflect.Field::getName).collect(java.util.stream.Collectors.toSet());
         assertTrueNoIntersection(fieldNames, forbidden);
         assertFalse(Arrays.stream(TrackingTicketResponse.RequestTypeSummary.class.getDeclaredFields())

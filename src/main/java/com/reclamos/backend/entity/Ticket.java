@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import lombok.ToString;
 import org.hibernate.annotations.Check;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -63,7 +64,21 @@ public class Ticket {
     private String publicId;
 
     @Column(name = "tracking_code_hash", nullable = false, length = 255)
+    @ToString.Exclude
     private String trackingCodeHash;
+
+    @Column(name = "anonymous_access_password_hash", length = 255)
+    @ToString.Exclude
+    private String anonymousAccessPasswordHash;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "anonymous_contact_channel", length = 20)
+    @ToString.Exclude
+    private AnonymousContactChannel anonymousContactChannel;
+
+    @Column(name = "anonymous_contact_value", length = 254)
+    @ToString.Exclude
+    private String anonymousContactValue;
 
     @Column(name = "citizen_id")
     private UUID citizenId;

@@ -4,10 +4,10 @@ import com.reclamos.backend.config.SecurityConfiguration;
 import com.reclamos.backend.dto.response.TrackingTicketResponse;
 import com.reclamos.backend.entity.TicketStatus;
 import com.reclamos.backend.exception.GlobalExceptionHandler;
+import com.reclamos.backend.exception.InvalidAnonymousTicketCredentialsException;
 import com.reclamos.backend.exception.TrackingTicketNotFoundException;
 import com.reclamos.backend.security.BearerTokenAuthenticationFilter;
-import com.reclamos.backend.service.AuthService;
-import com.reclamos.backend.service.TrackingService;
+import com.reclamos.backend.service.*;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -18,10 +18,13 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.Instant;
+import java.util.UUID;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
-import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -39,6 +42,14 @@ class TrackingControllerTest {
 
     @MockitoBean
     private TrackingService trackingService;
+    @MockitoBean
+    private AnonymousTicketAccessService anonymousTicketAccessService;
+    @MockitoBean
+    private TicketService ticketService;
+    @MockitoBean
+    private InformationRequestService informationRequestService;
+    @MockitoBean
+    private TicketResolutionService ticketResolutionService;
     @MockitoBean
     private AuthService authService;
 
@@ -69,6 +80,8 @@ class TrackingControllerTest {
                 .andExpect(content().string(not(containsString("trackingCode\""))))
                 .andExpect(content().string(not(containsString("trackingCodeHash"))))
                 .andExpect(content().string(not(containsString("trackingAccessCode"))))
+                .andExpect(content().string(not(containsString("anonymousAccessPassword"))))
+                .andExpect(content().string(not(containsString("anonymousContact"))))
                 .andExpect(content().string(not(containsString("responsibleAreaId"))))
                 .andExpect(content().string(not(containsString("riskScore"))))
                 .andExpect(content().string(not(containsString("riskLevel"))))
@@ -95,6 +108,106 @@ class TrackingControllerTest {
         }
     }
 
+    @Test
+    void accessWithPasswordRequiresAnonymousCredentialsAndKeepsTheSameReadOnlyResponse() throws Exception {
+        when(anonymousTicketAccessService.authenticate(CODE, "correct-password"))
+                .thenReturn(new AnonymousTicketAccessService.AnonymousTicketAccess(UUID.randomUUID()));
+        when(trackingService.findByTrackingCode(CODE)).thenReturn(response());
+
+        mockMvc.perform(post("/api/tracking/access")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"trackingCode":"%s","anonymousAccessPassword":"correct-password"}
+                                """.formatted(CODE)))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, containsString("no-store")))
+                .andExpect(jsonPath("$.publicId").value("TK-2026-000123"))
+                .andExpect(content().string(not(containsString("anonymousAccessPassword"))));
+    }
+
+    @Test
+    void invalidAnonymousCredentialsAreUniformAndDoNotInvokeAnAction() throws Exception {
+        when(anonymousTicketAccessService.authenticate(CODE, "wrong-password"))
+                .thenThrow(new InvalidAnonymousTicketCredentialsException());
+
+        mockMvc.perform(post("/api/tracking/actions/cancel")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "trackingCode":"%s",
+                                  "anonymousAccessPassword":"wrong-password",
+                                  "payload":{"reasonCode":"WITHDRAWN_BY_CITIZEN"}
+                                }
+                                """.formatted(CODE)))
+                .andExpect(status().isUnauthorized())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, containsString("no-store")))
+                .andExpect(jsonPath("$.code").value(InvalidAnonymousTicketCredentialsException.CODE))
+                .andExpect(content().string(not(containsString(CODE))))
+                .andExpect(content().string(not(containsString("wrong-password"))));
+
+        mockMvc.perform(post("/api/tracking/actions/information-response")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"trackingCode":"%s","anonymousAccessPassword":"wrong-password",
+                                 "payload":{"responseMessage":"Respuesta"}}
+                                """.formatted(CODE)))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/tracking/actions/confirm-resolution")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"trackingCode":"%s","anonymousAccessPassword":"wrong-password"}
+                                """.formatted(CODE)))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/tracking/actions/reopen")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"trackingCode":"%s","anonymousAccessPassword":"wrong-password",
+                                 "payload":{"reason":"Continúa"}}
+                                """.formatted(CODE)))
+                .andExpect(status().isUnauthorized());
+
+        verify(ticketService, never()).cancelAnonymousTicket(any(), any());
+        verify(informationRequestService, never()).answerAnonymousFromTracking(any(), any());
+        verify(ticketResolutionService, never()).confirmAnonymous(any());
+        verify(ticketResolutionService, never()).reopenAnonymous(any(), any());
+    }
+
+    @Test
+    void anonymousActionFacadesArePublicAndDelegateOnlyAfterAuthentication() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+        when(anonymousTicketAccessService.authenticate(CODE, "correct-password"))
+                .thenReturn(new AnonymousTicketAccessService.AnonymousTicketAccess(ticketId));
+
+        mockMvc.perform(post("/api/tracking/actions/cancel")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(actionJson("{\"reasonCode\":\"WITHDRAWN_BY_CITIZEN\"}")))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, containsString("no-store")));
+        mockMvc.perform(post("/api/tracking/actions/information-response")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(actionJson("{\"responseMessage\":\"Respuesta\"}")))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, containsString("no-store")));
+        mockMvc.perform(post("/api/tracking/actions/confirm-resolution")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"trackingCode":"%s","anonymousAccessPassword":"correct-password"}
+                                """.formatted(CODE)))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, containsString("no-store")));
+        mockMvc.perform(post("/api/tracking/actions/reopen")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(actionJson("{\"reason\":\"El problema continúa\"}")))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, containsString("no-store")));
+
+        verify(ticketService).cancelAnonymousTicket(eq(ticketId), any());
+        verify(informationRequestService).answerAnonymousFromTracking(eq(ticketId), any());
+        verify(ticketResolutionService).confirmAnonymous(ticketId);
+        verify(ticketResolutionService).reopenAnonymous(eq(ticketId), any());
+        verify(anonymousTicketAccessService, times(4)).authenticate(CODE, "correct-password");
+    }
+
     void formerPublicGetRouteIsNoLongerExposed() throws Exception {
         mockMvc.perform(get("/api/public/tickets/track/{trackingCode}", CODE))
                 .andExpect(status().isUnauthorized());
@@ -108,4 +221,10 @@ class TrackingControllerTest {
                 new TrackingTicketResponse.CategorySummary("Categoría"),
                 new TrackingTicketResponse.SubcategorySummary("Subcategoría"),
                 new TrackingTicketResponse.SlaSummary(null, null));    }
+
+    private String actionJson(String payload) {
+        return """
+                {"trackingCode":"%s","anonymousAccessPassword":"correct-password","payload":%s}
+                """.formatted(CODE, payload);
+    }
 }

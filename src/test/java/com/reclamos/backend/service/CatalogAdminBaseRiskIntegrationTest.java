@@ -210,6 +210,7 @@ class CatalogAdminBaseRiskIntegrationTest {
         ticket.setPublicId("BR-" + suffix.substring(0, 20));
         ticket.setTrackingCodeHash("base-risk-hash-" + suffix);
         ticket.setAnonymous(true);
+        ticket.setAnonymousAccessPasswordHash("test-only-anonymous-access-password-hash");
         ticket.setRequestType(requestType);
         ticket.setFormTemplateId(template.getId());
         ticket.setTicketType(requestType.getTicketType());

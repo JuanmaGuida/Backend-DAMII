@@ -7,6 +7,7 @@ import com.reclamos.backend.dto.request.*;
 import com.reclamos.backend.dto.response.*;
 import com.reclamos.backend.entity.Priority;
 import com.reclamos.backend.entity.TicketStatus;
+import com.reclamos.backend.exception.InvalidAuthenticationException;
 import com.reclamos.backend.identity.AuthenticatedIdentity;
 import com.reclamos.backend.service.InformationRequestService;
 import com.reclamos.backend.service.TicketResolutionService;
@@ -18,7 +19,10 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.CacheControl;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -36,19 +40,34 @@ public class TicketController {
     private final TicketResolutionService ticketResolutionService;
 
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
-    @ResponseStatus(HttpStatus.CREATED)
-    public CreateTicketResponse create(@Valid @RequestBody CreateTicketRequest request,
-                                       @AuthenticationPrincipal AuthenticatedIdentity identity) {
-        return ticketService.create(request, identity, new MultipartFile[0]);
+    public ResponseEntity<CreateTicketResponse> create(
+            @Valid @RequestBody CreateTicketRequest request,
+            @AuthenticationPrincipal AuthenticatedIdentity identity,
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorization) {
+        rejectInvalidPresentedAuthorization(authorization, identity);
+        return created(ticketService.create(request, identity, new MultipartFile[0]));
     }
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @ResponseStatus(HttpStatus.CREATED)
-    public CreateTicketResponse createMultipart(
+    public ResponseEntity<CreateTicketResponse> createMultipart(
             @Valid @RequestPart("data") CreateTicketRequest request,
             @RequestPart(value = "evidence", required = false) MultipartFile[] evidence,
-            @AuthenticationPrincipal AuthenticatedIdentity identity) {
-        return ticketService.create(request, identity, evidence);
+            @AuthenticationPrincipal AuthenticatedIdentity identity,
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorization) {
+        rejectInvalidPresentedAuthorization(authorization, identity);
+        return created(ticketService.create(request, identity, evidence));
+    }
+
+    private void rejectInvalidPresentedAuthorization(String authorization, AuthenticatedIdentity identity) {
+        if (authorization != null && identity == null) {
+            throw new InvalidAuthenticationException();
+        }
+    }
+
+    private ResponseEntity<CreateTicketResponse> created(CreateTicketResponse response) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .cacheControl(CacheControl.noStore())
+                .body(response);
     }
 
     /**
