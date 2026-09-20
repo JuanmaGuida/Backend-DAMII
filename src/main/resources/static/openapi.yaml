@@ -1443,6 +1443,74 @@ paths:
           $ref: '#/components/responses/TicketStateConflict'
         '415':
           $ref: '#/components/responses/UnsupportedMediaType'
+  /api/attachments/{attachmentId}/content:
+    get:
+      tags: [Attachments]
+      summary: Visualizar o descargar un adjunto autorizado
+      description: Resuelve el adjunto por su identificador público y valida ownership, rol, área y visibilidad antes de acceder al almacenamiento privado.
+      operationId: downloadAttachment
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: attachmentId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Contenido del adjunto.
+          headers:
+            Cache-Control:
+              schema: { type: string, example: no-store }
+            Content-Disposition:
+              schema: { type: string }
+            X-Content-Type-Options:
+              schema: { type: string, example: nosniff }
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '401': { $ref: '#/components/responses/InvalidToken' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/tracking/actions/attachments/{attachmentId}/content:
+    post:
+      tags: [Attachments, Tracking]
+      summary: Descargar un adjunto público de un ticket anónimo propio
+      description: Requiere código de seguimiento y contraseña anónima en el body. El código de seguimiento por sí solo no autoriza la descarga.
+      operationId: downloadAnonymousAttachment
+      security: []
+      parameters:
+        - name: attachmentId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnonymousTicketCredentialsRequest'
+      responses:
+        '200':
+          description: Contenido del adjunto PUBLIC perteneciente al ticket acreditado.
+          headers:
+            Cache-Control:
+              schema: { type: string, example: no-store }
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/InvalidAnonymousTicketCredentials' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
   /api/tracking/access:
     post:
       tags: [Tracking]
@@ -2537,7 +2605,7 @@ components:
     TicketAttachmentResponse:
       type: object
       description: Metadatos seguros de un adjunto, sin claves ni internals de almacenamiento.
-      required: [id, fileName, contentType, sizeBytes, visibility, createdAt]
+      required: [id, fileName, contentType, sizeBytes, visibility, createdAt, downloadUrl]
       properties:
         id:
           type: integer
@@ -2556,6 +2624,10 @@ components:
         createdAt:
           type: string
           format: date-time
+        downloadUrl:
+          type: string
+          format: uri
+          description: Referencia estable al endpoint controlado de M2; nunca contiene la clave interna de almacenamiento.
     TicketActivityResponse:
       type: object
       description: |

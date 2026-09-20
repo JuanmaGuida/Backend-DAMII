@@ -6,6 +6,7 @@ import com.reclamos.backend.entity.TicketStatus;
 import com.reclamos.backend.identity.IdentityProvider;
 import com.reclamos.backend.service.CatalogService;
 import com.reclamos.backend.service.AnonymousTicketAccessService;
+import com.reclamos.backend.service.AttachmentAccessService;
 import com.reclamos.backend.service.FormService;
 import com.reclamos.backend.service.InformationRequestService;
 import com.reclamos.backend.service.NeighborhoodService;
@@ -20,6 +21,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -76,6 +78,8 @@ class SecurityHardeningIntegrationTest {
     @MockitoBean
     private AnonymousTicketAccessService anonymousTicketAccessService;
     @MockitoBean
+    private AttachmentAccessService attachmentAccessService;
+    @MockitoBean
     private TicketService ticketService;
     @MockitoBean
     private InformationRequestService informationRequestService;
@@ -110,6 +114,12 @@ class SecurityHardeningIntegrationTest {
         ));
         when(anonymousTicketAccessService.authenticate(any(), any()))
                 .thenReturn(new AnonymousTicketAccessService.AnonymousTicketAccess(TICKET_ID));
+        when(attachmentAccessService.downloadAnonymous(any(), any()))
+                .thenReturn(new AttachmentAccessService.Download(
+                        new ByteArrayResource(new byte[]{1}), "proof.pdf", "application/pdf", 1));
+        when(attachmentAccessService.download(any(), any()))
+                .thenReturn(new AttachmentAccessService.Download(
+                        new ByteArrayResource(new byte[]{1}), "proof.pdf", "application/pdf", 1));
 
         when(ticketService.create(any(), any(), any())).thenReturn(new CreateTicketResponse(
                 TICKET_ID, "TK-2026-000123", "tracking-code", TicketStatus.REGISTERED));
@@ -169,6 +179,10 @@ class SecurityHardeningIntegrationTest {
         mockMvc.perform(post("/api/tracking/actions/reopen")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(anonymousAction("{\"reason\":\"Continúa\"}")))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/tracking/actions/attachments/1/content")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(anonymousCredentials()))
                 .andExpect(status().isOk());
 
         mockMvc.perform(ticketJsonRequest()).andExpect(status().isCreated())
@@ -276,6 +290,7 @@ class SecurityHardeningIntegrationTest {
     void everyProtectedEndpointReturnsCanonicalUnauthorizedWithoutValidToken() throws Exception {
         List<RequestBuilder> requests = List.of(
                 get("/api/auth/me"),
+                get("/api/attachments/1/content"),
                 informationRequest(),
                 informationResponse(),
                 informationResponse(),
@@ -289,6 +304,7 @@ class SecurityHardeningIntegrationTest {
 
         List<MockHttpServletRequestBuilder> invalidBearerRequests = List.of(
                 get("/api/auth/me"),
+                get("/api/attachments/1/content"),
                 ticketJsonRequest(),
                 informationRequest(),
                 informationResponse(),
@@ -308,6 +324,7 @@ class SecurityHardeningIntegrationTest {
     void validBearerReachesEveryProtectedControllerVariant() throws Exception {
         String token = validToken();
         mockMvc.perform(withBearer(get("/api/auth/me"), token)).andExpect(status().isOk());
+        mockMvc.perform(withBearer(get("/api/attachments/1/content"), token)).andExpect(status().isOk());
         mockMvc.perform(withBearer(ticketJsonRequest(), token)).andExpect(status().isCreated());
         mockMvc.perform(withBearer(multipartTicketRequest(), token)).andExpect(status().isCreated());
         mockMvc.perform(withBearer(informationRequest(), token)).andExpect(status().isCreated());

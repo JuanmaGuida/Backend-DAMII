@@ -75,11 +75,13 @@ class OpenApiContractTest {
             "POST /api/tickets/{ticketId}/resolution/confirm",
             "POST /api/tickets/{ticketId}/resolution/reopen",
             "POST /api/tickets/{ticketId}/cancel",
+            "GET /api/attachments/{attachmentId}/content",
             "POST /api/tracking/access",
             "POST /api/tracking/actions/cancel",
             "POST /api/tracking/actions/information-response",
             "POST /api/tracking/actions/confirm-resolution",
-            "POST /api/tracking/actions/reopen"
+            "POST /api/tracking/actions/reopen",
+            "POST /api/tracking/actions/attachments/{attachmentId}/content"
     );
     private static final Set<String> PROTECTED_OPERATIONS = Set.of(
             "GET /api/auth/me",
@@ -121,7 +123,8 @@ class OpenApiContractTest {
             "POST /api/tickets/{ticketId}/resolution",
             "POST /api/tickets/{ticketId}/resolution/confirm",
             "POST /api/tickets/{ticketId}/resolution/reopen",
-            "POST /api/tickets/{ticketId}/cancel"
+            "POST /api/tickets/{ticketId}/cancel",
+            "GET /api/attachments/{attachmentId}/content"
     );
     private static final Set<String> RESPONSE_SCHEMAS_WITH_STABLE_PRESENCE = Set.of(
             "ApiError",
@@ -172,7 +175,7 @@ class OpenApiContractTest {
     void versionedFileIsAValidOpenApi3DocumentWithExactlyTheCurrentBusinessOperations() {
         assertTrue(string(spec.get("openapi")).startsWith("3."));
         assertEquals("3.0.3", parsedOpenApi.getOpenapi());
-        assertEquals(47, parsedOpenApi.getPaths().size());
+        assertEquals(49, parsedOpenApi.getPaths().size());
         assertNotNull(map(spec, "info").get("title"));
         assertNotNull(map(spec, "components").get("schemas"));
         assertEquals(EXPECTED_OPERATIONS, documentedOperations());
@@ -257,7 +260,8 @@ class OpenApiContractTest {
                 "POST /api/tracking/actions/cancel",
                 "POST /api/tracking/actions/information-response",
                 "POST /api/tracking/actions/confirm-resolution",
-                "POST /api/tracking/actions/reopen")) {
+                "POST /api/tracking/actions/reopen",
+                "POST /api/tracking/actions/attachments/{attachmentId}/content")) {
             Map<String, Object> operation = operation(operationName);
             assertEquals(java.util.List.of(), operation.get("security"), operationName);
             assertEquals("#/components/responses/InvalidAnonymousTicketCredentials",
@@ -325,6 +329,11 @@ class OpenApiContractTest {
                 map(list(map(staffProperties, "anonymousContact"), "allOf").getFirst()).get("$ref"));
         assertTrue(map(schemas, "TrackingTicketResponse", "properties")
                 .containsKey("pendingInformationRequest"));
+
+        Map<String, Object> attachmentProperties = map(schemas, "TicketAttachmentResponse", "properties");
+        assertEquals(Set.of("id", "fileName", "contentType", "sizeBytes", "visibility", "createdAt", "downloadUrl"),
+                attachmentProperties.keySet());
+        assertEquals("uri", map(attachmentProperties, "downloadUrl").get("format"));
 
         Map<String, Object> activityProperties = map(schemas, "TicketActivityResponse", "properties");
         assertTrue(list(map(schemas, "TicketActivityResponse"), "required").contains("occurredAt"));

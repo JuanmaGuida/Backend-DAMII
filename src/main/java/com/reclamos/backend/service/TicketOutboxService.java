@@ -31,6 +31,7 @@ public class TicketOutboxService {
 
     private final OutboxEventRepository outboxEventRepository;
     private final Clock clock;
+    private final AttachmentReferenceService attachmentReferenceService;
 
     @Value("${app.events.producer.module-id:M2}")
     private String producerModuleId = MODULE_ID;
@@ -252,7 +253,7 @@ public class TicketOutboxService {
             Map<String, Object> result = new LinkedHashMap<>();
             result.put("fileName", attachment.getFileName());
             result.put("contentType", attachment.getContentType());
-            result.put("url", attachment.getStorageKey());
+            result.put("url", attachmentReferenceService.downloadUrl(attachment));
             result.put("sizeBytes", attachment.getSizeBytes());
             return result;
         }).toList();

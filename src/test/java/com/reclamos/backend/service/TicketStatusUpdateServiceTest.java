@@ -104,6 +104,8 @@ class TicketStatusUpdateServiceTest {
     private AttachmentService attachmentService;
     @Mock
     private InformationRequestAttachmentRepository informationRequestAttachmentRepository;
+    @Mock
+    private AttachmentReferenceService attachmentReferenceService;
 
     private TicketStatusUpdateService service;
     private TicketResolutionService resolutionService;
@@ -130,7 +132,7 @@ class TicketStatusUpdateServiceTest {
                 new InformationRequestDeadlineService(
                         Clock.fixed(FIXED_NOW, ZoneOffset.UTC), Duration.ofHours(72)),
                 informationRequestExpirationService, ticketSlaService, outbox,
-                attachmentService, informationRequestAttachmentRepository);
+                attachmentService, attachmentReferenceService, informationRequestAttachmentRepository);
         service = new TicketStatusUpdateService(ticketRepository, activityRepository, locationRepository,
                 messageRepository, inboxEventRepository, resolutionService, ticketSlaService,
                 informationRequestService, cancellationRepository, outbox,

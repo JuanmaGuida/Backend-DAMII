@@ -2,6 +2,7 @@ package com.reclamos.backend.storage;
 
 import com.reclamos.backend.config.AttachmentProperties;
 import com.reclamos.backend.exception.AttachmentStorageUnavailableException;
+import com.reclamos.backend.exception.StoredFileNotFoundException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -37,6 +38,29 @@ class LocalFileStorageTest {
     @Test
     void rejectsStorageKeysOutsideConfiguredRoot() {
         assertThrows(AttachmentStorageUnavailableException.class, () -> storage().delete("../../outside"));
+    }
+
+    @Test
+    void readsStoredContentWithoutBufferingItInMemory() throws Exception {
+        LocalFileStorage storage = storage();
+        StoredFile stored = storage.store(UUID.randomUUID(), new ByteArrayInputStream(new byte[]{1, 2, 3}));
+
+        StoredContent content = storage.read(stored.storageKey());
+
+        assertEquals(3, content.sizeBytes());
+        try (var input = content.resource().getInputStream()) {
+            assertArrayEquals(new byte[]{1, 2, 3}, input.readAllBytes());
+        }
+    }
+
+    @Test
+    void readRejectsMissingTraversalAndInvalidKeys() {
+        LocalFileStorage storage = storage();
+        assertThrows(StoredFileNotFoundException.class,
+                () -> storage.read("tickets/" + UUID.randomUUID() + "/missing"));
+        assertThrows(AttachmentStorageUnavailableException.class, () -> storage.read("../../outside"));
+        assertThrows(AttachmentStorageUnavailableException.class, () -> storage.read(" "));
+        assertThrows(AttachmentStorageUnavailableException.class, () -> storage.read(null));
     }
 
     @Test

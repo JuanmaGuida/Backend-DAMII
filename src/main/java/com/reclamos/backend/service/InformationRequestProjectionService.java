@@ -19,6 +19,7 @@ import java.util.UUID;
 public class InformationRequestProjectionService {
     private final InformationRequestRepository informationRequestRepository;
     private final InformationRequestAttachmentRepository informationRequestAttachmentRepository;
+    private final AttachmentReferenceService attachmentReferenceService;
 
     @Transactional(readOnly = true)
     public Projection findPending(UUID ticketId) {
@@ -36,7 +37,7 @@ public class InformationRequestProjectionService {
                     var attachment = link.getAttachment();
                     return new TicketAttachmentResponse(attachment.getId(), attachment.getFileName(),
                             attachment.getContentType(), attachment.getSizeBytes(), attachment.getVisibility(),
-                            attachment.getCreatedAt());
+                            attachment.getCreatedAt(), attachmentReferenceService.downloadUrl(attachment));
                 })
                 .toList();
         return new Projection(

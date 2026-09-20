@@ -12,6 +12,7 @@ import org.springframework.util.unit.DataSize;
 import org.springframework.validation.annotation.Validated;
 
 import java.nio.file.Path;
+import java.net.URI;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
@@ -21,6 +22,9 @@ import java.util.Set;
 @Component
 @ConfigurationProperties(prefix = "attachment")
 public class AttachmentProperties {
+    @NotNull
+    private URI publicBaseUrl;
+
     @Valid
     private Storage storage = new Storage();
 

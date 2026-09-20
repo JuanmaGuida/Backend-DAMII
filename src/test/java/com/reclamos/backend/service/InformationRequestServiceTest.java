@@ -28,6 +28,7 @@ class InformationRequestServiceTest {
     private final TicketSlaService ticketSlaService = mock(TicketSlaService.class);
     private final TicketOutboxService outbox = mock(TicketOutboxService.class);
     private final AttachmentService attachmentService = mock(AttachmentService.class);
+    private final AttachmentReferenceService attachmentReferenceService = mock(AttachmentReferenceService.class);
     private final InformationRequestAttachmentRepository requestAttachments =
             mock(InformationRequestAttachmentRepository.class);
     private InformationRequestService service;
@@ -36,12 +37,16 @@ class InformationRequestServiceTest {
     @BeforeEach
     void setUp() {
         reset(tickets, requests, activities, expirationService, ticketSlaService, outbox,
-                attachmentService, requestAttachments);
+                attachmentService, attachmentReferenceService, requestAttachments);
         service = new InformationRequestService(tickets, requests, activities,
                 new InformationRequestDeadlineService(Clock.fixed(NOW, ZoneOffset.UTC), Duration.ofHours(72)),
-                expirationService, ticketSlaService, outbox, attachmentService, requestAttachments);
+                expirationService, ticketSlaService, outbox, attachmentService,
+                attachmentReferenceService, requestAttachments);
         lenient().when(attachmentService.validate(any())).thenReturn(List.of());
         lenient().when(attachmentService.storeForTicket(any(), any(), anyList(), any())).thenReturn(List.of());
+        lenient().when(attachmentReferenceService.downloadUrl(any()))
+                .thenAnswer(invocation -> "https://m2.example/api/attachments/"
+                        + ((Attachment) invocation.getArgument(0)).getId() + "/content");
         ticket = ticket(TicketStatus.IN_PROGRESS, false);
         when(tickets.findByIdForUpdate(ticket.getId())).thenReturn(Optional.of(ticket));
         when(requests.save(any())).thenAnswer(invocation -> {
@@ -325,6 +330,8 @@ class InformationRequestServiceTest {
 
         assertNull(response.getResponseMessage());
         assertEquals(1, response.getAttachments().size());
+        assertEquals("https://m2.example/api/attachments/10/content",
+                response.getAttachments().getFirst().getDownloadUrl());
         verify(requestAttachments).saveAll(argThat(links -> {
             InformationRequestAttachment link = links.iterator().next();
             return link.getInformationRequest() == pending && link.getAttachment() == stored
@@ -361,6 +368,8 @@ class InformationRequestServiceTest {
                 new org.springframework.web.multipart.MultipartFile[]{file});
 
         assertEquals("detalle", response.getResponseMessage());
+        assertEquals("https://m2.example/api/attachments/11/content",
+                response.getAttachments().getFirst().getDownloadUrl());
         assertNull(pending.getAnsweredById());
         verify(attachmentService).storeForTicket(ticket, null, List.of(validated), NOW);
         verify(requestAttachments).saveAll(argThat(links -> links.iterator().next().getRole()

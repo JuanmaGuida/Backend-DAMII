@@ -33,6 +33,11 @@ public class GlobalExceptionHandler {
         return response(HttpStatus.NOT_FOUND, "NOT_FOUND", exception.getMessage());
     }
 
+    @ExceptionHandler(StoredFileNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleStoredFileNotFound(StoredFileNotFoundException exception) {
+        return response(HttpStatus.NOT_FOUND, StoredFileNotFoundException.CODE, exception.getMessage());
+    }
+
     @ExceptionHandler(TrackingTicketNotFoundException.class)
     public ResponseEntity<ApiErrorResponse> handleTrackingNotFound(TrackingTicketNotFoundException exception) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
