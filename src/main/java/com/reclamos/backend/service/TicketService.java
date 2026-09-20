@@ -87,19 +87,26 @@ public class TicketService {
     private final TrackingCodeService trackingCodeService;
     private final TicketPublicIdGenerator publicIdGenerator;
     private final AttachmentService attachmentService;
+    private final AnonymousTicketCredentialService anonymousTicketCredentialService;
+    private final AnonymousContactValidator anonymousContactValidator;
     private final ModuleUserRepository moduleUserRepository;
     private final Clock clock;
 
     @Transactional
     public CreateTicketResponse create(CreateTicketRequest request, AuthenticatedIdentity identity,
                                        MultipartFile[] evidence) {
-        if (identity == null) {
-            throw new InvalidTicketRequestException("Se requiere la identidad del ciudadano");
+        boolean anonymous = identity == null;
+        if (!anonymous && request.containsAnonymousData()) {
+            throw new InvalidTicketRequestException(
+                    "Los datos de acceso o contacto anónimo no aplican a un ticket identificado");
         }
         RequestType requestType = requestTypeRepository.findByIdForUpdate(request.requestTypeId())
                 .orElseThrow(() -> new ResourceNotFoundException("Request Type no encontrado"));
         if (!requestType.isActive()) {
             throw new InvalidTicketRequestException("El Request Type seleccionado está inactivo");
+        }
+        if (anonymous && !requestType.isAllowsAnonymous()) {
+            throw new InvalidTicketRequestException("El Request Type seleccionado no admite creación anónima");
         }
         ResolvedForm resolvedForm = formValidationService.resolveAndValidate(requestType, request.formData());
         RiskAssessment assessment = riskCalculationService.calculateRisk(requestType, resolvedForm);
@@ -109,6 +116,13 @@ public class TicketService {
             throw new EvidenceRequiredException();
         }
         validateLocation(requestType, request.location());
+
+        AnonymousContactValidator.ValidatedContact anonymousContact = anonymous
+                ? anonymousContactValidator.validate(request.anonymousContact())
+                : null;
+        AnonymousTicketCredentialService.CredentialMaterial anonymousCredential = anonymous
+                ? anonymousTicketCredentialService.prepare(request.anonymousAccessPassword())
+                : null;
 
         String trackingCode;
         String trackingHash;
@@ -122,8 +136,11 @@ public class TicketService {
         Ticket ticket = new Ticket();
         ticket.setPublicId(publicId);
         ticket.setTrackingCodeHash(trackingHash);
-        ticket.setCitizenId(identity.citizenId());
-        ticket.setAnonymous(false);
+        ticket.setCitizenId(anonymous ? null : identity.citizenId());
+        ticket.setAnonymous(anonymous);
+        ticket.setAnonymousAccessPasswordHash(anonymous ? anonymousCredential.passwordHash() : null);
+        ticket.setAnonymousContactChannel(anonymousContact == null ? null : anonymousContact.channel());
+        ticket.setAnonymousContactValue(anonymousContact == null ? null : anonymousContact.value());
         ticket.setRequestType(requestType);
         ticket.setFormTemplateId(resolvedForm.formTemplateId());
         ticket.setTicketType(requestType.getTicketType());
@@ -159,7 +176,7 @@ public class TicketService {
         activity.setPreviousStatus(null);
         activity.setNewStatus(TicketStatus.REGISTERED);
         activity.setActorType(ActorType.CITIZEN);
-        activity.setActorId(identity.citizenId().toString());
+        activity.setActorId(anonymous ? null : identity.citizenId().toString());
         activity.setOccurredAt(now);
         activityRepository.save(activity);
         activateCriticalEscalationIfNeeded(ticket, now);
@@ -167,7 +184,7 @@ public class TicketService {
                 resolutionSla.map(TicketSla::getDueAt).orElse(null));
         ticketRepository.flush();
         return new CreateTicketResponse(ticket.getId(), ticket.getPublicId(), trackingCode,
-                TicketStatus.REGISTERED);
+                TicketStatus.REGISTERED, anonymous ? anonymousCredential.generatedPassword() : null);
     }
 
     /**

@@ -12,6 +12,8 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import tools.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
@@ -23,6 +25,11 @@ public class SecurityConfiguration {
             new ApiErrorResponse("INVALID_TOKEN", "La sesión no es válida");
     private static final ApiErrorResponse FORBIDDEN_RESPONSE =
             new ApiErrorResponse("FORBIDDEN", "No tiene permisos para realizar esta operación");
+
+    @Bean
+    PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
 
     @Bean
     SecurityFilterChain securityFilterChain(
@@ -71,7 +78,7 @@ public class SecurityConfiguration {
                         // alcanza con estar autenticado — el scoping por citizenId lo
                         // hace TicketService.listMyTickets, no un rol puntual acá.
                         .requestMatchers(HttpMethod.GET, "/api/me/tickets").authenticated()
-                        .requestMatchers(HttpMethod.POST, "/api/tickets").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/api/tickets").permitAll()
                         // La bandeja global y las acciones de triage son administrativas.
                         // AREA_RESPONSIBLE conserva lectura acotada en /api/staff/tickets/*,
                         // pero no obtiene acceso global a la bandeja M2.

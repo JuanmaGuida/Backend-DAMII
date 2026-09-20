@@ -90,7 +90,6 @@ class OpenApiContractTest {
             "PUT /api/admin/catalog/request-types/{requestTypeId}/form",
             "GET /api/me/tickets",
             "GET /api/tickets",
-            "POST /api/tickets",
             "GET /api/tickets/{ticketId}",
             "GET /api/staff/tickets/{ticketId}",
             "GET /api/staff/tickets/{ticketId}/citizen-view",
@@ -172,7 +171,10 @@ class OpenApiContractTest {
 
         for (String operation : EXPECTED_OPERATIONS) {
             Map<String, Object> operationNode = operation(operation);
-            if (PROTECTED_OPERATIONS.contains(operation)) {
+            if (operation.equals("POST /api/tickets")) {
+                assertEquals(java.util.List.of(Map.of(), Map.of("bearerAuth", java.util.List.of())),
+                        operationNode.get("security"), operation);
+            } else if (PROTECTED_OPERATIONS.contains(operation)) {
                 assertEquals("bearerAuth", firstSecurityScheme(operationNode), operation);
             } else if (operation.startsWith("GET /api/catalog/neighborhoods")) {
                 assertEquals(java.util.List.of(), operationNode.get("security"), operation);
@@ -200,6 +202,22 @@ class OpenApiContractTest {
         Map<String, Object> response422 = map(operation, "responses", "422", "content", "application/json");
         assertEquals("#/components/schemas/ApiError", map(response422, "schema").get("$ref"));
         assertEquals("EVIDENCE_REQUIRED", map(response422, "example").get("code"));
+
+        Map<String, Object> schemas = map(spec, "components", "schemas");
+        Map<String, Object> requestProperties = map(schemas, "CreateTicketRequest", "properties");
+        assertEquals(Set.of("requestTypeId", "summary", "description", "formData", "location",
+                        "anonymousAccessPassword", "anonymousContact"),
+                requestProperties.keySet());
+        assertEquals("#/components/schemas/AnonymousContact",
+                map(list(map(requestProperties, "anonymousContact"), "allOf").getFirst()).get("$ref"));
+        assertEquals(Set.of("channel", "value"), map(schemas, "AnonymousContact", "properties").keySet());
+        assertEquals(Set.of("EMAIL", "PHONE"),
+                Set.copyOf(list(map(schemas, "AnonymousContactChannel"), "enum")));
+
+        Map<String, Object> responseProperties = map(schemas, "CreateTicketResponse", "properties");
+        assertTrue(responseProperties.containsKey("generatedAnonymousAccessPassword"));
+        assertTrue(nullableProperty(schemas, "CreateTicketResponse", "generatedAnonymousAccessPassword"));
+        assertEquals("no-store", map(operation, "responses", "201", "headers", "Cache-Control", "schema").get("example"));
     }
 
     @Test
@@ -217,6 +235,8 @@ class OpenApiContractTest {
         assertFalse(serialized.contains("storageKey"));
         assertFalse(serialized.contains("trackingCodeHash"));
         assertFalse(serialized.contains("trackingAccessCode"));
+        assertFalse(serialized.contains("anonymousAccessPasswordHash"));
+        assertFalse(serialized.contains("anonymousContactValue"));
 
         assertFalse(map(schemas, "TrackingTicketResponse", "properties").containsKey("ticketId"));
         assertEquals(Set.of("name"), map(schemas, "TrackingRequestTypeSummary", "properties").keySet());

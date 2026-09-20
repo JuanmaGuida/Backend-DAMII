@@ -69,6 +69,8 @@ class TrackingControllerTest {
                 .andExpect(content().string(not(containsString("trackingCode\""))))
                 .andExpect(content().string(not(containsString("trackingCodeHash"))))
                 .andExpect(content().string(not(containsString("trackingAccessCode"))))
+                .andExpect(content().string(not(containsString("anonymousAccessPassword"))))
+                .andExpect(content().string(not(containsString("anonymousContact"))))
                 .andExpect(content().string(not(containsString("responsibleAreaId"))))
                 .andExpect(content().string(not(containsString("riskScore"))))
                 .andExpect(content().string(not(containsString("riskLevel"))))

@@ -105,6 +105,7 @@ class TicketResolutionNumberConcurrencyIntegrationTest {
             ticket.setTrackingCodeHash("HASH-" + UUID.randomUUID());
             ticket.setAnonymous(true);
             ticket.setCitizenId(null);
+            ticket.setAnonymousAccessPasswordHash("test-only-anonymous-access-password-hash");
             ticket.setRequestType(requestType);
             ticket.setTicketType(requestType.getTicketType());
             ticket.setResponsibleAreaId("M2");

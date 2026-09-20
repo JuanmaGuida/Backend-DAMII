@@ -814,7 +814,13 @@ paths:
       tags: [Tickets]
       summary: Crear un ticket
       description: |
-        Crea un ticket autenticado. La misma operación acepta JSON puro o multipart.
+        Crea un ticket identificado cuando se presenta un Bearer válido, o anónimo cuando no se
+        presenta Authorization y el RequestType admite anonimato. Un Authorization presente pero
+        inválido, malformado o expirado devuelve 401 y nunca se degrada a creación anónima.
+        La misma operación acepta JSON puro o multipart.
+
+        La contraseña y el contacto anónimos no aplican a tickets identificados. Si el ciudadano
+        anónimo omite la contraseña, Backend genera una individual y la devuelve una única vez.
 
         En JSON no se adjuntan archivos; si el riesgo calculado internamente es HIGH o CRITICAL,
         responde 422 EVIDENCE_REQUIRED. En multipart, `data` es un part JSON obligatorio y
@@ -822,6 +828,7 @@ paths:
         MIME admitidos: image/jpeg, image/png, image/webp, image/heic, image/heif y application/pdf.
       operationId: createTicket
       security:
+        - {}
         - bearerAuth: []
       requestBody:
         required: true
@@ -851,6 +858,12 @@ paths:
       responses:
         '201':
           description: Ticket creado.
+          headers:
+            Cache-Control:
+              description: Impide almacenar la respuesta que contiene credenciales one-time.
+              schema:
+                type: string
+                example: no-store
           content:
             application/json:
               schema:
@@ -1913,7 +1926,33 @@ components:
           allOf:
             - $ref: '#/components/schemas/LocationData'
           nullable: true
+        anonymousAccessPassword:
+          type: string
+          minLength: 8
+          nullable: true
+          description: |
+            Contraseña propia opcional para creación anónima. No se recorta ni normaliza, debe
+            contener al menos 8 caracteres y no puede superar 72 bytes UTF-8. Si se omite, Backend
+            genera una contraseña aleatoria. Se rechaza cuando la creación es identificada.
+        anonymousContact:
+          allOf:
+            - $ref: '#/components/schemas/AnonymousContact'
+          nullable: true
       additionalProperties: false
+    AnonymousContact:
+      type: object
+      required: [channel, value]
+      properties:
+        channel:
+          $ref: '#/components/schemas/AnonymousContactChannel'
+        value:
+          type: string
+          maxLength: 320
+          description: Email válido o teléfono con 7 a 15 dígitos; el teléfono admite +, espacios, guiones y paréntesis.
+      additionalProperties: false
+    AnonymousContactChannel:
+      type: string
+      enum: [EMAIL, PHONE]
     LocationData:
       type: object
       properties:
@@ -2269,7 +2308,7 @@ components:
       additionalProperties: false
     CreateTicketResponse:
       type: object
-      required: [ticketId, publicId, trackingCode, status]
+      required: [ticketId, publicId, trackingCode, status, generatedAnonymousAccessPassword]
       properties:
         ticketId:
           type: string
@@ -2281,6 +2320,12 @@ components:
           description: Código que permite consultar el ticket mediante el endpoint público de tracking.
         status:
           $ref: '#/components/schemas/TicketStatus'
+        generatedAnonymousAccessPassword:
+          type: string
+          nullable: true
+          description: |
+            Contraseña plaintext entregada una única vez sólo cuando Backend la generó para un
+            ticket anónimo. Es null para tickets identificados y cuando el usuario eligió la contraseña.
     CreateInformationRequest:
       type: object
       required: [messageForCitizen]
