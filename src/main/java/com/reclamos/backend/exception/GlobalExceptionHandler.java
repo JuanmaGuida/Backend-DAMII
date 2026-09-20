@@ -129,6 +129,13 @@ public class GlobalExceptionHandler {
         return response(HttpStatus.FORBIDDEN, "FORBIDDEN", exception.getMessage());
     }
 
+    @ExceptionHandler(InvalidAuthenticationException.class)
+    public ResponseEntity<ApiErrorResponse> handleInvalidAuthentication(InvalidAuthenticationException exception) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .cacheControl(CacheControl.noStore())
+                .body(new ApiErrorResponse("INVALID_TOKEN", exception.getMessage()));
+    }
+
     /**
      * QA (FAIL de "validaciones de datos y relaciones jerárquicas del
      * catálogo"): altas concurrentes con el mismo nombre/código terminaban

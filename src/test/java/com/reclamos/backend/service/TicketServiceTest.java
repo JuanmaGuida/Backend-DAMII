@@ -106,6 +106,10 @@ class TicketServiceTest {
     private InformationRequestService informationRequestService;
     private final AttachmentService attachments = mock(AttachmentService.class);
     @Mock
+    private AnonymousTicketCredentialService anonymousTicketCredentialService;
+    @Mock
+    private AnonymousContactValidator anonymousContactValidator;
+    @Mock
     private Clock clock;
 
     @InjectMocks
@@ -298,6 +302,36 @@ class TicketServiceTest {
         verify(tickets, never()).save(any());
         verify(activities, never()).save(any());
         verify(locations, never()).save(any());
+    }
+
+    @Test
+    void anonymousEvidenceRequiredDoesNotGenerateCredentialsOrLeaveEffects() {
+        requestType.setAllowsAnonymous(true);
+        when(risks.calculateRisk(any(RequestType.class), any(ResolvedForm.class)))
+                .thenReturn(new RiskAssessment(62, Risk.HIGH));
+
+        assertThrows(EvidenceRequiredException.class, () -> service.create(request(), null, null));
+
+        verifyNoInteractions(anonymousTicketCredentialService, anonymousContactValidator);
+        verify(tickets, never()).save(any());
+        verify(activities, never()).save(any());
+        verifyNoInteractions(ticketSlaService, ticketOutboxService);
+        verify(attachments, never()).storeForTicket(any(), any(), anyList(), any());
+    }
+
+    @Test
+    void anonymousInitialEvidenceUsesCitizenActorWithoutAnId() {
+        requestType.setAllowsAnonymous(true);
+        when(risks.calculateRisk(any(RequestType.class), any(ResolvedForm.class)))
+                .thenReturn(new RiskAssessment(62, Risk.HIGH));
+        when(anonymousTicketCredentialService.prepare(null)).thenReturn(
+                new AnonymousTicketCredentialService.CredentialMaterial("bcrypt-hash", "generated-secret"));
+        MockMultipartFile evidence = new MockMultipartFile(
+                "evidence", "photo.jpg", "image/jpeg", new byte[]{1});
+
+        service.create(request(), null, new MultipartFile[]{evidence});
+
+        verify(attachments).storeForTicket(argThat(Ticket::isAnonymous), isNull(), anyList(), eq(NOW));
     }
 
     @Test
@@ -668,6 +702,86 @@ class TicketServiceTest {
         assertThat(ticket.getStatusChangedAt()).isEqualTo(NOW);
         verify(ticketSlaService).completeFirstResponseCycle(ticket, NOW);
         verify(ticketOutboxService).statusChanged(ticket, null, NOW);
+    }
+
+    @Test
+    void anonymousCreationUsesTheExistingPipelineWithoutCitizenOrModuleUser() {
+        allowLowRisk();
+        requestType.setAllowsAnonymous(true);
+        String passwordHash = "$2a$10$anonymous-hash";
+        when(anonymousTicketCredentialService.prepare(null)).thenReturn(
+                new AnonymousTicketCredentialService.CredentialMaterial(passwordHash, "generated-secret"));
+
+        CreateTicketResponse response = service.create(request(), null, null);
+
+        assertEquals("generated-secret", response.generatedAnonymousAccessPassword());
+        verify(tickets).save(argThat(ticket ->
+                ticket.isAnonymous()
+                        && ticket.getCitizenId() == null
+                        && passwordHash.equals(ticket.getAnonymousAccessPasswordHash())
+                        && ticket.getCurrentStatus() == TicketStatus.REGISTERED));
+        verify(activities).save(argThat(activity ->
+                activity.getActorType() == ActorType.CITIZEN && activity.getActorId() == null));
+        verify(attachments, never()).storeForTicket(any(), any(), anyList(), any());
+        verifyNoInteractions(moduleUsers);
+        verify(ticketOutboxService).ticketCreated(argThat(Ticket::isAnonymous),
+                nullable(TicketLocation.class), eq(List.of()), nullable(Instant.class));
+    }
+
+    @Test
+    void anonymousCreationPersistsValidatedContactAndDoesNotReturnProvidedPassword() {
+        allowLowRisk();
+        requestType.setAllowsAnonymous(true);
+        CreateTicketRequest request = new CreateTicketRequest(1L, "Resumen", "Descripción", Map.of(), null,
+                "chosen-password", new CreateTicketRequest.AnonymousContact(
+                AnonymousContactChannel.EMAIL, " person@example.com "));
+        when(anonymousContactValidator.validate(request.anonymousContact())).thenReturn(
+                new AnonymousContactValidator.ValidatedContact(
+                        AnonymousContactChannel.EMAIL, "person@example.com"));
+        when(anonymousTicketCredentialService.prepare("chosen-password")).thenReturn(
+                new AnonymousTicketCredentialService.CredentialMaterial("bcrypt-hash", null));
+
+        CreateTicketResponse response = service.create(request, null, null);
+
+        assertNull(response.generatedAnonymousAccessPassword());
+        verify(tickets).save(argThat(ticket ->
+                ticket.getAnonymousContactChannel() == AnonymousContactChannel.EMAIL
+                        && "person@example.com".equals(ticket.getAnonymousContactValue())
+                        && "bcrypt-hash".equals(ticket.getAnonymousAccessPasswordHash())));
+    }
+
+    @Test
+    void anonymousCreationRejectsDisallowedRequestTypeBeforeCredentialsOrEffects() {
+        requestType.setAllowsAnonymous(false);
+
+        assertThrows(InvalidTicketRequestException.class, () -> service.create(request(), null, null));
+
+        verifyNoInteractions(anonymousTicketCredentialService, anonymousContactValidator);
+        verify(tickets, never()).save(any());
+        verifyNoInteractions(activities, ticketSlaService, ticketOutboxService);
+    }
+
+    @Test
+    void anonymousCreationRejectsInactiveRequestTypeBeforeCredentialsOrEffects() {
+        requestType.setAllowsAnonymous(true);
+        requestType.setActive(false);
+
+        assertThrows(InvalidTicketRequestException.class, () -> service.create(request(), null, null));
+
+        verifyNoInteractions(anonymousTicketCredentialService, anonymousContactValidator);
+        verify(tickets, never()).save(any());
+        verifyNoInteractions(activities, ticketSlaService, ticketOutboxService);
+    }
+
+    @Test
+    void identifiedCreationRejectsAnonymousFieldsBeforePersistence() {
+        CreateTicketRequest request = new CreateTicketRequest(1L, "Resumen", "Descripción", Map.of(), null,
+                "chosen-password", null);
+
+        assertThrows(InvalidTicketRequestException.class, () -> service.create(request, identity(), null));
+
+        verifyNoInteractions(requestTypes, anonymousTicketCredentialService, anonymousContactValidator);
+        verify(tickets, never()).save(any());
     }
 
     @Test

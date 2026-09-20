@@ -42,10 +42,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -150,6 +147,11 @@ class SecurityHardeningIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"trackingCode\":\"tracking-code\"}"))
                 .andExpect(status().isOk());
+
+        mockMvc.perform(ticketJsonRequest()).andExpect(status().isCreated())
+                .andExpect(header().string("Cache-Control", org.hamcrest.Matchers.containsString("no-store")));
+        mockMvc.perform(multipartTicketRequest()).andExpect(status().isCreated())
+                .andExpect(header().string("Cache-Control", org.hamcrest.Matchers.containsString("no-store")));
     }
 
     @Test
@@ -241,7 +243,6 @@ class SecurityHardeningIntegrationTest {
     void everyProtectedEndpointReturnsCanonicalUnauthorizedWithoutValidToken() throws Exception {
         List<RequestBuilder> requests = List.of(
                 get("/api/auth/me"),
-                ticketJsonRequest(),
                 informationRequest(),
                 informationResponse(),
                 informationResponse(),
@@ -252,8 +253,6 @@ class SecurityHardeningIntegrationTest {
         for (RequestBuilder request : requests) {
             assertCanonicalUnauthorized(request);
         }
-
-        assertCanonicalUnauthorized(multipartTicketRequest());
 
         List<MockHttpServletRequestBuilder> invalidBearerRequests = List.of(
                 get("/api/auth/me"),
@@ -268,6 +267,8 @@ class SecurityHardeningIntegrationTest {
         for (MockHttpServletRequestBuilder request : invalidBearerRequests) {
             assertCanonicalUnauthorized(request.header("Authorization", "Bearer invalid"));
         }
+        assertCanonicalUnauthorized(multipartTicketRequest().header("Authorization", "Bearer invalid"));
+        assertCanonicalUnauthorized(ticketJsonRequest().header("Authorization", "Basic malformed"));
     }
 
     @Test

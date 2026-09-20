@@ -110,6 +110,7 @@ class ResolutionSlaMilestoneConcurrencyIntegrationTest {
         ticket.setTrackingCodeHash("sla-race-" + UUID.randomUUID());
         ticket.setCitizenId(null);
         ticket.setAnonymous(true);
+        ticket.setAnonymousAccessPasswordHash("test-only-anonymous-access-password-hash");
         ticket.setRequestType(requestType);
         ticket.setTicketType(requestType.getTicketType());
         ticket.setResponsibleAreaId("M2");
@@ -139,6 +140,7 @@ class ResolutionSlaMilestoneConcurrencyIntegrationTest {
         ticket.setTrackingCodeHash("sla-first-" + UUID.randomUUID());
         ticket.setCitizenId(null);
         ticket.setAnonymous(true);
+        ticket.setAnonymousAccessPasswordHash("test-only-anonymous-access-password-hash");
         ticket.setRequestType(requestType);
         ticket.setTicketType(requestType.getTicketType());
         ticket.setResponsibleAreaId("M6");
