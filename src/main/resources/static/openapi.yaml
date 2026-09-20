@@ -959,7 +959,9 @@ paths:
         gestión interna. AGENT y ADMIN acceden a cualquier ticket ajeno sin
         restricción de área; AREA_RESPONSIBLE sólo a los de su propia areaId
         (o al suyo propio como ciudadano). El endpoint citizen-view expone
-        en cambio la misma proyección pública que recibe el propietario.
+        en cambio la misma proyección pública que recibe el propietario. Para
+        tickets anónimos, anonymousContact sólo se incluye para AGENT y ADMIN;
+        AREA_RESPONSIBLE nunca recibe ese dato.
       operationId: getStaffTicketDetail
       security:
         - bearerAuth: [ ]
@@ -971,7 +973,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TicketDetailResponse'
+                $ref: '#/components/schemas/StaffTicketDetailResponse'
         '401':
           $ref: '#/components/responses/InvalidToken'
         '403':
@@ -989,7 +991,8 @@ paths:
         propietario. Mismo control de acceso que
         GET /staff/tickets/{id}: AGENT y ADMIN acceden a cualquier ticket
         ajeno; AREA_RESPONSIBLE sólo a los de su propia areaId (o al suyo
-        propio como ciudadano).
+        propio como ciudadano). Esta proyección nunca incluye el contacto
+        anónimo ni credenciales de seguimiento/acceso.
       operationId: getStaffTicketCitizenView
       security:
         - bearerAuth: [ ]
@@ -2075,6 +2078,10 @@ components:
       additionalProperties: false
     AnonymousContact:
       type: object
+      description: |
+        Canal privado separado de la identidad. En respuestas sólo aparece en
+        el detalle staff de un ticket anónimo autorizado para AGENT o ADMIN;
+        nunca en tracking, vistas ciudadanas, citizen-view, listados o eventos.
       required: [channel, value]
       properties:
         channel:
@@ -2327,6 +2334,20 @@ components:
           description: Historial ordenado por sequence ascendente.
           items:
             $ref: '#/components/schemas/TicketActivityResponse'
+    StaffTicketDetailResponse:
+      description: |
+        Detalle interno. Extiende la proyección común con el contacto privado
+        de un ticket anónimo únicamente para AGENT y ADMIN. AREA_RESPONSIBLE
+        recibe el resto del detalle autorizado, pero nunca anonymousContact.
+        Ninguna credencial o hash forma parte de esta respuesta.
+      allOf:
+        - $ref: '#/components/schemas/TicketDetailResponse'
+        - type: object
+          properties:
+            anonymousContact:
+              allOf:
+                - $ref: '#/components/schemas/AnonymousContact'
+              nullable: true
     TicketAttachmentResponse:
       type: object
       description: Metadatos seguros de un adjunto, sin claves ni internals de almacenamiento.

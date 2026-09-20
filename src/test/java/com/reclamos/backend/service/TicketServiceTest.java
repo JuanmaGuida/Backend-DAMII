@@ -5,6 +5,7 @@ import com.reclamos.backend.dto.TicketResponse;
 import com.reclamos.backend.dto.request.CancelTicketRequest;
 import com.reclamos.backend.dto.request.CreateTicketRequest;
 import com.reclamos.backend.dto.response.CreateTicketResponse;
+import com.reclamos.backend.dto.response.StaffTicketDetailResponse;
 import com.reclamos.backend.dto.response.TicketDetailResponse;
 import com.reclamos.backend.entity.*;
 import com.reclamos.backend.exception.*;
@@ -1987,6 +1988,66 @@ class TicketServiceTest {
         TicketDetailResponse response = service.getStaffDetail(ticketId, actor);
 
         assertThat(response.getId()).isEqualTo(ticketId);
+    }
+
+    @Test
+    void getStaffDetailShowsAnonymousContactToAgentAndAdmin() {
+        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.MEDIUM);
+        ticket.setCitizenId(null);
+        ticket.setAnonymous(true);
+        ticket.setAnonymousContactChannel(AnonymousContactChannel.EMAIL);
+        ticket.setAnonymousContactValue("private@example.test");
+        AuthenticatedIdentity admin = new AuthenticatedIdentity(
+                "admin-1", UUID.randomUUID(), "Admin Uno", null, ModuleRole.ADMIN);
+        when(tickets.findById(ticketId)).thenReturn(Optional.of(ticket));
+        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+
+        for (AuthenticatedIdentity viewer : List.of(actor, admin)) {
+            StaffTicketDetailResponse response = service.getStaffDetail(ticketId, viewer);
+
+            assertThat(response.getAnonymousContact()).isNotNull();
+            assertThat(response.getAnonymousContact().channel()).isEqualTo(AnonymousContactChannel.EMAIL);
+            assertThat(response.getAnonymousContact().value()).isEqualTo("private@example.test");
+            assertThat(response.toString()).doesNotContain("private@example.test");
+            assertThat(response.getAnonymousContact().toString()).doesNotContain("private@example.test");
+        }
+    }
+
+    @Test
+    void getStaffDetailHidesAnonymousContactFromAreaResponsible() {
+        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.MEDIUM);
+        ticket.setCitizenId(null);
+        ticket.setAnonymous(true);
+        ticket.setResponsibleAreaId("obras-viales");
+        ticket.setAnonymousContactChannel(AnonymousContactChannel.PHONE);
+        ticket.setAnonymousContactValue("+5491112345678");
+        AuthenticatedIdentity areaResponsible = new AuthenticatedIdentity(
+                "area-1", UUID.randomUUID(), "Responsable Uno", "obras-viales", ModuleRole.AREA_RESPONSIBLE);
+        when(tickets.findById(ticketId)).thenReturn(Optional.of(ticket));
+        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+
+        StaffTicketDetailResponse response = service.getStaffDetail(ticketId, areaResponsible);
+
+        assertThat(response.getId()).isEqualTo(ticketId);
+        assertThat(response.getAnonymousContact()).isNull();
+    }
+
+    @Test
+    void getStaffDetailOmitsAnonymousContactForIdentifiedTicketsAndAnonymousTicketsWithoutContact() {
+        Ticket identified = ticket(TicketStatus.IN_REVIEW, Priority.MEDIUM);
+        identified.setAnonymous(false);
+        identified.setCitizenId(UUID.randomUUID());
+        when(tickets.findById(ticketId)).thenReturn(Optional.of(identified));
+        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+
+        assertThat(service.getStaffDetail(ticketId, actor).getAnonymousContact()).isNull();
+
+        Ticket anonymousWithoutContact = ticket(TicketStatus.IN_REVIEW, Priority.MEDIUM);
+        anonymousWithoutContact.setAnonymous(true);
+        anonymousWithoutContact.setCitizenId(null);
+        when(tickets.findById(ticketId)).thenReturn(Optional.of(anonymousWithoutContact));
+
+        assertThat(service.getStaffDetail(ticketId, actor).getAnonymousContact()).isNull();
     }
 
     @Test

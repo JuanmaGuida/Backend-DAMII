@@ -1,11 +1,14 @@
 package com.reclamos.backend.controller;
 
 import com.reclamos.backend.config.SecurityConfiguration;
+import com.reclamos.backend.dto.response.AnonymousContactResponse;
+import com.reclamos.backend.dto.response.StaffTicketDetailResponse;
 import com.reclamos.backend.dto.response.TicketDetailResponse;
 import com.reclamos.backend.dto.response.TicketActivityResponse;
 import com.reclamos.backend.dto.response.TicketAttachmentResponse;
 import com.reclamos.backend.entity.ActivityType;
 import com.reclamos.backend.entity.ActorType;
+import com.reclamos.backend.entity.AnonymousContactChannel;
 import com.reclamos.backend.entity.MessageVisibility;
 import com.reclamos.backend.entity.Priority;
 import com.reclamos.backend.entity.TicketStatus;
@@ -106,7 +109,7 @@ class StaffTicketControllerTest {
     @Test
     void getStaffDetailIsReachableForEveryStaffRole() throws Exception {
         UUID ticketId = UUID.randomUUID();
-        TicketDetailResponse response = new TicketDetailResponse();
+        StaffTicketDetailResponse response = new StaffTicketDetailResponse();
         response.setId(ticketId);
         response.setCurrentStatus(TicketStatus.IN_REVIEW);
         response.setDescription("Descripción staff");
@@ -133,6 +136,41 @@ class StaffTicketControllerTest {
                 .andExpect(status().isOk());
         mockMvc.perform(get("/api/staff/tickets/{ticketId}", ticketId).with(authentication(ADMIN_AUTHENTICATION)))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void getStaffDetailSerializesAnonymousContactOnlyWhenServiceAuthorizesIt() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+        StaffTicketDetailResponse authorized = new StaffTicketDetailResponse();
+        authorized.setId(ticketId);
+        authorized.setAnonymous(true);
+        authorized.setAnonymousContact(new AnonymousContactResponse(
+                AnonymousContactChannel.EMAIL, "private@example.test"));
+        StaffTicketDetailResponse sanitized = new StaffTicketDetailResponse();
+        sanitized.setId(ticketId);
+        sanitized.setAnonymous(true);
+
+        when(ticketService.getStaffDetail(ticketId, AGENT)).thenReturn(authorized);
+        when(ticketService.getStaffDetail(ticketId, ADMIN)).thenReturn(authorized);
+        when(ticketService.getStaffDetail(ticketId, AREA_RESPONSIBLE)).thenReturn(sanitized);
+
+        for (UsernamePasswordAuthenticationToken authentication :
+                List.of(AGENT_AUTHENTICATION, ADMIN_AUTHENTICATION)) {
+            mockMvc.perform(get("/api/staff/tickets/{ticketId}", ticketId)
+                            .with(authentication(authentication)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.anonymousContact.channel").value("EMAIL"))
+                    .andExpect(jsonPath("$.anonymousContact.value").value("private@example.test"))
+                    .andExpect(jsonPath("$.anonymousAccessPassword").doesNotExist())
+                    .andExpect(jsonPath("$.anonymousAccessPasswordHash").doesNotExist())
+                    .andExpect(jsonPath("$.trackingCode").doesNotExist())
+                    .andExpect(jsonPath("$.trackingCodeHash").doesNotExist());
+        }
+
+        mockMvc.perform(get("/api/staff/tickets/{ticketId}", ticketId)
+                        .with(authentication(AREA_RESPONSIBLE_AUTHENTICATION)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.anonymousContact").doesNotExist());
     }
 
     @Test
@@ -200,6 +238,7 @@ class StaffTicketControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.currentStatus").value("IN_REVIEW"))
                 .andExpect(jsonPath("$.attachments[0].visibility").value("PUBLIC"))
+                .andExpect(jsonPath("$.anonymousContact").doesNotExist())
                 .andExpect(jsonPath("$.ticketActivities[0].message").doesNotExist())
                 .andExpect(jsonPath("$.ticketActivities[0].actorType").doesNotExist());
         mockMvc.perform(get("/api/staff/tickets/{ticketId}/citizen-view", ticketId)
