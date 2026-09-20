@@ -1,6 +1,7 @@
 package com.reclamos.backend.service;
 
 import com.reclamos.backend.entity.CancellationReasonCode;
+import com.reclamos.backend.entity.AnonymousContactChannel;
 import com.reclamos.backend.entity.Category;
 import com.reclamos.backend.entity.OutboxEvent;
 import com.reclamos.backend.entity.Priority;
@@ -46,6 +47,9 @@ class TicketOutboxServiceTest {
     @Test
     void ticketCreatedPublishesEveryIdentifiedRegisteredTicketButNeverAnonymous() {
         Ticket selfManaged = ticket(false, "M2", TicketStatus.REGISTERED);
+        selfManaged.setAnonymousAccessPasswordHash("must-not-be-published");
+        selfManaged.setAnonymousContactChannel(AnonymousContactChannel.EMAIL);
+        selfManaged.setAnonymousContactValue("private@example.test");
         Ticket external = ticket(false, "M6", TicketStatus.REGISTERED);
         Ticket anonymous = ticket(true, "M6", TicketStatus.REGISTERED);
 
@@ -64,7 +68,9 @@ class TicketOutboxServiceTest {
             assertThat(data).containsEntry("publicId", event.getTicket().getPublicId())
                     .containsEntry("isAnonymous", false)
                     .containsEntry("status", "REGISTERED")
-                    .containsEntry("resolutionDueAt", RESOLUTION_DUE.toString());
+                    .containsEntry("resolutionDueAt", RESOLUTION_DUE.toString())
+                    .doesNotContainKeys("trackingCode", "trackingCodeHash", "anonymousAccessPassword",
+                            "anonymousAccessPasswordHash", "anonymousContactChannel", "anonymousContactValue");
         });
     }
 
@@ -131,7 +137,7 @@ class TicketOutboxServiceTest {
     }
 
     @Test
-    void cancelledAvoidsAnonymousExternalEchoButPublishesM2OriginatedExternalCancellation() {
+    void cancelledPublishesLegitimatePostRoutingExternalFactButSkipsEchoAndSelfManagedAnonymousFact() {
         service.cancelled(ticket(false, "M2", TicketStatus.CANCELLED),
                 CancellationReasonCode.INFO_TIMEOUT, "Cancelado", true, NOW);
         service.cancelled(ticket(false, "M6", TicketStatus.CANCELLED),

@@ -114,13 +114,12 @@ public class InformationRequestService {
     }
 
     @Transactional
-    public InformationRequestResponse answerAnonymousFromTracking(UUID ticketId, String responseMessage,
-                                                                  String trackingActorId) {
+    public InformationRequestResponse answerAnonymousFromTracking(UUID ticketId, AnswerInformationRequest request) {
         Ticket ticket = lockedTicket(ticketId);
         if (!ticket.isAnonymous() || ticket.getCitizenId() != null) {
             throw new UnauthorizedTicketOperationException();
         }
-        return answerPending(ticket, responseMessage, trackingActorId);
+        return answerPending(ticket, request.getResponseMessage(), null);
     }
 
     private InformationRequestResponse answerPending(Ticket ticket, String responseMessage, String actorId) {

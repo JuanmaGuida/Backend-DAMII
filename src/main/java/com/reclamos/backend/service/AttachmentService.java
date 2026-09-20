@@ -121,7 +121,7 @@ public class AttachmentService {
         attachment.setStorageKey(stored.storageKey());
         attachment.setVisibility(MessageVisibility.PUBLIC);
         attachment.setUploadedByType(ActorType.CITIZEN);
-        attachment.setUploadedById(identity.citizenId().toString());
+        attachment.setUploadedById(identity == null ? null : identity.citizenId().toString());
         attachment.setSourceModuleId(null);
         attachment.setCreatedAt(createdAt);
         return attachment;
