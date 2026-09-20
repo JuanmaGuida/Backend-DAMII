@@ -4,7 +4,9 @@ import com.reclamos.backend.dto.TicketFilter;
 import com.reclamos.backend.dto.TicketResponse;
 import com.reclamos.backend.dto.request.CancelTicketRequest;
 import com.reclamos.backend.dto.request.CreateTicketRequest;
+import com.reclamos.backend.dto.response.AnonymousContactResponse;
 import com.reclamos.backend.dto.response.CreateTicketResponse;
+import com.reclamos.backend.dto.response.StaffTicketDetailResponse;
 import com.reclamos.backend.dto.response.TicketActivityResponse;
 import com.reclamos.backend.dto.response.TicketAttachmentResponse;
 import com.reclamos.backend.dto.response.TicketDetailResponse;
@@ -573,12 +575,21 @@ public class TicketService {
      * no aplica acá porque este endpoint es de sólo lectura.
      */
     @Transactional(readOnly = true)
-    public TicketDetailResponse getStaffDetail(UUID ticketId, AuthenticatedIdentity identity) {
+    public StaffTicketDetailResponse getStaffDetail(UUID ticketId, AuthenticatedIdentity identity) {
         Ticket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(() -> new ResourceNotFoundException("El ticket solicitado no existe"));
         requireStaffAccess(ticket, identity);
         TicketLocation location = locationRepository.findByTicket_Id(ticketId).orElse(null);
-        return toDetailResponse(ticket, location, true);
+        StaffTicketDetailResponse detail = toDetailResponse(
+                ticket, location, true, new StaffTicketDetailResponse());
+        if (ticket.isAnonymous()
+                && (identity.role() == ModuleRole.AGENT || identity.role() == ModuleRole.ADMIN)
+                && ticket.getAnonymousContactChannel() != null
+                && ticket.getAnonymousContactValue() != null) {
+            detail.setAnonymousContact(new AnonymousContactResponse(
+                    ticket.getAnonymousContactChannel(), ticket.getAnonymousContactValue()));
+        }
+        return detail;
     }
 
     private void requireStaffAccess(Ticket ticket, AuthenticatedIdentity identity) {
@@ -726,8 +737,12 @@ public class TicketService {
     }
 
     private TicketDetailResponse toDetailResponse(Ticket ticket, TicketLocation location, boolean staffView) {
+        return toDetailResponse(ticket, location, staffView, new TicketDetailResponse());
+    }
+
+    private <T extends TicketDetailResponse> T toDetailResponse(
+            Ticket ticket, TicketLocation location, boolean staffView, T detail) {
         TicketResponse base = toResponse(ticket, location);
-        TicketDetailResponse detail = new TicketDetailResponse();
         detail.setId(base.getId());
         detail.setPublicId(base.getPublicId());
         detail.setRequestTypeCode(base.getRequestTypeCode());

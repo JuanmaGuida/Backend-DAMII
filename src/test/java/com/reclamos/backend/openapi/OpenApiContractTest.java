@@ -291,6 +291,16 @@ class OpenApiContractTest {
         assertTrue(detailProperties.containsKey("ticketActivities"));
         assertTrue(detailProperties.containsKey("neighborhoodName"));
         assertFalse(detailProperties.containsKey("neighborhoodId"));
+        assertFalse(detailProperties.containsKey("anonymousContact"));
+        assertFalse(map(schemas, "TicketResponse", "properties").containsKey("anonymousContact"));
+        assertFalse(map(schemas, "TrackingTicketResponse", "properties").containsKey("anonymousContact"));
+
+        java.util.List<String> staffDetailAllOf = list(map(schemas, "StaffTicketDetailResponse"), "allOf");
+        assertEquals("#/components/schemas/TicketDetailResponse", map(staffDetailAllOf.getFirst()).get("$ref"));
+        Map<String, Object> staffProperties = map(map(staffDetailAllOf.get(1)), "properties");
+        assertEquals(Set.of("anonymousContact"), staffProperties.keySet());
+        assertEquals("#/components/schemas/AnonymousContact",
+                map(list(map(staffProperties, "anonymousContact"), "allOf").getFirst()).get("$ref"));
 
         Map<String, Object> activityProperties = map(schemas, "TicketActivityResponse", "properties");
         assertTrue(list(map(schemas, "TicketActivityResponse"), "required").contains("occurredAt"));
@@ -398,12 +408,14 @@ class OpenApiContractTest {
     void detailOperationsUseTheDedicatedResponseWithoutChangingSharedTicketResponses() {
         for (String operationName : Set.of(
                 "GET /api/tickets/{ticketId}",
-                "GET /api/staff/tickets/{ticketId}",
                 "GET /api/staff/tickets/{ticketId}/citizen-view")) {
             assertEquals("#/components/schemas/TicketDetailResponse",
                     map(operation(operationName), "responses", "200", "content", "application/json", "schema")
                             .get("$ref"), operationName);
         }
+        assertEquals("#/components/schemas/StaffTicketDetailResponse",
+                map(operation("GET /api/staff/tickets/{ticketId}"),
+                        "responses", "200", "content", "application/json", "schema").get("$ref"));
         for (String operationName : Set.of(
                 "POST /api/tickets/{ticketId}/review",
                 "PATCH /api/tickets/{ticketId}/classification",
