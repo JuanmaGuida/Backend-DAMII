@@ -4,10 +4,7 @@ import com.reclamos.backend.config.SecurityConfiguration;
 import com.reclamos.backend.dto.TicketFilter;
 import com.reclamos.backend.dto.TicketResponse;
 import com.reclamos.backend.dto.request.CancelTicketRequest;
-import com.reclamos.backend.dto.response.CreateTicketResponse;
-import com.reclamos.backend.dto.response.TicketDetailResponse;
-import com.reclamos.backend.dto.response.TicketActivityResponse;
-import com.reclamos.backend.dto.response.TicketAttachmentResponse;
+import com.reclamos.backend.dto.response.*;
 import com.reclamos.backend.entity.ActivityType;
 import com.reclamos.backend.entity.CancellationReasonCode;
 import com.reclamos.backend.entity.MessageVisibility;
@@ -19,10 +16,7 @@ import com.reclamos.backend.exception.UnauthorizedTicketOperationException;
 import com.reclamos.backend.identity.AuthenticatedIdentity;
 import com.reclamos.backend.identity.ModuleRole;
 import com.reclamos.backend.security.BearerTokenAuthenticationFilter;
-import com.reclamos.backend.service.AuthService;
-import com.reclamos.backend.service.InformationRequestService;
-import com.reclamos.backend.service.TicketResolutionService;
-import com.reclamos.backend.service.TicketService;
+import com.reclamos.backend.service.*;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -97,6 +91,9 @@ class TicketControllerTest {
     @MockitoBean
     private AuthService authService;
 
+    @MockitoBean
+    private SatisfactionSurveyService satisfactionSurveyService;
+
     @Test
     void createReturnsServerGeneratedPublicId() throws Exception {
         UUID ticketId = UUID.randomUUID();
@@ -118,6 +115,34 @@ class TicketControllerTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.ticketId").value(ticketId.toString()))
                 .andExpect(jsonPath("$.publicId").value("TK-2026-000123"));
+    }
+
+    @Test
+    void satisfactionSurveyReturnsCreatedBody() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+        Instant createdAt = Instant.parse("2026-09-20T15:00:00Z");
+        when(satisfactionSurveyService.create(eq(ticketId), any(), eq(CITIZEN)))
+                .thenReturn(new SatisfactionSurveyResponse(1L, ticketId, (short) 5, "Excelente", createdAt));
+
+        mockMvc.perform(post("/api/tickets/{ticketId}/satisfaction-survey", ticketId)
+                        .with(authentication(CITIZEN_AUTHENTICATION))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"score\":5,\"comment\":\"Excelente\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").value(1))
+                .andExpect(jsonPath("$.ticketId").value(ticketId.toString()))
+                .andExpect(jsonPath("$.score").value(5))
+                .andExpect(jsonPath("$.comment").value("Excelente"))
+                .andExpect(jsonPath("$.createdAt").value("2026-09-20T15:00:00Z"));
+    }
+
+    @Test
+    void satisfactionSurveyRequiresAuthentication() throws Exception {
+        mockMvc.perform(post("/api/tickets/{ticketId}/satisfaction-survey", UUID.randomUUID())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"score\":5}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("INVALID_TOKEN"));
+        verifyNoInteractions(satisfactionSurveyService);
     }
 
     @Test
