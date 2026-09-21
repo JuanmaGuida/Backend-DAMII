@@ -603,6 +603,8 @@ Los pull requests ejecutan Java 21, PostgreSQL 17, `./mvnw -B clean verify`, gen
 
 Los pushes a `dev` publican imágenes privadas en `ghcr.io/juanmaguida/backend-damii` con `dev` y `sha-<commit-completo>`. El despliegue por SSH sólo se habilita cuando la variable de GitHub `CD_ENABLED` vale exactamente `true`; su configuración y operación se documentan en `docs/runbook.md` del repositorio Infra.
 
+El CD no utiliza GitHub Environments. En `Settings → Secrets and variables → Actions` deben configurarse como **Repository Variables** `CD_ENABLED`, `LIGHTSAIL_HOST`, `LIGHTSAIL_USER`, `LIGHTSAIL_DEPLOY_PATH` y `LIGHTSAIL_KNOWN_HOSTS`; la clave dedicada se guarda únicamente como **Repository Secret** `LIGHTSAIL_SSH_PRIVATE_KEY`. Con `CD_ENABLED=false` la imagen GHCR se publica, pero el deploy automático se omite.
+
 ## Variables locales
 
 ```text

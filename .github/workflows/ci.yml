@@ -134,7 +134,6 @@ jobs:
     needs: publish
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    environment: dev
     concurrency:
       group: lightsail-dev-backend-deploy
       cancel-in-progress: false
