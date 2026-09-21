@@ -16,6 +16,7 @@ public record TicketMessageResponse(
         String authorId,
         MessageVisibility visibility,
         String text,
-        Instant createdAt
+        Instant createdAt,
+        Instant updatedAt
 ) {
 }

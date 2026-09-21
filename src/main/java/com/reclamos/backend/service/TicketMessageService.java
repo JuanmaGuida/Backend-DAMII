@@ -1,6 +1,7 @@
 package com.reclamos.backend.service;
 
 import com.reclamos.backend.dto.request.TicketMessageRequest;
+import com.reclamos.backend.dto.request.TicketMessageUpdateRequest;
 import com.reclamos.backend.dto.response.TicketMessageResponse;
 import com.reclamos.backend.entity.ActivityType;
 import com.reclamos.backend.entity.ActorType;
@@ -33,7 +34,16 @@ import java.util.UUID;
  * internalMessage recibidos por integración desde otros módulos; ese sigue
  * igual.
  * <p>
- * v1 a pedido explícito: sólo alta y listado, sin edición ni borrado.
+ * Edición y borrado (update/delete) sólo están habilitados para el propio
+ * autor y únicamente sobre mensajes propios de M2 (sourceModuleId = M2):
+ * nunca sobre lo que llegó por integración vía updateTicketStatus, que es
+ * un hecho reportado por otro módulo, no algo que un usuario de M2 pueda
+ * corregir acá. Ninguno de los dos toca el TicketActivity espejo
+ * (PUBLIC_MESSAGE_SENT/INTERNAL_MESSAGE_ADDED) que ya se insertó al crear el
+ * mensaje: esa tabla es de sólo inserción en todo el resto del código (no
+ * existe un solo update/delete sobre TicketActivityRepository), así que
+ * queda como el registro histórico inmutable de lo que se dijo en su
+ * momento, aunque el mensaje "vivo" se edite o se borre después.
  */
 @Service
 @RequiredArgsConstructor
@@ -74,6 +84,59 @@ public class TicketMessageService {
                 : messageRepository.findAllByTicket_IdAndVisibilityOrderByCreatedAtAsc(
                         ticketId, MessageVisibility.PUBLIC);
         return messages.stream().map(this::toResponse).toList();
+    }
+
+    /**
+     * PATCH /tickets/{id}/messages/{messageId}: sólo el propio autor puede
+     * editar el texto de su mensaje. visibility no es editable (ver
+     * TicketMessageUpdateRequest).
+     */
+    @Transactional
+    public TicketMessageResponse update(UUID ticketId, Long messageId, TicketMessageUpdateRequest request,
+                                         AuthenticatedIdentity actor) {
+        TicketMessage message = findOwnMessage(ticketId, messageId, actor);
+        message.setText(request.getText().trim());
+        return toResponse(messageRepository.save(message));
+    }
+
+    /**
+     * DELETE /tickets/{id}/messages/{messageId}: sólo el propio autor puede
+     * borrar su mensaje. Es un borrado físico del TicketMessage (la "vista
+     * viva" del chat); el TicketActivity espejo insertado al crearlo no se
+     * toca — ver el javadoc de la clase.
+     */
+    @Transactional
+    public void delete(UUID ticketId, Long messageId, AuthenticatedIdentity actor) {
+        TicketMessage message = findOwnMessage(ticketId, messageId, actor);
+        messageRepository.delete(message);
+    }
+
+    /**
+     * Carga el mensaje y valida que sea editable/borrable por este actor:
+     * tiene que pertenecer al ticket indicado, ser un mensaje propio de M2
+     * (nunca uno recibido por integración) y tener este actor como autor
+     * (authorId siempre es actor.citizenId().toString(), independientemente
+     * del role — ver create()). No se reevalúa la matriz de
+     * requireWriteAuthority (rol/área/ownership del ticket): autoría propia
+     * alcanza y es la única condición documentada para poder tocar un
+     * mensaje ya publicado.
+     */
+    private TicketMessage findOwnMessage(UUID ticketId, Long messageId, AuthenticatedIdentity actor) {
+        if (actor == null) {
+            throw new UnauthorizedTicketOperationException();
+        }
+        TicketMessage message = messageRepository.findById(messageId)
+                .orElseThrow(() -> new ResourceNotFoundException("El mensaje solicitado no existe"));
+        if (!message.getTicket().getId().equals(ticketId)) {
+            throw new ResourceNotFoundException("El mensaje solicitado no existe");
+        }
+        boolean isOwnMessage = SOURCE_MODULE_ID.equals(message.getSourceModuleId())
+                && message.getAuthorId() != null
+                && message.getAuthorId().equals(actor.citizenId().toString());
+        if (!isOwnMessage) {
+            throw new UnauthorizedTicketOperationException();
+        }
+        return message;
     }
 
     /**
@@ -180,6 +243,7 @@ public class TicketMessageService {
                 message.getAuthorId(),
                 message.getVisibility(),
                 message.getText(),
-                message.getCreatedAt());
+                message.getCreatedAt(),
+                message.getUpdatedAt());
     }
 }

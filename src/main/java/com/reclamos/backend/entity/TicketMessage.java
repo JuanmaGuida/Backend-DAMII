@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.Instant;
 
@@ -72,4 +73,15 @@ public class TicketMessage {
             updatable = false
     )
     private Instant createdAt;
+
+    /**
+     * V42: null en filas anteriores a esta migración (nunca editadas antes
+     * de que existiera edición). @UpdateTimestamp la setea en cada
+     * insert/update, igual que Ticket.updatedAt — en un mensaje nuevo queda
+     * igual a createdAt y sólo difiere tras un PATCH real, que es la señal
+     * que usa el cliente para mostrar "(editado)".
+     */
+    @UpdateTimestamp
+    @Column(name = "updated_at")
+    private Instant updatedAt;
 }

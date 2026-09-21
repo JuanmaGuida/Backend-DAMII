@@ -149,6 +149,13 @@ public class SecurityConfiguration {
                         // TicketMessageService.requireWriteAuthority/requireReadAuthority.
                         .requestMatchers(HttpMethod.POST, "/api/tickets/*/messages").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/tickets/*/messages").authenticated()
+                        // PATCH/DELETE /tickets/{id}/messages/{messageId}: editar/borrar un
+                        // mensaje propio. Acá también alcanza con "autenticado" — la
+                        // restricción real (sólo el propio autor, y sólo sobre mensajes
+                        // creados en M2, nunca los llegados por integración) la valida
+                        // TicketMessageService.findOwnMessage, no este filtro grueso por rol.
+                        .requestMatchers(HttpMethod.PATCH, "/api/tickets/*/messages/*").authenticated()
+                        .requestMatchers(HttpMethod.DELETE, "/api/tickets/*/messages/*").authenticated()
                         // POST /tickets/{id}/cancel (Entidades V1.49 §24): "Ciudadano owner
                         // / propietario anónimo acreditado / AGENT / ADMIN". Igual que el
                         // resto de las acciones sobre un ticket puntual, alcanza con estar
