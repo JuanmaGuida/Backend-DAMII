@@ -2785,7 +2785,7 @@ components:
       properties: { labelIds: { type: array, minItems: 1, uniqueItems: true, items: { type: string, format: uuid } } }
     LabelResponse:
       type: object
-      required: [ id, code, name, description, active ]
+      required: [ id, code, name, description, active, ticketCount ]
       properties:
         id:
           type: string
@@ -2799,6 +2799,11 @@ components:
           nullable: true
         active:
           type: boolean
+        ticketCount:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Cantidad de tickets asociados a la etiqueta.
     LabelSummaryResponse:
       type: object
       required: [ id, code, name, description ]

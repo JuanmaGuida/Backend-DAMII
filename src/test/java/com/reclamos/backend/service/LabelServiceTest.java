@@ -14,6 +14,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.time.*;
 import java.util.*;
 import static org.assertj.core.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -40,6 +41,18 @@ class LabelServiceTest {
         when(labels.existsByCodeIgnoreCase("URGENTE")).thenReturn(true);
         assertThatThrownBy(() -> service.create(new CreateLabelRequest("URGENTE", "Urgente", null)))
                 .isInstanceOf(LabelConflictException.class);
+    }
+
+    @Test void listsLabelsWithTheirTicketCountsIncludingZero() {
+        UUID usedId = UUID.randomUUID(), unusedId = UUID.randomUUID();
+        LabelWithTicketCount used = projection(usedId, "USED", "Usada", 3);
+        LabelWithTicketCount unused = projection(unusedId, "UNUSED", "Sin uso", 0);
+        when(labels.findAllWithTicketCount()).thenReturn(List.of(unused, used));
+
+        var response = service.list();
+
+        assertThat(response).extracting("id", "ticketCount")
+                .containsExactly(tuple(unusedId, 0L), tuple(usedId, 3L));
     }
 
     @Test void assignsEveryActiveLabelAsManualWithActorAndTimestamp() {
@@ -114,5 +127,14 @@ class LabelServiceTest {
     }
 
     private Label active(UUID id) { Label label = new Label(); label.setId(id); label.setActive(true); return label; }
+    private LabelWithTicketCount projection(UUID id, String code, String name, long ticketCount) {
+        LabelWithTicketCount projection = mock(LabelWithTicketCount.class);
+        when(projection.getId()).thenReturn(id);
+        when(projection.getCode()).thenReturn(code);
+        when(projection.getName()).thenReturn(name);
+        when(projection.getActive()).thenReturn(true);
+        when(projection.getTicketCount()).thenReturn(ticketCount);
+        return projection;
+    }
     private AuthenticatedIdentity actor() { return new AuthenticatedIdentity("agent", UUID.randomUUID(), "Agent", null, ModuleRole.AGENT); }
 }

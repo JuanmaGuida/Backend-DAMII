@@ -16,4 +16,5 @@ public class LabelResponse {
     private String name;
     private String description;
     private boolean active;
+    private long ticketCount;
 }
