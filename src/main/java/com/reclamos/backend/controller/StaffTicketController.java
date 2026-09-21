@@ -1,10 +1,13 @@
 package com.reclamos.backend.controller;
 
+import com.reclamos.backend.dto.request.LinkDuplicateRequest;
+import com.reclamos.backend.dto.response.DuplicateLinkResponse;
 import com.reclamos.backend.dto.response.StaffTicketDetailResponse;
 import com.reclamos.backend.dto.response.DuplicateCandidateResponse;
 import com.reclamos.backend.dto.response.TicketDetailResponse;
 import com.reclamos.backend.identity.AuthenticatedIdentity;
 import com.reclamos.backend.service.DuplicateCandidateService;
+import com.reclamos.backend.service.DuplicateTicketService;
 import com.reclamos.backend.service.TicketService;
 import com.reclamos.backend.service.LabelService;
 import com.reclamos.backend.dto.request.AssignLabelsRequest;
@@ -39,6 +42,14 @@ public class StaffTicketController {
     private final TicketService ticketService;
     private final DuplicateCandidateService duplicateCandidateService;
     private final LabelService labelService;
+    private final DuplicateTicketService duplicateTicketService;
+
+    @PostMapping("/{ticketId}/duplicate")
+    public DuplicateLinkResponse linkDuplicate(@PathVariable UUID ticketId,
+                                               @Valid @RequestBody LinkDuplicateRequest request,
+                                               @AuthenticationPrincipal AuthenticatedIdentity identity) {
+        return duplicateTicketService.link(ticketId, request, identity);
+    }
 
     @PostMapping("/{ticketId}/labels")
     @ResponseStatus(HttpStatus.NO_CONTENT)

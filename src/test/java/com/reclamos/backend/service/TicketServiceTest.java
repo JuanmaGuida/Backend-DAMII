@@ -1439,6 +1439,84 @@ class TicketServiceTest {
     }
 
     @Test
+    void ownerWithdrawsOwnDuplicateWithoutChangingMainOrSiblingAndKeepsLink() {
+        AuthenticatedIdentity owner = new AuthenticatedIdentity(
+                "duplicate-owner", UUID.randomUUID(), "Vecino", null, ModuleRole.CITIZEN);
+        Ticket main = ticket(TicketStatus.IN_PROGRESS, Priority.MEDIUM);
+        Ticket duplicate = ticket(TicketStatus.DUPLICATE, Priority.LOW);
+        duplicate.setCitizenId(owner.citizenId());
+        duplicate.setMainTicket(main);
+        Ticket sibling = ticket(TicketStatus.DUPLICATE, Priority.LOW);
+        sibling.setMainTicket(main);
+        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(duplicate));
+        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+        when(activities.countByTicketId(ticketId)).thenReturn(1);
+
+        CancelTicketRequest request = new CancelTicketRequest();
+        request.setReasonCode(CancellationReasonCode.WITHDRAWN_BY_CITIZEN);
+
+        TicketResponse response = service.cancelTicket(ticketId, request, owner);
+
+        assertThat(response.getCurrentStatus()).isEqualTo(TicketStatus.CANCELLED);
+        assertThat(duplicate.getCurrentStatus()).isEqualTo(TicketStatus.CANCELLED);
+        assertThat(duplicate.getMainTicket()).isSameAs(main);
+        assertThat(main.getCurrentStatus()).isEqualTo(TicketStatus.IN_PROGRESS);
+        assertThat(sibling.getCurrentStatus()).isEqualTo(TicketStatus.DUPLICATE);
+        verify(cancellationRepository, times(1)).save(argThat(cancellation ->
+                cancellation.getTicket() == duplicate
+                        && cancellation.getReasonCode() == CancellationReasonCode.WITHDRAWN_BY_CITIZEN));
+        verify(activities, times(1)).save(argThat(activity ->
+                activity.getTicket() == duplicate
+                        && activity.getActionType() == ActivityType.CANCELLED
+                        && activity.getPreviousStatus() == TicketStatus.DUPLICATE));
+        verify(ticketSlaService).terminateActiveCycles(duplicate, NOW);
+        verify(tickets, never()).save(main);
+        verify(tickets, never()).save(sibling);
+    }
+
+    @Test
+    void ownerCannotCancelDuplicateWithAnotherReason() {
+        AuthenticatedIdentity owner = new AuthenticatedIdentity(
+                "duplicate-owner", UUID.randomUUID(), "Vecino", null, ModuleRole.CITIZEN);
+        Ticket duplicate = ticket(TicketStatus.DUPLICATE, Priority.LOW);
+        duplicate.setCitizenId(owner.citizenId());
+        duplicate.setMainTicket(ticket(TicketStatus.IN_PROGRESS, Priority.MEDIUM));
+        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(duplicate));
+        CancelTicketRequest request = new CancelTicketRequest();
+        request.setReasonCode(CancellationReasonCode.OTHER);
+
+        assertThatThrownBy(() -> service.cancelTicket(ticketId, request, owner))
+                .isInstanceOf(TicketStateConflictException.class);
+        assertThat(duplicate.getCurrentStatus()).isEqualTo(TicketStatus.DUPLICATE);
+        verify(cancellationRepository, never()).save(any());
+        verify(activities, never()).save(any());
+    }
+
+    @Test
+    void anonymousOwnerWithdrawsDuplicateAndKeepsMainTicket() {
+        Ticket main = ticket(TicketStatus.IN_PROGRESS, Priority.MEDIUM);
+        Ticket duplicate = ticket(TicketStatus.DUPLICATE, Priority.LOW);
+        duplicate.setAnonymous(true);
+        duplicate.setCitizenId(null);
+        duplicate.setMainTicket(main);
+        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(duplicate));
+        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+        CancelTicketRequest request = new CancelTicketRequest();
+        request.setReasonCode(CancellationReasonCode.WITHDRAWN_BY_CITIZEN);
+
+        TicketResponse response = service.cancelAnonymousTicket(ticketId, request);
+
+        assertThat(response.getCurrentStatus()).isEqualTo(TicketStatus.CANCELLED);
+        assertThat(duplicate.getMainTicket()).isSameAs(main);
+        assertThat(main.getCurrentStatus()).isEqualTo(TicketStatus.IN_PROGRESS);
+        verify(cancellationRepository).save(argThat(cancellation ->
+                cancellation.getReasonCode() == CancellationReasonCode.WITHDRAWN_BY_CITIZEN));
+        verify(activities).save(argThat(activity -> activity.getActionType() == ActivityType.CANCELLED));
+        verify(ticketSlaService).terminateActiveCycles(duplicate, NOW);
+    }
+
+
+    @Test
     void anonymousExternalOwnerCancelsRegisteredTicketWithoutPublishingPreRoutedEvent() {
         Ticket ticket = ticket(TicketStatus.REGISTERED, Priority.LOW);
         ticket.setAnonymous(true);

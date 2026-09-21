@@ -131,6 +131,7 @@ public class SecurityConfiguration {
                         .requestMatchers(HttpMethod.PATCH, "/api/tickets/*/classification")
                         .hasAnyRole("AGENT", "ADMIN")
                         .requestMatchers(HttpMethod.POST, "/api/tickets/*/route").hasAnyRole("AGENT", "ADMIN")
+                        .requestMatchers(HttpMethod.POST, "/api/staff/tickets/*/duplicate").hasAnyRole("AGENT", "ADMIN")
                         .requestMatchers(HttpMethod.POST, "/api/tickets/*/information-request").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/tickets/*/information-response").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/tickets/*/attachments").authenticated()

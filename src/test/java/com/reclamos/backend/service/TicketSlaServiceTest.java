@@ -254,14 +254,19 @@ class TicketSlaServiceTest {
         verify(slas, never()).save(any());
     }
 
-    @Test void duplicateLifecycleStopsOnlyResolution() {
+    @Test void duplicateLifecycleStopsFirstResponseAndResolution() {
+        TicketSla firstResponse = cycle(1, SlaStatus.NEAR_DUE);
+        firstResponse.setSlaType(SlaType.FIRST_RESPONSE);
         TicketSla resolution = cycle(1, SlaStatus.RUNNING);
+        when(slas.findActiveForUpdate(ticket.getId(), SlaType.FIRST_RESPONSE)).thenReturn(Optional.of(firstResponse));
         when(slas.findActiveForUpdate(ticket.getId(), SlaType.RESOLUTION)).thenReturn(Optional.of(resolution));
 
-        service.stopActiveResolutionCycleForDuplicate(ticket, NEAR);
+        service.stopActiveCyclesForDuplicate(ticket, NEAR);
 
+        assertEquals(SlaStatus.STOPPED, firstResponse.getStatus());
         assertEquals(SlaStatus.STOPPED, resolution.getStatus());
-        verify(slas, never()).findActiveForUpdate(ticket.getId(), SlaType.FIRST_RESPONSE);
+        assertEquals(NEAR, firstResponse.getCompletedAt());
+        assertEquals(NEAR, resolution.getCompletedAt());
     }
 
     @Test void duplicateLifecycleReconcilesAnOverdueResolutionAfterTheDuplicateLinkWasApplied() {
@@ -274,7 +279,7 @@ class TicketSlaServiceTest {
             return null;
         }).when(milestones).processMilestones(ticket, resolution, DUE);
 
-        service.stopActiveResolutionCycleForDuplicate(ticket, DUE);
+        service.stopActiveCyclesForDuplicate(ticket, DUE);
 
         assertEquals(SlaStatus.BREACHED, resolution.getStatus());
         assertEquals(DUE, resolution.getCompletedAt());

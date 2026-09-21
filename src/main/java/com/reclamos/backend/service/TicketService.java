@@ -396,10 +396,8 @@ public class TicketService {
      * AGENT/ADMIN conservan la cancelación administrativa de tickets ajenos
      * en {@link #ADMIN_CANCELLABLE_STATUSES}. ROUTED/IN_PROGRESS se cancelan
      * por el flujo de integración (updateTicketStatus/REJECTED), no por acá.
-     * La cancelación de un ticket DUPLICATE (Entidades §14: "se
-     * agrega la transición DUPLICATE -&gt; CANCELLED por
-     * WITHDRAWN_BY_CITIZEN") queda pendiente de Story 7.2 (Sprint 5):
-     * DUPLICATE todavía no es un estado alcanzable en el sistema.
+     * Un propietario también puede retirar su propio DUPLICATE, únicamente
+     * mediante WITHDRAWN_BY_CITIZEN, sin alterar el vínculo ni otros tickets.
      */
     @Transactional
     public TicketResponse cancelTicket(UUID ticketId, CancelTicketRequest request, AuthenticatedIdentity actor) {
@@ -424,7 +422,11 @@ public class TicketService {
 
     private TicketResponse cancelTicket(Ticket ticket, CancelTicketRequest request, ActorType actorType,
                                         String actorId, boolean ownerAction, boolean publishCancellation) {
-        if (ownerAction && ticket.getCurrentStatus() != TicketStatus.REGISTERED) {
+        boolean ownerWithdrawsDuplicate = ownerAction
+                && ticket.getCurrentStatus() == TicketStatus.DUPLICATE
+                && request.getReasonCode() == CancellationReasonCode.WITHDRAWN_BY_CITIZEN;
+        if (ownerAction && ticket.getCurrentStatus() != TicketStatus.REGISTERED
+                && !ownerWithdrawsDuplicate) {
             throw new TicketStateConflictException(
                     "El ticket está en estado " + ticket.getCurrentStatus()
                             + " y el propietario sólo puede cancelarlo directamente en REGISTERED");
@@ -461,9 +463,8 @@ public class TicketService {
         recordCancellationActivity(ticket, previousStatus, actorType, actorId, request.getReasonCode(),
                 request.getPublicMessage() != null ? request.getPublicMessage() : request.getInternalMessage(), now);
 
-        // La cancelación directa del propietario anónimo ocurre únicamente en
-        // REGISTERED, antes de ROUTED, por lo que no existe un consumidor externo.
-        // Los flujos identificados y administrativos conservan su política previa.
+        // Los flujos identificados y administrativos conservan la política de
+        // publicación previa; el flujo anónimo acreditado no publica desde aquí.
         if (publishCancellation) {
             ticketOutboxService.cancelled(ticket, request.getReasonCode(), request.getPublicMessage(), true, now);
         }
@@ -759,6 +760,7 @@ public class TicketService {
         detail.setSummary(base.getSummary());
         detail.setDescription(ticket.getDescription());
         detail.setCurrentStatus(base.getCurrentStatus());
+        detail.setMainTicketId(ticket.getMainTicket() == null ? null : ticket.getMainTicket().getId());
         detail.setCurrentPriority(base.getCurrentPriority());
         detail.setResponsibleAreaId(base.getResponsibleAreaId());
         detail.setAssignedAgentId(base.getAssignedAgentId());

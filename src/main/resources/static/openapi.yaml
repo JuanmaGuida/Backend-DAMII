@@ -1312,6 +1312,33 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiError'
+  /api/staff/tickets/{ticketId}/duplicate:
+    post:
+      tags: [ Tickets ]
+      summary: Vincular manualmente un ticket a su principal
+      description: |
+        Operación de triage exclusiva de AGENT y ADMIN. El ticket queda en
+        DUPLICATE y mainTicketId apunta directamente a un principal activo.
+        Repetir exactamente el mismo vínculo es idempotente. La operación no
+        modifica estimatedAffectedCount, que continúa derivando de población
+        del barrio por affectedPopulationFactor.
+      operationId: linkDuplicateTicket
+      security: [ { bearerAuth: [ ] } ]
+      parameters: [ { $ref: '#/components/parameters/TicketId' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LinkDuplicateRequest' }
+      responses:
+        '200':
+          description: Vínculo creado o ya existente con el mismo principal.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DuplicateLinkResponse' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Vínculo o estado incompatible. }
   /api/tickets/{ticketId}/review:
     post:
       tags: [ Tickets ]
@@ -2828,7 +2855,7 @@ components:
         staff puede incluir adjuntos INTERNAL y campos adicionales del historial.
       required: [id, publicId, requestTypeCode, requestTypeName, categoryName, subcategoryName,
                  ticketType, summary, description, currentStatus, currentPriority, responsibleAreaId,
-                 assignedAgentId, anonymous, estimatedAffectedCount, escalated, escalationReasonCode,
+                 assignedAgentId, anonymous, estimatedAffectedCount, mainTicketId, escalated, escalationReasonCode,
                  escalatedAt, firstResponseDueAt, firstResponseNearDue, firstResponseBreached,
                  resolutionDueAt, slaNearDue, slaBreached, resolutionNearDueAt, neighborhoodName,
                  classificationFinalizedAt, statusChangedAt, createdAt, updatedAt, attachments,
@@ -2855,6 +2882,11 @@ components:
           type: string
         currentStatus:
           $ref: '#/components/schemas/TicketStatus'
+        mainTicketId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Ticket principal cuando currentStatus es DUPLICATE o CLOSED por herencia.
         currentPriority:
           $ref: '#/components/schemas/Priority'
         responsibleAreaId:
@@ -2932,6 +2964,18 @@ components:
           allOf:
             - $ref: '#/components/schemas/PendingInformationRequestResponse'
           nullable: true
+    LinkDuplicateRequest:
+      type: object
+      required: [ mainTicketId ]
+      properties:
+        mainTicketId: { type: string, format: uuid }
+    DuplicateLinkResponse:
+      type: object
+      required: [ ticketId, mainTicketId, currentStatus ]
+      properties:
+        ticketId: { type: string, format: uuid }
+        mainTicketId: { type: string, format: uuid }
+        currentStatus: { $ref: '#/components/schemas/TicketStatus' }
     StaffTicketDetailResponse:
       description: |
         Detalle interno. Extiende la proyección común con el contacto privado
@@ -3022,8 +3066,8 @@ components:
           type: string
           nullable: true
         actorType:
-          type: string
-          enum: [CITIZEN, AGENT, AREA_RESPONSIBLE, ADMIN, EXTERNAL_USER, SYSTEM]
+          allOf:
+            - $ref: '#/components/schemas/ActorType'
           nullable: true
         previousPriority:
           allOf:
@@ -3444,6 +3488,9 @@ components:
       type: string
       description: Identificador técnico de módulo; los valores admitidos pertenecen al rango M1 a M9.
       enum: [M1, M2, M3, M4, M5, M6, M7, M8, M9]
+    ActorType:
+      type: string
+      enum: [CITIZEN, AGENT, AREA_RESPONSIBLE, ADMIN, EXTERNAL_USER, SYSTEM]
     ModuleRole:
       type: string
       enum: [CITIZEN, AGENT, AREA_RESPONSIBLE, ADMIN]

@@ -26,6 +26,7 @@ public class TicketDetailResponse {
     private String summary;
     private String description;
     private TicketStatus currentStatus;
+    private UUID mainTicketId;
     private Priority currentPriority;
     private String responsibleAreaId;
     private String assignedAgentId;

@@ -27,6 +27,7 @@ class StaffTicketLabelControllerSecurityTest {
     @MockitoBean TicketService tickets;
     @MockitoBean LabelService labels;
     @MockitoBean DuplicateCandidateService duplicates;
+    @MockitoBean DuplicateTicketService duplicateTicketService;
     @MockitoBean AuthService authService;
 
     @ParameterizedTest @MethodSource("operations")
