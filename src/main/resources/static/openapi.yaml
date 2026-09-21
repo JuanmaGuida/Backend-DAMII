@@ -1729,6 +1729,64 @@ paths:
           $ref: '#/components/responses/TicketStateConflict'
         '415':
           $ref: '#/components/responses/UnsupportedMediaType'
+  /api/tickets/{ticketId}/messages:
+    post:
+      tags: [ Tickets ]
+      summary: Agregar un mensaje público o interno al ticket (chat)
+      description: |
+        El ciudadano propietario sólo puede agregar mensajes PUBLIC en su
+        propio ticket. AGENT y ADMIN pueden enviar PUBLIC o INTERNAL en
+        tickets ajenos. AREA_RESPONSIBLE sólo puede hacerlo en tickets ajenos
+        cuyo responsibleAreaId coincide con su areaId. Ningún rol interno
+        puede enviar mensajes en capacidad staff sobre su propio ticket:
+        ahí siempre actúa como CITIZEN y sólo con PUBLIC.
+      operationId: createTicketMessage
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - $ref: '#/components/parameters/TicketId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TicketMessageRequest'
+      responses:
+        '201':
+          description: Mensaje registrado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketMessageResponse'
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/InvalidToken' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+    get:
+      tags: [ Tickets ]
+      summary: Listar los mensajes del ticket (chat)
+      description: |
+        El ciudadano propietario recibe sólo PUBLIC. Una capacidad staff
+        habilitada sobre el ticket (AGENT/ADMIN en cualquier ajeno,
+        AREA_RESPONSIBLE en uno de su areaId) recibe PUBLIC e INTERNAL.
+      operationId: listTicketMessages
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - $ref: '#/components/parameters/TicketId'
+      responses:
+        '200':
+          description: Mensajes del ticket, ordenados por createdAt ascendente.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TicketMessageResponse'
+        '401': { $ref: '#/components/responses/InvalidToken' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /api/attachments/{attachmentId}/content:
     get:
       tags: [Attachments]
@@ -3106,6 +3164,39 @@ components:
         message:
           type: string
           nullable: true
+    TicketMessageRequest:
+      type: object
+      required: [ visibility, text ]
+      additionalProperties: false
+      properties:
+        visibility:
+          type: string
+          enum: [PUBLIC, INTERNAL]
+          description: Quién puede usar INTERNAL depende del rol y del ownership del ticket; lo valida el backend, no este schema.
+        text:
+          type: string
+          minLength: 1
+          maxLength: 4000
+    TicketMessageResponse:
+      type: object
+      required: [ id, authorType, authorId, visibility, text, createdAt ]
+      properties:
+        id:
+          type: integer
+          format: int64
+        authorType:
+          $ref: '#/components/schemas/ActorType'
+        authorId:
+          type: string
+          nullable: true
+        visibility:
+          type: string
+          enum: [PUBLIC, INTERNAL]
+        text:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
     DuplicateCandidateResponse:
       type: object
       description: Sugerencia explicable de un posible duplicado; no representa una vinculación automática.

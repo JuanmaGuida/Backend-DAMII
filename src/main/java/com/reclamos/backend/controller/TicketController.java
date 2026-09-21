@@ -12,6 +12,7 @@ import com.reclamos.backend.identity.AuthenticatedIdentity;
 import com.reclamos.backend.service.InformationRequestService;
 import com.reclamos.backend.service.TicketAttachmentUploadService;
 import com.reclamos.backend.service.SatisfactionSurveyService;
+import com.reclamos.backend.service.TicketMessageService;
 import com.reclamos.backend.service.TicketResolutionService;
 import com.reclamos.backend.service.TicketService;
 import jakarta.validation.Valid;
@@ -29,6 +30,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -42,6 +44,7 @@ public class TicketController {
     private final TicketResolutionService ticketResolutionService;
     private final TicketAttachmentUploadService ticketAttachmentUploadService;
     private final SatisfactionSurveyService satisfactionSurveyService;
+    private final TicketMessageService ticketMessageService;
 
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<CreateTicketResponse> create(
@@ -219,5 +222,33 @@ public class TicketController {
             @Valid @RequestBody CancelTicketRequest request,
             @AuthenticationPrincipal AuthenticatedIdentity identity) {
         return ticketService.cancelTicket(ticketId, request, identity);
+    }
+
+    /**
+     * POST /tickets/{id}/messages (Entidades V1.49 §10 + tabla de endpoints):
+     * chat de ticket. La autorización real (owner→PUBLIC únicamente,
+     * AGENT/ADMIN cualquier ajeno, AREA_RESPONSIBLE sólo su areaId, ningún
+     * rol interno en su propio ticket) vive en TicketMessageService, no acá.
+     */
+    @PostMapping(path = "/{ticketId}/messages", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @ResponseStatus(HttpStatus.CREATED)
+    public TicketMessageResponse createMessage(
+            @PathVariable UUID ticketId,
+            @Valid @RequestBody TicketMessageRequest request,
+            @AuthenticationPrincipal AuthenticatedIdentity identity) {
+        return ticketMessageService.create(ticketId, request, identity);
+    }
+
+    /**
+     * GET /tickets/{id}/messages: listado del chat. Ver
+     * TicketMessageService.requireReadAuthority para el criterio de qué ve
+     * cada caller (no está documentado como fila propia en Entidades V1.49,
+     * que sólo especifica el POST).
+     */
+    @GetMapping("/{ticketId}/messages")
+    public List<TicketMessageResponse> listMessages(
+            @PathVariable UUID ticketId,
+            @AuthenticationPrincipal AuthenticatedIdentity identity) {
+        return ticketMessageService.list(ticketId, identity);
     }
 }
