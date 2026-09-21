@@ -80,6 +80,12 @@ public class GlobalExceptionHandler {
         return response(HttpStatus.CONFLICT, TicketResolutionConflictException.CODE, exception.getMessage());
     }
 
+    @ExceptionHandler(SatisfactionSurveyConflictException.class)
+    public ResponseEntity<ApiErrorResponse> handleSatisfactionSurveyConflict(
+            SatisfactionSurveyConflictException exception) {
+        return response(HttpStatus.CONFLICT, SatisfactionSurveyConflictException.CODE, exception.getMessage());
+    }
+
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     public ResponseEntity<ApiErrorResponse> handleTypeMismatch(MethodArgumentTypeMismatchException exception) {
         return response(HttpStatus.BAD_REQUEST, "INVALID_REQUEST",

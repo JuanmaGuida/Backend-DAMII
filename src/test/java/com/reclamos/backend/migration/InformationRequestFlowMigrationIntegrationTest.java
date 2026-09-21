@@ -20,8 +20,8 @@ class InformationRequestFlowMigrationIntegrationTest {
     @Autowired private DataSource dataSource;
 
     @Test
-    void v39SupportsExternalRequesterAnonymousAnswerAndResponseAttachment() {
-        String schema = "information_request_v39_" + UUID.randomUUID().toString().replace("-", "");
+    void v40SupportsExternalRequesterAnonymousAnswerAndResponseAttachment() {
+        String schema = "information_request_v40_" + UUID.randomUUID().toString().replace("-", "");
         JdbcTemplate database = new JdbcTemplate(dataSource);
         try {
             Flyway flyway = Flyway.configure()
@@ -33,7 +33,7 @@ class InformationRequestFlowMigrationIntegrationTest {
                     .load();
             flyway.migrate();
             assertTrue(flyway.validateWithResult().validationSuccessful);
-            assertEquals("39", database.queryForObject("SELECT version FROM " + schema
+            assertEquals("40", database.queryForObject("SELECT version FROM " + schema
                     + ".flyway_schema_history WHERE success ORDER BY installed_rank DESC LIMIT 1", String.class));
             assertEquals(1, database.queryForObject("SELECT COUNT(*) FROM information_schema.tables "
                     + "WHERE table_schema=? AND table_name='information_request_attachments'",

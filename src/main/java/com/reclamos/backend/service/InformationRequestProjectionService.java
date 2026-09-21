@@ -6,6 +6,7 @@ import com.reclamos.backend.dto.response.TicketAttachmentResponse;
 import com.reclamos.backend.entity.InformationAttachmentRole;
 import com.reclamos.backend.entity.InformationRequest;
 import com.reclamos.backend.entity.InformationRequestStatus;
+import com.reclamos.backend.entity.MessageVisibility;
 import com.reclamos.backend.repository.InformationRequestAttachmentRepository;
 import com.reclamos.backend.repository.InformationRequestRepository;
 import lombok.RequiredArgsConstructor;
@@ -33,6 +34,7 @@ public class InformationRequestProjectionService {
                 .findAllByInformationRequest_IdAndRoleOrderByAttachment_CreatedAtAsc(
                         request.getId(), InformationAttachmentRole.REQUEST_CONTEXT)
                 .stream()
+                .filter(link -> link.getAttachment().getVisibility() == MessageVisibility.PUBLIC)
                 .map(link -> {
                     var attachment = link.getAttachment();
                     return new TicketAttachmentResponse(attachment.getId(), attachment.getFileName(),

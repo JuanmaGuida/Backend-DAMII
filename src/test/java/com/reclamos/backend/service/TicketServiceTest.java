@@ -1900,6 +1900,35 @@ class TicketServiceTest {
     }
 
     @Test
+    void getByIdKeepsReopenedReasonInSequenceOrderWithoutExposingOtherActivityMessages() {
+        Ticket ticket = ticket(TicketStatus.IN_PROGRESS, Priority.MEDIUM);
+        ticket.setCitizenId(actor.citizenId());
+        ticket.setAnonymous(false);
+        TicketActivity internalAudit = activity(4, ActivityType.RETURNED_BY_AREA,
+                "INTERNAL_REASON", "detalle sólo para staff");
+        TicketActivity reopened = activity(5, ActivityType.REOPENED, null,
+                "La solución no resolvió el problema");
+        reopened.setPreviousStatus(TicketStatus.RESOLVED);
+        reopened.setNewStatus(TicketStatus.IN_PROGRESS);
+
+        when(tickets.findById(ticketId)).thenReturn(Optional.of(ticket));
+        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+        when(activities.findAllByTicket_IdOrderBySequenceAsc(ticketId))
+                .thenReturn(List.of(internalAudit, reopened));
+
+        TicketDetailResponse response = service.getById(ticketId, actor);
+
+        assertThat(response.getTicketActivities()).extracting("sequence")
+                .containsExactly(4, 5);
+        assertThat(response.getTicketActivities().getFirst().getMessage()).isNull();
+        assertThat(response.getTicketActivities().get(1))
+                .extracting("actionType", "previousStatus", "newStatus", "message")
+                .containsExactly(ActivityType.REOPENED, TicketStatus.RESOLVED,
+                        TicketStatus.IN_PROGRESS, "La solución no resolvió el problema");
+        assertThat(response.getTicketActivities().get(1).getOccurredAt()).isEqualTo(NOW);
+    }
+
+    @Test
     void getByIdProjectsFirstResponseStateWithoutInferringFromDeadlines() {
         Ticket ticket = ticket(TicketStatus.REGISTERED, Priority.MEDIUM);
         ticket.setCitizenId(actor.citizenId());
