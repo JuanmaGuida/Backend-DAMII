@@ -10,6 +10,7 @@ import com.reclamos.backend.identity.AuthenticatedIdentity;
 import com.reclamos.backend.service.InformationRequestService;
 import com.reclamos.backend.service.TicketService;
 import com.reclamos.backend.service.TicketResolutionService;
+import com.reclamos.backend.service.TicketAttachmentUploadService;
 import com.reclamos.backend.exception.TicketResolutionConflictException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -38,12 +39,14 @@ class TicketControllerErrorTest {
     private final TicketService ticketService = mock(TicketService.class);
     private final InformationRequestService informationRequestService = mock(InformationRequestService.class);
     private final TicketResolutionService ticketResolutionService = mock(TicketResolutionService.class);
+    private final TicketAttachmentUploadService ticketAttachmentUploadService = mock(TicketAttachmentUploadService.class);
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
         mockMvc = MockMvcBuilders.standaloneSetup(
-                        new TicketController(ticketService, informationRequestService, ticketResolutionService))
+                        new TicketController(ticketService, informationRequestService, ticketResolutionService,
+                                ticketAttachmentUploadService))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
                 .build();

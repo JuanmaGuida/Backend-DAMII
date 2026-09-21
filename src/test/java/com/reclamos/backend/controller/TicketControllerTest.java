@@ -21,6 +21,7 @@ import com.reclamos.backend.identity.ModuleRole;
 import com.reclamos.backend.security.BearerTokenAuthenticationFilter;
 import com.reclamos.backend.service.AuthService;
 import com.reclamos.backend.service.InformationRequestService;
+import com.reclamos.backend.service.TicketAttachmentUploadService;
 import com.reclamos.backend.service.TicketResolutionService;
 import com.reclamos.backend.service.TicketService;
 import org.junit.jupiter.api.Test;
@@ -43,6 +44,7 @@ import java.util.UUID;
 import java.time.Instant;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.verify;
@@ -97,6 +99,8 @@ class TicketControllerTest {
 
     @MockitoBean
     private TicketResolutionService ticketResolutionService;
+    @MockitoBean
+    private TicketAttachmentUploadService ticketAttachmentUploadService;
 
     @MockitoBean
     private AuthService authService;
@@ -509,6 +513,48 @@ class TicketControllerTest {
                     .andExpect(status().isForbidden());
         }
         verifyNoInteractions(ticketService);
+    }
+
+    @Test
+    void authenticatedUploadAcceptsMultipartAndReturnsSafeAttachmentMetadata() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+        when(ticketAttachmentUploadService.upload(eq(ticketId), any(), any(), eq(CITIZEN)))
+                .thenReturn(List.of(new TicketAttachmentResponse(
+                        10L, "proof.pdf", "application/pdf", 3,
+                        MessageVisibility.PUBLIC, Instant.parse("2026-09-20T12:00:00Z"),
+                        "https://m2.example/api/attachments/10/content")));
+        MockPart data = new MockPart("data", "{\"visibility\":\"PUBLIC\"}".getBytes());
+        data.getHeaders().setContentType(MediaType.APPLICATION_JSON);
+        MockMultipartFile attachment = new MockMultipartFile(
+                "attachments", "proof.pdf", "application/pdf", new byte[]{1, 2, 3});
+
+        mockMvc.perform(multipart("/api/tickets/{ticketId}/attachments", ticketId)
+                        .file(attachment)
+                        .part(data)
+                        .with(authentication(CITIZEN_AUTHENTICATION)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$[0].id").value(10))
+                .andExpect(jsonPath("$[0].visibility").value("PUBLIC"))
+                .andExpect(jsonPath("$[0].downloadUrl")
+                        .value("https://m2.example/api/attachments/10/content"))
+                .andExpect(jsonPath("$[0].storageKey").doesNotExist());
+
+        verify(ticketAttachmentUploadService).upload(eq(ticketId), any(),
+                argThat(files -> files.length == 1 && "proof.pdf".equals(files[0].getOriginalFilename())),
+                eq(CITIZEN));
+    }
+
+    @Test
+    void generalUploadRequiresBearerAuthentication() throws Exception {
+        MockPart data = new MockPart("data", "{\"visibility\":\"PUBLIC\"}".getBytes());
+        data.getHeaders().setContentType(MediaType.APPLICATION_JSON);
+        MockMultipartFile attachment = new MockMultipartFile(
+                "attachments", "proof.pdf", "application/pdf", new byte[]{1});
+
+        mockMvc.perform(multipart("/api/tickets/{ticketId}/attachments", UUID.randomUUID())
+                        .file(attachment).part(data))
+                .andExpect(status().isUnauthorized());
+        verifyNoInteractions(ticketAttachmentUploadService);
     }
 
     private UsernamePasswordAuthenticationToken authenticationFor(ModuleRole role) {
