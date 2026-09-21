@@ -140,6 +140,15 @@ public class SecurityConfiguration {
                         .requestMatchers(HttpMethod.POST, "/api/tickets/*/resolution/confirm").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/tickets/*/resolution/reopen").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/tickets/*/satisfaction-survey").authenticated()
+                        // POST/GET /tickets/{id}/messages (Entidades V1.49 §10 + tabla de
+                        // endpoints): chat de ticket. Igual que el resto de las acciones
+                        // puntuales sobre un ticket, el filtro de entrada acá es sólo
+                        // "autenticado" — la matriz real (owner→PUBLIC únicamente,
+                        // AGENT/ADMIN cualquier ajeno, AREA_RESPONSIBLE sólo su areaId,
+                        // ningún rol interno en su propio ticket) la valida
+                        // TicketMessageService.requireWriteAuthority/requireReadAuthority.
+                        .requestMatchers(HttpMethod.POST, "/api/tickets/*/messages").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/tickets/*/messages").authenticated()
                         // POST /tickets/{id}/cancel (Entidades V1.49 §24): "Ciudadano owner
                         // / propietario anónimo acreditado / AGENT / ADMIN". Igual que el
                         // resto de las acciones sobre un ticket puntual, alcanza con estar

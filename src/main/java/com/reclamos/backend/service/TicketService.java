@@ -845,7 +845,11 @@ public class TicketService {
     }
 
     private boolean isCitizenVisibleMessage(ActivityType actionType) {
-        return actionType == ActivityType.REOPENED;
+        // PUBLIC_MESSAGE_SENT (TicketMessageService, chat de ticket): el
+        // texto tiene que llegar al ciudadano, si no la actividad queda
+        // vacía en su timeline. INTERNAL_MESSAGE_ADDED sigue sin exponer
+        // message porque isCitizenVisibleActivity ya la filtra por completo.
+        return actionType == ActivityType.REOPENED || actionType == ActivityType.PUBLIC_MESSAGE_SENT;
     }
 
     private TicketResponse toResponse(Ticket ticket, TicketLocation location, TicketSla resolutionSla) {
