@@ -274,9 +274,9 @@ class TicketMessageServiceTest {
     void authorCanEditTheirOwnMessage() {
         TicketMessage existing = existingMessage(MessageVisibility.PUBLIC);
         when(messageRepository.findById(9L)).thenReturn(Optional.of(existing));
-        when(messageRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
-        TicketMessageResponse response = service.update(ticketId, 9L, updateRequest("texto editado"), owner);
+        TicketMessageResponse response =
+                service.update(ticketId, 9L, updateRequest("texto editado"), owner);
 
         assertEquals("texto editado", response.text());
         assertEquals(9L, response.id());
