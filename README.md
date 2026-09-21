@@ -48,6 +48,11 @@ POSTGRES_USER=reclamos
 POSTGRES_PASSWORD=reclamos_local
 POSTGRES_PORT=5432
 APP_PORT=8080
+MOCK_CITIZEN_PASSWORD=replace_with_a_local_citizen_password
+MOCK_AGENT_PASSWORD=replace_with_a_local_agent_password
+MOCK_AREA_RESPONSIBLE_PASSWORD=replace_with_a_local_area_password
+MOCK_ADMIN_PASSWORD=replace_with_a_local_admin_password
+SIMULATOR_ENABLED=false
 ```
 
 ### Variables disponibles
@@ -59,6 +64,11 @@ APP_PORT=8080
 | `POSTGRES_PASSWORD` | Contraseña local                                     |
 | `POSTGRES_PORT`     | Puerto de PostgreSQL expuesto en la máquina          |
 | `APP_PORT`          | Puerto del backend cuando se ejecuta mediante Docker |
+| `MOCK_CITIZEN_PASSWORD` | Contraseña local de la identidad mock ciudadano |
+| `MOCK_AGENT_PASSWORD` | Contraseña local de la identidad mock agente |
+| `MOCK_AREA_RESPONSIBLE_PASSWORD` | Contraseña local de la identidad mock responsable |
+| `MOCK_ADMIN_PASSWORD` | Contraseña local de la identidad mock administrador |
+| `SIMULATOR_ENABLED` | Habilita explícitamente el simulador; por defecto `false` |
 
 El archivo `.env` contiene configuración local y **no debe subirse al repositorio**.
 
@@ -227,7 +237,7 @@ Las migraciones se encuentran en:
 src/main/resources/db/migration
 ```
 
-Por ejemplo:
+La migración vigente más reciente es `V41__create_notification_log.sql`. La secuencia incluye, entre otras:
 
 ```text
 V1__...
@@ -235,6 +245,8 @@ V2__...
 V3__...
 V4__...
 V5__...
+...
+V41__...
 ```
 
 Las migraciones se ejecutan automáticamente al iniciar el backend.
@@ -584,6 +596,12 @@ docker compose restart postgres
 ---
 
 # Resumen rápido
+
+## CI, coverage, GHCR y CD
+
+Los pull requests ejecutan Java 21, PostgreSQL 17, `./mvnw -B clean verify`, generan y publican el reporte JaCoCo y validan el Dockerfile sin publicar imágenes. La cobertura LINE tiene un gate obligatorio de **85%**: un resultado inferior hace fallar `verify`. El porcentaje queda visible en el resumen de GitHub Actions y el reporte HTML se conserva como artifact.
+
+Los pushes a `dev` publican imágenes privadas en `ghcr.io/juanmaguida/backend-damii` con `dev` y `sha-<commit-completo>`. El despliegue por SSH sólo se habilita cuando la variable de GitHub `CD_ENABLED` vale exactamente `true`; su configuración y operación se documentan en `docs/runbook.md` del repositorio Infra.
 
 ## Variables locales
 
