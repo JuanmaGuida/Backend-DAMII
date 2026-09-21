@@ -5,6 +5,7 @@ import com.reclamos.backend.identity.AuthenticatedIdentity;
 import com.reclamos.backend.service.InformationRequestService;
 import com.reclamos.backend.service.SatisfactionSurveyService;
 import com.reclamos.backend.service.TicketService;
+import com.reclamos.backend.service.TicketMessageService;
 import com.reclamos.backend.service.TicketResolutionService;
 import com.reclamos.backend.service.TicketAttachmentUploadService;
 import com.reclamos.backend.exception.TicketResolutionConflictException;
@@ -37,13 +38,14 @@ class TicketControllerErrorTest {
     private final TicketResolutionService ticketResolutionService = mock(TicketResolutionService.class);
     private final TicketAttachmentUploadService ticketAttachmentUploadService = mock(TicketAttachmentUploadService.class);
     private final SatisfactionSurveyService satisfactionSurveyService = mock(SatisfactionSurveyService.class);
+    private final TicketMessageService ticketMessageService = mock(TicketMessageService.class);
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
         mockMvc = MockMvcBuilders.standaloneSetup(
                         new TicketController(ticketService, informationRequestService, ticketResolutionService,
-                                ticketAttachmentUploadService, satisfactionSurveyService))
+                                ticketAttachmentUploadService, satisfactionSurveyService, ticketMessageService))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
                 .build();
