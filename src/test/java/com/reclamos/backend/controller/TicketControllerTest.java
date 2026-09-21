@@ -101,6 +101,9 @@ class TicketControllerTest {
     @MockitoBean
     private SatisfactionSurveyService satisfactionSurveyService;
 
+    @MockitoBean
+    private TicketMessageService ticketMessageService;
+
     @Test
     void createReturnsServerGeneratedPublicId() throws Exception {
         UUID ticketId = UUID.randomUUID();
