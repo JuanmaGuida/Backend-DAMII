@@ -1,6 +1,7 @@
 package com.reclamos.backend.service;
 
 import com.reclamos.backend.dto.request.TicketMessageRequest;
+import com.reclamos.backend.dto.request.TicketMessageUpdateRequest;
 import com.reclamos.backend.dto.response.TicketMessageResponse;
 import com.reclamos.backend.entity.ActivityType;
 import com.reclamos.backend.entity.ActorType;
@@ -259,6 +260,122 @@ class TicketMessageServiceTest {
                 "otro", UUID.randomUUID(), "Otro vecino", null, ModuleRole.CITIZEN);
 
         assertThrows(UnauthorizedTicketOperationException.class, () -> service.list(ticketId, anotherCitizen));
+    }
+
+    private TicketMessageUpdateRequest updateRequest(String text) {
+        TicketMessageUpdateRequest request = new TicketMessageUpdateRequest();
+        request.setText(text);
+        return request;
+    }
+
+    // --- update() ---
+
+    @Test
+    void authorCanEditTheirOwnMessage() {
+        TicketMessage existing = existingMessage(MessageVisibility.PUBLIC);
+        when(messageRepository.findById(9L)).thenReturn(Optional.of(existing));
+        when(messageRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        TicketMessageResponse response = service.update(ticketId, 9L, updateRequest("texto editado"), owner);
+
+        assertEquals("texto editado", response.text());
+        assertEquals(9L, response.id());
+        verify(messageRepository).save(existing);
+    }
+
+    @Test
+    void nonAuthorCannotEditSomeoneElsesMessage() {
+        TicketMessage existing = existingMessage(MessageVisibility.PUBLIC);
+        when(messageRepository.findById(9L)).thenReturn(Optional.of(existing));
+        AuthenticatedIdentity someoneElse = new AuthenticatedIdentity(
+                "otro", UUID.randomUUID(), "Otro vecino", null, ModuleRole.CITIZEN);
+
+        assertThrows(UnauthorizedTicketOperationException.class,
+                () -> service.update(ticketId, 9L, updateRequest("hack"), someoneElse));
+        verify(messageRepository, never()).save(any());
+    }
+
+    @Test
+    void messageFromAnotherTicketCannotBeEditedThroughThisTicketId() {
+        TicketMessage existing = existingMessage(MessageVisibility.PUBLIC);
+        UUID differentTicketId = UUID.randomUUID();
+        when(messageRepository.findById(9L)).thenReturn(Optional.of(existing));
+
+        assertThrows(ResourceNotFoundException.class,
+                () -> service.update(differentTicketId, 9L, updateRequest("x"), owner));
+    }
+
+    @Test
+    void editingAMissingMessageIsNotFound() {
+        when(messageRepository.findById(9L)).thenReturn(Optional.empty());
+
+        assertThrows(ResourceNotFoundException.class,
+                () -> service.update(ticketId, 9L, updateRequest("x"), owner));
+    }
+
+    @Test
+    void aMessageReceivedByIntegrationCannotBeEditedEvenByItsListedAuthor() {
+        TicketMessage existing = existingMessage(MessageVisibility.PUBLIC);
+        existing.setSourceModuleId("M4");
+        when(messageRepository.findById(9L)).thenReturn(Optional.of(existing));
+
+        assertThrows(UnauthorizedTicketOperationException.class,
+                () -> service.update(ticketId, 9L, updateRequest("x"), owner));
+        verify(messageRepository, never()).save(any());
+    }
+
+    @Test
+    void nullIdentityCannotEditAMessage() {
+        assertThrows(UnauthorizedTicketOperationException.class,
+                () -> service.update(ticketId, 9L, updateRequest("x"), null));
+        verifyNoInteractions(messageRepository);
+    }
+
+    // --- delete() ---
+
+    @Test
+    void authorCanDeleteTheirOwnMessage() {
+        TicketMessage existing = existingMessage(MessageVisibility.PUBLIC);
+        when(messageRepository.findById(9L)).thenReturn(Optional.of(existing));
+
+        service.delete(ticketId, 9L, owner);
+
+        verify(messageRepository).delete(existing);
+    }
+
+    @Test
+    void nonAuthorCannotDeleteSomeoneElsesMessage() {
+        TicketMessage existing = existingMessage(MessageVisibility.PUBLIC);
+        when(messageRepository.findById(9L)).thenReturn(Optional.of(existing));
+        AuthenticatedIdentity someoneElse = new AuthenticatedIdentity(
+                "otro", UUID.randomUUID(), "Otro vecino", null, ModuleRole.CITIZEN);
+
+        assertThrows(UnauthorizedTicketOperationException.class,
+                () -> service.delete(ticketId, 9L, someoneElse));
+        verify(messageRepository, never()).delete(any());
+    }
+
+    @Test
+    void deletingAMissingMessageIsNotFound() {
+        when(messageRepository.findById(9L)).thenReturn(Optional.empty());
+
+        assertThrows(ResourceNotFoundException.class, () -> service.delete(ticketId, 9L, owner));
+    }
+
+    @Test
+    void aMessageReceivedByIntegrationCannotBeDeletedEvenByItsListedAuthor() {
+        TicketMessage existing = existingMessage(MessageVisibility.PUBLIC);
+        existing.setSourceModuleId("M4");
+        when(messageRepository.findById(9L)).thenReturn(Optional.of(existing));
+
+        assertThrows(UnauthorizedTicketOperationException.class, () -> service.delete(ticketId, 9L, owner));
+        verify(messageRepository, never()).delete(any());
+    }
+
+    @Test
+    void nullIdentityCannotDeleteAMessage() {
+        assertThrows(UnauthorizedTicketOperationException.class, () -> service.delete(ticketId, 9L, null));
+        verifyNoInteractions(messageRepository);
     }
 
     private TicketMessage existingMessage(MessageVisibility visibility) {

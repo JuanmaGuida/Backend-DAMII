@@ -1787,6 +1787,57 @@ paths:
         '401': { $ref: '#/components/responses/InvalidToken' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /api/tickets/{ticketId}/messages/{messageId}:
+    patch:
+      tags: [ Tickets ]
+      summary: Editar el texto de un mensaje propio del chat
+      description: |
+        Sólo el propio autor puede editar su mensaje, y sólo si fue creado
+        directamente en M2 (nunca uno recibido por integración desde otro
+        módulo). visibility no es editable.
+      operationId: updateTicketMessage
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - $ref: '#/components/parameters/TicketId'
+        - $ref: '#/components/parameters/TicketMessageId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TicketMessageUpdateRequest'
+      responses:
+        '200':
+          description: Mensaje editado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketMessageResponse'
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/InvalidToken' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+    delete:
+      tags: [ Tickets ]
+      summary: Borrar un mensaje propio del chat
+      description: |
+        Sólo el propio autor puede borrar su mensaje, y sólo si fue creado
+        directamente en M2. El TicketActivity espejo insertado al crearlo no
+        se toca: queda como registro histórico inmutable.
+      operationId: deleteTicketMessage
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - $ref: '#/components/parameters/TicketId'
+        - $ref: '#/components/parameters/TicketMessageId'
+      responses:
+        '204':
+          description: Mensaje borrado.
+        '401': { $ref: '#/components/responses/InvalidToken' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /api/attachments/{attachmentId}/content:
     get:
       tags: [Attachments]
@@ -2139,6 +2190,13 @@ components:
       schema:
         type: string
         format: uuid
+    TicketMessageId:
+      name: messageId
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
   responses:
     InvalidRequest:
       description: Solicitud inválida.
@@ -3177,9 +3235,19 @@ components:
           type: string
           minLength: 1
           maxLength: 4000
+    TicketMessageUpdateRequest:
+      type: object
+      required: [ text ]
+      additionalProperties: false
+      properties:
+        text:
+          type: string
+          minLength: 1
+          maxLength: 4000
+          description: visibility no es editable; conservarla evita que un INTERNAL se convierta en PUBLIC sin pasar por la autorización de creación.
     TicketMessageResponse:
       type: object
-      required: [ id, authorType, authorId, visibility, text, createdAt ]
+      required: [ id, authorType, authorId, visibility, text, createdAt, updatedAt ]
       properties:
         id:
           type: integer
@@ -3197,6 +3265,11 @@ components:
         createdAt:
           type: string
           format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Igual a createdAt en un mensaje nunca editado; distinto una vez que se aplicó un PATCH.
     DuplicateCandidateResponse:
       type: object
       description: Sugerencia explicable de un posible duplicado; no representa una vinculación automática.

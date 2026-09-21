@@ -251,4 +251,32 @@ public class TicketController {
             @AuthenticationPrincipal AuthenticatedIdentity identity) {
         return ticketMessageService.list(ticketId, identity);
     }
+
+    /**
+     * PATCH /tickets/{id}/messages/{messageId}: sólo el propio autor puede
+     * editar su mensaje, y sólo el texto (visibility es inmutable). Ver
+     * TicketMessageService.findOwnMessage.
+     */
+    @PatchMapping(path = "/{ticketId}/messages/{messageId}", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public TicketMessageResponse updateMessage(
+            @PathVariable UUID ticketId,
+            @PathVariable Long messageId,
+            @Valid @RequestBody TicketMessageUpdateRequest request,
+            @AuthenticationPrincipal AuthenticatedIdentity identity) {
+        return ticketMessageService.update(ticketId, messageId, request, identity);
+    }
+
+    /**
+     * DELETE /tickets/{id}/messages/{messageId}: sólo el propio autor puede
+     * borrar su mensaje. El TicketActivity espejo insertado al crearlo
+     * queda intacto (ver TicketMessageService).
+     */
+    @DeleteMapping("/{ticketId}/messages/{messageId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteMessage(
+            @PathVariable UUID ticketId,
+            @PathVariable Long messageId,
+            @AuthenticationPrincipal AuthenticatedIdentity identity) {
+        ticketMessageService.delete(ticketId, messageId, identity);
+    }
 }
