@@ -35,7 +35,10 @@ public class LabelService {
     }
 
     @Transactional(readOnly = true)
-    public List<LabelResponse> list() { return labelRepository.findAllByOrderByNameAscIdAsc().stream().map(this::toResponse).toList(); }
+    public List<LabelResponse> list() {
+        return labelRepository.findAllWithTicketCount().stream().map(this::toResponse).toList();
+    }
+
 
     @Transactional(readOnly = true)
     public LabelResponse get(UUID id) { return toResponse(find(id)); }
@@ -73,6 +76,11 @@ public class LabelService {
     }
 
     private Label find(UUID id) { return labelRepository.findById(id).orElseThrow(() -> new ResourceNotFoundException("La etiqueta no existe")); }
-    private LabelResponse toResponse(Label l) { return new LabelResponse(l.getId(), l.getCode(), l.getName(), l.getDescription(), l.isActive()); }
+    private LabelResponse toResponse(Label l) {
+        return new LabelResponse(l.getId(), l.getCode(), l.getName(), l.getDescription(), l.isActive(), 0);
+    }
+    private LabelResponse toResponse(LabelWithTicketCount l) {
+        return new LabelResponse(l.getId(), l.getCode(), l.getName(), l.getDescription(), l.getActive(), l.getTicketCount());
+    }
     private String trimNullable(String value) { return value == null || value.trim().isEmpty() ? null : value.trim(); }
 }
