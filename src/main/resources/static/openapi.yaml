@@ -3618,13 +3618,15 @@ components:
               $ref: '#/components/schemas/ReopenTicketRequest'
     TrackingTicketResponse:
       type: object
-      required: [publicId, status, summary, createdAt, statusChangedAt, requestType, category, subcategory, sla, pendingInformationRequest]
+      required: [publicId, status, summary, description, createdAt, statusChangedAt, requestType, category, subcategory, sla, attachments, pendingInformationRequest]
       properties:
         publicId:
           $ref: '#/components/schemas/TicketPublicId'
         status:
           $ref: '#/components/schemas/TicketStatus'
         summary:
+          type: string
+        description:
           type: string
         createdAt:
           type: string
@@ -3640,6 +3642,11 @@ components:
           $ref: '#/components/schemas/TrackingSubcategorySummary'
         sla:
           $ref: '#/components/schemas/TrackingSlaSummary'
+        attachments:
+          type: array
+          items:
+            $ref: '#/components/schemas/TicketAttachmentResponse'
+          description: Sólo adjuntos PUBLIC; el propietario anónimo nunca ve INTERNAL a través de tracking.
         pendingInformationRequest:
           allOf:
             - $ref: '#/components/schemas/PendingInformationRequestResponse'

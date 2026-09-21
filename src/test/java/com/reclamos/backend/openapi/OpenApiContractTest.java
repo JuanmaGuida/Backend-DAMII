@@ -352,6 +352,10 @@ class OpenApiContractTest {
         assertFalse(serialized.contains("anonymousContactValue"));
 
         assertFalse(map(schemas, "TrackingTicketResponse", "properties").containsKey("ticketId"));
+        assertTrue(map(schemas, "TrackingTicketResponse", "properties").containsKey("description"));
+        assertTrue(map(schemas, "TrackingTicketResponse", "properties").containsKey("attachments"));
+        assertEquals("#/components/schemas/TicketAttachmentResponse",
+                map(schemas, "TrackingTicketResponse", "properties", "attachments", "items").get("$ref"));
         assertEquals(Set.of("name"), map(schemas, "TrackingRequestTypeSummary", "properties").keySet());
         assertTrue(map(schemas, "TicketResponse", "properties").containsKey("escalationReasonCode"));
         assertTrue(map(schemas, "TicketResponse", "properties").containsKey("escalatedAt"));
