@@ -11,6 +11,7 @@ tags:
   - name: Catalog
   - name: Catalog Admin
   - name: Tickets
+  - name: Indicators
   - name: Information Requests
   - name: Tracking
 paths:
@@ -745,6 +746,151 @@ paths:
           $ref: '#/components/responses/InvalidRequest'
         '401':
           $ref: '#/components/responses/InvalidToken'
+  /api/indicators/categories:
+    get:
+      tags: [ Indicators ]
+      summary: Agrupar tickets por categoría
+      description: Cuenta tickets según la categoría actualmente alcanzada mediante RequestType y Subcategory.
+      operationId: getCategoryIndicators
+      security:
+        - bearerAuth: [ ]
+
+      parameters:
+        - $ref: '#/components/parameters/IndicatorCategoryId'
+        - $ref: '#/components/parameters/IndicatorNeighborhoodId'
+        - $ref: '#/components/parameters/IndicatorPriority'
+        - $ref: '#/components/parameters/IndicatorAreaId'
+        - $ref: '#/components/parameters/IndicatorStatus'
+        - $ref: '#/components/parameters/IndicatorSlaType'
+        - $ref: '#/components/parameters/IndicatorSlaStatus'
+      responses:
+        '200':
+          description: Agregación calculada sobre los tickets que cumplen todos los filtros; una ausencia de resultados se representa con una lista vacía.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CategoryIndicatorResponse'
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/InvalidToken' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/indicators/neighborhoods:
+    get:
+      tags: [ Indicators ]
+      summary: Agrupar tickets por barrio
+      description: Cuenta únicamente tickets con un barrio identificable.
+      operationId: getNeighborhoodIndicators
+      security:
+        - bearerAuth: [ ]
+
+      parameters:
+        - $ref: '#/components/parameters/IndicatorCategoryId'
+        - $ref: '#/components/parameters/IndicatorNeighborhoodId'
+        - $ref: '#/components/parameters/IndicatorPriority'
+        - $ref: '#/components/parameters/IndicatorAreaId'
+        - $ref: '#/components/parameters/IndicatorStatus'
+        - $ref: '#/components/parameters/IndicatorSlaType'
+        - $ref: '#/components/parameters/IndicatorSlaStatus'
+      responses:
+        '200':
+          description: Agregación calculada sobre los tickets que cumplen todos los filtros; una ausencia de resultados se representa con una lista vacía.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/NeighborhoodIndicatorResponse'
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/InvalidToken' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/indicators/priorities:
+    get:
+      tags: [ Indicators ]
+      summary: Agrupar tickets por prioridad actual
+      description: Usa la prioridad vigente del ticket y devuelve el orden LOW, MEDIUM, HIGH, CRITICAL.
+      operationId: getPriorityIndicators
+      security:
+        - bearerAuth: [ ]
+
+      parameters:
+        - $ref: '#/components/parameters/IndicatorCategoryId'
+        - $ref: '#/components/parameters/IndicatorNeighborhoodId'
+        - $ref: '#/components/parameters/IndicatorPriority'
+        - $ref: '#/components/parameters/IndicatorAreaId'
+        - $ref: '#/components/parameters/IndicatorStatus'
+        - $ref: '#/components/parameters/IndicatorSlaType'
+        - $ref: '#/components/parameters/IndicatorSlaStatus'
+      responses:
+        '200':
+          description: Agregación calculada sobre los tickets que cumplen todos los filtros; una ausencia de resultados se representa con una lista vacía.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PriorityIndicatorResponse'
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/InvalidToken' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/indicators/areas:
+    get:
+      tags: [ Indicators ]
+      summary: Agrupar tickets por área responsable
+      description: Usa el identificador de área efectivamente asociado al ticket.
+      operationId: getAreaIndicators
+      security:
+        - bearerAuth: [ ]
+
+      parameters:
+        - $ref: '#/components/parameters/IndicatorCategoryId'
+        - $ref: '#/components/parameters/IndicatorNeighborhoodId'
+        - $ref: '#/components/parameters/IndicatorPriority'
+        - $ref: '#/components/parameters/IndicatorAreaId'
+        - $ref: '#/components/parameters/IndicatorStatus'
+        - $ref: '#/components/parameters/IndicatorSlaType'
+        - $ref: '#/components/parameters/IndicatorSlaStatus'
+      responses:
+        '200':
+          description: Agregación calculada sobre los tickets que cumplen todos los filtros; una ausencia de resultados se representa con una lista vacía.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AreaIndicatorResponse'
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/InvalidToken' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/indicators/sla:
+    get:
+      tags: [ Indicators ]
+      summary: Agrupar tickets por tipo y estado SLA
+      description: Cada bucket cuenta tickets cuyo último ciclo (MAX cycleNumber) del slaType indicado tiene ese SlaStatus. FIRST_RESPONSE y RESOLUTION son poblaciones independientes y no deben sumarse entre sí.
+      operationId: getSlaIndicators
+      security:
+        - bearerAuth: [ ]
+
+      parameters:
+        - $ref: '#/components/parameters/IndicatorCategoryId'
+        - $ref: '#/components/parameters/IndicatorNeighborhoodId'
+        - $ref: '#/components/parameters/IndicatorPriority'
+        - $ref: '#/components/parameters/IndicatorAreaId'
+        - $ref: '#/components/parameters/IndicatorStatus'
+        - $ref: '#/components/parameters/IndicatorSlaType'
+        - $ref: '#/components/parameters/IndicatorSlaStatus'
+      responses:
+        '200':
+          description: Agregación calculada sobre los tickets que cumplen todos los filtros; una ausencia de resultados se representa con una lista vacía.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SlaIndicatorResponse'
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/InvalidToken' }
+        '403': { $ref: '#/components/responses/Forbidden' }
   /api/tickets:
     get:
       tags: [ Tickets ]
@@ -1636,6 +1782,36 @@ components:
       scheme: bearer
       description: Token Bearer obtenido del proveedor de identidad vigente. En DEV puede obtenerse mediante /api/auth/login.
   parameters:
+    IndicatorCategoryId:
+      name: categoryId
+      in: query
+      schema: { type: integer, format: int64 }
+    IndicatorNeighborhoodId:
+      name: neighborhoodId
+      in: query
+      schema: { type: string, format: uuid }
+    IndicatorPriority:
+      name: priority
+      in: query
+      schema: { $ref: '#/components/schemas/Priority' }
+    IndicatorAreaId:
+      name: responsibleAreaId
+      in: query
+      schema: { type: string }
+    IndicatorStatus:
+      name: status
+      in: query
+      schema: { $ref: '#/components/schemas/TicketStatus' }
+    IndicatorSlaType:
+      name: slaType
+      in: query
+      description: Si se informa, el ticket debe poseer un último ciclo de este tipo.
+      schema: { $ref: '#/components/schemas/SlaType' }
+    IndicatorSlaStatus:
+      name: slaStatus
+      in: query
+      description: Con slaType filtra el último ciclo de ese tipo; sin slaType coincide con el último ciclo de al menos un tipo.
+      schema: { $ref: '#/components/schemas/SlaStatus' }
     CategoryId:
       name: categoryId
       in: path
@@ -1760,6 +1936,40 @@ components:
             code: DATA_INTEGRITY_CONFLICT
             message: La operación entra en conflicto con datos existentes
   schemas:
+    CategoryIndicatorResponse:
+      type: object
+      required: [ categoryId, categoryName, count ]
+      properties:
+        categoryId: { type: integer, format: int64 }
+        categoryName: { type: string }
+        count: { type: integer, format: int64 }
+    NeighborhoodIndicatorResponse:
+      type: object
+      required: [ neighborhoodId, neighborhoodName, count ]
+      properties:
+        neighborhoodId: { type: string, format: uuid }
+        neighborhoodName: { type: string }
+        count: { type: integer, format: int64 }
+    PriorityIndicatorResponse:
+      type: object
+      required: [ priority, count ]
+      properties:
+        priority: { $ref: '#/components/schemas/Priority' }
+        count: { type: integer, format: int64 }
+    AreaIndicatorResponse:
+      type: object
+      required: [ responsibleAreaId, count ]
+      properties:
+        responsibleAreaId: { type: string }
+        count: { type: integer, format: int64 }
+    SlaIndicatorResponse:
+      type: object
+      description: Cantidad de tickets cuyo último ciclo del slaType tiene el SlaStatus indicado.
+      required: [ slaType, status, count ]
+      properties:
+        slaType: { $ref: '#/components/schemas/SlaType' }
+        status: { $ref: '#/components/schemas/SlaStatus' }
+        count: { type: integer, format: int64 }
     TicketPublicId:
       type: string
       description: Identificador humano estable del ticket; no reemplaza al UUID ni al código secreto de tracking.
@@ -2986,6 +3196,12 @@ components:
     Priority:
       type: string
       enum: [LOW, MEDIUM, HIGH, CRITICAL]
+    SlaType:
+      type: string
+      enum: [ FIRST_RESPONSE, RESOLUTION ]
+    SlaStatus:
+      type: string
+      enum: [ RUNNING, NEAR_DUE, MET, BREACHED, STOPPED ]
     Risk:
       type: string
       description: Riesgo base de un Request Type (RequestType.baseRisk); mismos valores que Priority pero un concepto distinto — el riesgo dinámico de un ticket parte de éste y se incrementa por RiskRule.
