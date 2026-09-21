@@ -96,6 +96,7 @@ public class TicketService {
     private final AnonymousContactValidator anonymousContactValidator;
     private final ModuleUserRepository moduleUserRepository;
     private final TicketLabelRepository ticketLabelRepository;
+    private final NotificationService notificationService;
     private final Clock clock;
 
     @Transactional
@@ -188,6 +189,7 @@ public class TicketService {
         activateCriticalEscalationIfNeeded(ticket, now);
         ticketOutboxService.ticketCreated(ticket, location, storedAttachments,
                 resolutionSla.map(TicketSla::getDueAt).orElse(null));
+        notificationService.queue(ticket, NotificationType.TICKET_REGISTERED);
         ticketRepository.flush();
         return new CreateTicketResponse(ticket.getId(), ticket.getPublicId(), trackingCode,
                 TicketStatus.REGISTERED, anonymous ? anonymousCredential.generatedPassword() : null);

@@ -38,6 +38,7 @@ public class InformationRequestService {
     private final AttachmentService attachmentService;
     private final AttachmentReferenceService attachmentReferenceService;
     private final InformationRequestAttachmentRepository informationRequestAttachmentRepository;
+    private final NotificationService notificationService;
 
     @Transactional
     public InformationRequestResponse requestInformation(UUID ticketId, CreateInformationRequest request,
@@ -106,6 +107,7 @@ public class InformationRequestService {
                 TicketStatus.PENDING_INFORMATION, application.actorType(), application.actorId(),
                 application.sourceModuleId(), null, application.messageForCitizen(), application.requestedAt(),
                 application.externalEventId());
+        notificationService.queue(ticket, NotificationType.INFORMATION_REQUIRED);
         return informationRequest;
     }
 

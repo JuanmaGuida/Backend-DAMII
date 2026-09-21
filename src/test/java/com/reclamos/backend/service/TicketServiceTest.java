@@ -102,6 +102,8 @@ class TicketServiceTest {
     private ModuleUserRepository moduleUsers;
     @Mock
     private TicketLabelRepository ticketLabels;
+    @Mock
+    private NotificationService notificationService;
     @Spy
     private TrackingCodeService trackingCodes = new TrackingCodeService();
     @Mock
@@ -220,6 +222,8 @@ class TicketServiceTest {
                 ticket.getCurrentStatus() == TicketStatus.REGISTERED
                         && citizen.citizenId().equals(ticket.getCitizenId())),
                 nullable(TicketLocation.class), eq(List.of()), nullable(Instant.class));
+        verify(notificationService).queue(argThat(ticket -> citizen.citizenId().equals(ticket.getCitizenId())),
+                eq(NotificationType.TICKET_REGISTERED));
     }
 
     @Test
@@ -315,6 +319,7 @@ class TicketServiceTest {
         verify(tickets, never()).save(any());
         verify(activities, never()).save(any());
         verify(locations, never()).save(any());
+        verifyNoInteractions(notificationService);
     }
 
     @Test

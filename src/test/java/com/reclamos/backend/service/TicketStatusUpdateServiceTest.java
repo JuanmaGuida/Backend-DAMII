@@ -58,12 +58,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
-import static org.mockito.Mockito.lenient;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 /**
  * applyUpdate recibe el {@link UpdateTicketStatusEnvelope} completo, no el
@@ -132,7 +127,7 @@ class TicketStatusUpdateServiceTest {
                 new InformationRequestDeadlineService(
                         Clock.fixed(FIXED_NOW, ZoneOffset.UTC), Duration.ofHours(72)),
                 informationRequestExpirationService, ticketSlaService, outbox,
-                attachmentService, attachmentReferenceService, informationRequestAttachmentRepository);
+                attachmentService, attachmentReferenceService, informationRequestAttachmentRepository, mock(NotificationService.class));
         service = new TicketStatusUpdateService(ticketRepository, activityRepository, locationRepository,
                 messageRepository, inboxEventRepository, resolutionService, ticketSlaService,
                 informationRequestService, cancellationRepository, outbox,
