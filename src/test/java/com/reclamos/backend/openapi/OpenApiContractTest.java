@@ -364,6 +364,8 @@ class OpenApiContractTest {
                 map(list(map(staffProperties, "anonymousContact"), "allOf").getFirst()).get("$ref"));
 
         Map<String, Object> activityProperties = map(schemas, "TicketActivityResponse", "properties");
+        assertTrue(map(schemas, "TicketActivityResponse").get("description").toString()
+                .contains("message también es nulo salvo para REOPENED"));
         assertTrue(list(map(schemas, "TicketActivityResponse"), "required").contains("occurredAt"));
         assertFalse(nullableProperty(schemas, "TicketActivityResponse", "occurredAt"));
         assertFalse(activityProperties.containsKey("actorId"));
