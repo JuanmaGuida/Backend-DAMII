@@ -819,7 +819,9 @@ public class TicketService {
                 staffView ? activity.getActorType() : null,
                 staffView ? activity.getPreviousPriority() : null,
                 staffView ? activity.getNewPriority() : null,
-                staffView ? activity.getMessage() : null);
+                staffView || isCitizenVisibleMessage(activity.getActionType())
+                        ? activity.getMessage()
+                        : null);
     }
 
     private boolean isCitizenVisibleReason(ActivityType actionType) {
@@ -827,6 +829,10 @@ public class TicketService {
                 || actionType == ActivityType.RESOLVED
                 || actionType == ActivityType.CLOSED
                 || actionType == ActivityType.REOPENED;
+    }
+
+    private boolean isCitizenVisibleMessage(ActivityType actionType) {
+        return actionType == ActivityType.REOPENED;
     }
 
     private TicketResponse toResponse(Ticket ticket, TicketLocation location, TicketSla resolutionSla) {

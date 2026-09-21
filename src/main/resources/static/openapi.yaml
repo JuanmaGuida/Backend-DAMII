@@ -2774,9 +2774,11 @@ components:
     TicketActivityResponse:
       type: object
       description: |
-        Actividad sanitizada. actorType, prioridades y message son nulos en la
-        proyección ciudadana; staff puede recibirlos. Nunca expone identificadores
-        de actor/módulo/evento, metadata cruda ni ticketVersion.
+        Actividad sanitizada. En la proyección ciudadana actorType y prioridades
+        son nulos. message también es nulo salvo para REOPENED, que expone el
+        motivo ingresado por el propio ciudadano necesario para reconstruir su
+        historial; staff puede recibir todos esos campos. Nunca expone
+        identificadores de actor/módulo/evento, metadata cruda ni ticketVersion.
       required: [sequence, actionType, previousStatus, newStatus, occurredAt, reasonCode,
                  actorType, previousPriority, newPriority, message]
       properties:
