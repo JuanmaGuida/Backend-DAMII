@@ -168,6 +168,52 @@ class TicketControllerTest {
                 .andExpect(jsonPath("$.totalElements").value(1));
     }
 
+    @Test
+    void listPassesCommaSeparatedLabelIdsTogetherWithExistingFiltersAndPaging() throws Exception {
+        UUID firstLabel = UUID.randomUUID();
+        UUID secondLabel = UUID.randomUUID();
+        when(ticketService.listTickets(any(TicketFilter.class), any(Pageable.class)))
+                .thenReturn(Page.empty());
+
+        mockMvc.perform(get("/api/tickets").with(authentication(AGENT_AUTHENTICATION))
+                        .param("labelIds", firstLabel + "," + secondLabel)
+                        .param("status", "IN_PROGRESS")
+                        .param("priority", "HIGH")
+                        .param("page", "2")
+                        .param("size", "5")
+                        .param("sort", "createdAt,asc"))
+                .andExpect(status().isOk());
+
+        verify(ticketService).listTickets(argThat(filter ->
+                        filter.status() == TicketStatus.IN_PROGRESS
+                                && filter.priority() == com.reclamos.backend.entity.Priority.HIGH
+                                && filter.labelIds().equals(java.util.Set.of(firstLabel, secondLabel))),
+                argThat(pageable -> pageable.getPageNumber() == 2
+                        && pageable.getPageSize() == 5
+                        && pageable.getSort().getOrderFor("createdAt") != null
+                        && pageable.getSort().getOrderFor("createdAt").isAscending()));
+    }
+
+    @Test
+    void listPassesRepeatedLabelIdsWithoutChangingStaffSecurity() throws Exception {
+        UUID firstLabel = UUID.randomUUID();
+        UUID secondLabel = UUID.randomUUID();
+        when(ticketService.listTickets(any(TicketFilter.class), any(Pageable.class)))
+                .thenReturn(Page.empty());
+
+        mockMvc.perform(get("/api/tickets").with(authentication(ADMIN_AUTHENTICATION))
+                        .param("labelIds", firstLabel.toString(), secondLabel.toString()))
+                .andExpect(status().isOk());
+
+        verify(ticketService).listTickets(
+                argThat(filter -> filter.labelIds().equals(java.util.Set.of(firstLabel, secondLabel))),
+                any(Pageable.class));
+
+        mockMvc.perform(get("/api/tickets").with(authentication(CITIZEN_AUTHENTICATION))
+                        .param("labelIds", firstLabel.toString()))
+                .andExpect(status().isForbidden());
+    }
+
     /**
      * ?sort=notAField,desc: la validación no vive en este controller ni en
      * GlobalExceptionHandler — TicketService.listTickets valida el Sort

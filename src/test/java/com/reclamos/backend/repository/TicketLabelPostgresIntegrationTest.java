@@ -9,6 +9,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
@@ -203,6 +204,29 @@ class TicketLabelPostgresIntegrationTest {
                 .extracting(Ticket::getId)
                 .doesNotHaveDuplicates()
                 .doesNotContain(neither.getId());
+
+        var missing = tickets.findAll(
+                TicketSpecifications.build(filter(Set.of(UUID.randomUUID()))),
+                PageRequest.of(0, 10));
+        assertThat(missing).isEmpty();
+
+        onlyB.setCurrentStatus(TicketStatus.IN_PROGRESS);
+        onlyB.setCurrentPriority(Priority.HIGH);
+        tickets.saveAndFlush(onlyB);
+
+        TicketFilter combined = new TicketFilter(
+                null, Priority.HIGH, null, null, TicketStatus.IN_PROGRESS,
+                Set.of(a.getId(), b.getId()));
+        assertThat(tickets.findAll(TicketSpecifications.build(combined), PageRequest.of(0, 10)).getContent())
+                .extracting(Ticket::getId)
+                .containsExactly(onlyB.getId());
+
+        var sorted = tickets.findAll(
+                TicketSpecifications.build(filter(Set.of(a.getId(), b.getId()))),
+                PageRequest.of(0, 10, Sort.by(Sort.Direction.ASC, "summary")));
+        assertThat(sorted.getContent())
+                .extracting(Ticket::getSummary)
+                .isSorted();
 
         long withoutFilter =
                 tickets.count(

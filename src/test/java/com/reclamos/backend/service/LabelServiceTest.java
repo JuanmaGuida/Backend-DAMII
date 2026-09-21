@@ -11,6 +11,9 @@ import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.*;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+
 import java.time.*;
 import java.util.*;
 import static org.assertj.core.api.Assertions.*;
@@ -54,6 +57,29 @@ class LabelServiceTest {
         assertThat(response).extracting("id", "ticketCount")
                 .containsExactly(tuple(unusedId, 0L), tuple(usedId, 3L));
     }
+
+    @Test void listsTicketsByExistingLabelThroughTheSharedTicketFilter() {
+        UUID id = UUID.randomUUID();
+        Label label = active(id);
+        PageRequest pageable = PageRequest.of(1, 5);
+        when(labels.findById(id)).thenReturn(Optional.of(label));
+        when(ticketService.listTickets(any(), eq(pageable))).thenReturn(Page.empty());
+
+        service.listTickets(id, pageable);
+
+        verify(ticketService).listTickets(argThat(filter -> filter.labelIds().equals(Set.of(id))), eq(pageable));
+    }
+
+    @Test void missingLabelIsRejectedBeforeTicketsAreQueried() {
+        UUID id = UUID.randomUUID();
+        when(labels.findById(id)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.listTickets(id, PageRequest.of(0, 20)))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessage("La etiqueta no existe");
+        verifyNoInteractions(ticketService);
+    }
+
 
     @Test void assignsEveryActiveLabelAsManualWithActorAndTimestamp() {
         UUID ticketId = UUID.randomUUID(), first = UUID.randomUUID(), second = UUID.randomUUID();

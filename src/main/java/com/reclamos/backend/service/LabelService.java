@@ -1,5 +1,7 @@
 package com.reclamos.backend.service;
 
+import com.reclamos.backend.dto.TicketFilter;
+import com.reclamos.backend.dto.TicketResponse;
 import com.reclamos.backend.dto.request.*;
 import com.reclamos.backend.dto.response.LabelResponse;
 import com.reclamos.backend.entity.*;
@@ -7,8 +9,11 @@ import com.reclamos.backend.exception.*;
 import com.reclamos.backend.identity.AuthenticatedIdentity;
 import com.reclamos.backend.repository.*;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
 import java.time.Clock;
 import java.util.*;
 
@@ -42,6 +47,13 @@ public class LabelService {
 
     @Transactional(readOnly = true)
     public LabelResponse get(UUID id) { return toResponse(find(id)); }
+
+    @Transactional(readOnly = true)
+    public Page<TicketResponse> listTickets(UUID id, Pageable pageable) {
+        find(id);
+        return ticketService.listTickets(new TicketFilter(null, null, null, null, null, Set.of(id)), pageable);
+    }
+
 
     @Transactional
     public LabelResponse update(UUID id, UpdateLabelRequest request) {
