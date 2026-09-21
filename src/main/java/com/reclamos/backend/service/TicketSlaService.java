@@ -113,9 +113,9 @@ public class TicketSlaService {
         terminateActiveCycle(ticket, SlaType.RESOLUTION, terminalAt);
     }
 
-    /** Punto de lifecycle preparado para el futuro caso de uso de DUPLICATE. */
-    public Optional<TicketSla> stopActiveResolutionCycleForDuplicate(Ticket ticket, Instant duplicateAt) {
-        return terminateActiveCycle(ticket, SlaType.RESOLUTION, duplicateAt);
+    /** Un DUPLICATE deja de tener ciclos SLA operativos propios. */
+    public void stopActiveCyclesForDuplicate(Ticket ticket, Instant duplicateAt) {
+        terminateActiveCycles(ticket, duplicateAt);
     }
 
     public Optional<TicketSla> startReopenedResolutionCycle(Ticket ticket, Instant reopenedAt) {

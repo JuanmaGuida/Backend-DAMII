@@ -17,10 +17,7 @@ import com.reclamos.backend.exception.UnauthorizedTicketOperationException;
 import com.reclamos.backend.identity.AuthenticatedIdentity;
 import com.reclamos.backend.identity.ModuleRole;
 import com.reclamos.backend.security.BearerTokenAuthenticationFilter;
-import com.reclamos.backend.service.AuthService;
-import com.reclamos.backend.service.DuplicateCandidateService;
-import com.reclamos.backend.service.LabelService;
-import com.reclamos.backend.service.TicketService;
+import com.reclamos.backend.service.*;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -90,6 +87,9 @@ class StaffTicketControllerTest {
 
     @MockitoBean
     private DuplicateCandidateService duplicateCandidateService;
+
+    @MockitoBean
+    private DuplicateTicketService duplicateTicketService;
 
     @MockitoBean
     private LabelService labelService;

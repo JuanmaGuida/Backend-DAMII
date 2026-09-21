@@ -7,7 +7,7 @@ import com.reclamos.backend.entity.TicketActivity;
 import com.reclamos.backend.entity.TicketStatus;
 import com.reclamos.backend.repository.TicketActivityRepository;
 import com.reclamos.backend.repository.TicketRepository;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -15,7 +15,6 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Service
-@RequiredArgsConstructor
 public class ResolutionConfirmationTimeoutService {
     private static final String MODULE_ID = "M2";
     private static final String TIMEOUT_REASON = "CONFIRMATION_TIMEOUT";
@@ -24,6 +23,24 @@ public class ResolutionConfirmationTimeoutService {
 
     private final TicketRepository ticketRepository;
     private final TicketActivityRepository activityRepository;
+    private final DuplicateTicketService duplicateTicketService;
+    private final TicketOutboxService ticketOutboxService;
+
+    @Autowired
+    public ResolutionConfirmationTimeoutService(TicketRepository ticketRepository,
+                                                TicketActivityRepository activityRepository,
+                                                DuplicateTicketService duplicateTicketService,
+                                                TicketOutboxService ticketOutboxService) {
+        this.ticketRepository = ticketRepository;
+        this.activityRepository = activityRepository;
+        this.duplicateTicketService = duplicateTicketService;
+        this.ticketOutboxService = ticketOutboxService;
+    }
+
+    ResolutionConfirmationTimeoutService(TicketRepository ticketRepository,
+                                         TicketActivityRepository activityRepository) {
+        this(ticketRepository, activityRepository, null, null);
+    }
 
     @Transactional
     public void closeIfConfirmationExpired(UUID ticketId, Instant now) {
@@ -55,5 +72,11 @@ public class ResolutionConfirmationTimeoutService {
         activity.setMessage(TIMEOUT_MESSAGE);
         activity.setOccurredAt(now);
         activityRepository.save(activity);
+        if (ticketOutboxService != null) {
+            ticketOutboxService.closed(ticket, TIMEOUT_REASON, now);
+        }
+        if (duplicateTicketService != null) {
+            duplicateTicketService.propagateClosed(ticket, ActorType.SYSTEM, null, TIMEOUT_REASON, now);
+        }
     }
 }

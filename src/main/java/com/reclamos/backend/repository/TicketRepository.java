@@ -33,6 +33,11 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
     @Query("select t from Ticket t where t.id = :id")
     Optional<Ticket> findByIdForUpdate(@Param("id") UUID id);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select t from Ticket t where t.mainTicket.id = :mainTicketId and t.currentStatus = " +
+            "com.reclamos.backend.entity.TicketStatus.DUPLICATE")
+    List<Ticket> findActiveDuplicatesForUpdate(@Param("mainTicketId") UUID mainTicketId);
+
     /**
      * GET /me/tickets (Entidades V1.49 §"Autenticación, roles y vistas"):
      * listado propio del ciudadano, sin scoping por rol ni área — a

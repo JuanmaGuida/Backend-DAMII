@@ -35,6 +35,7 @@ public class TicketResolutionService {
     private final Duration confirmationDuration;
     private final TicketSlaService ticketSlaService;
     private final TicketOutboxService ticketOutboxService;
+    private DuplicateTicketService duplicateTicketService;
 
     @Autowired
     public TicketResolutionService(TicketRepository ticketRepository,
@@ -54,6 +55,11 @@ public class TicketResolutionService {
         this.confirmationDuration = confirmationDuration;
         this.ticketSlaService = Objects.requireNonNull(ticketSlaService, "ticketSlaService es obligatorio");
         this.ticketOutboxService = Objects.requireNonNull(ticketOutboxService, "ticketOutboxService es obligatorio");
+    }
+
+    @Autowired
+    void setDuplicateTicketService(DuplicateTicketService duplicateTicketService) {
+        this.duplicateTicketService = duplicateTicketService;
     }
 
     @Transactional
@@ -155,6 +161,10 @@ public class TicketResolutionService {
         ticketRepository.save(ticket);
         saveCitizenActivity(ticket, ActivityType.CLOSED, TicketStatus.CLOSED, actorId,
                 "CITIZEN_CONFIRMED", "El ciudadano confirmó la resolución", now);
+        ticketOutboxService.closed(ticket, "CITIZEN_CONFIRMED", now);
+        if (duplicateTicketService != null) {
+            duplicateTicketService.propagateClosed(ticket, ActorType.CITIZEN, actorId, "CITIZEN_CONFIRMED", now);
+        }
         return actionResponse(ticket);
     }
 
