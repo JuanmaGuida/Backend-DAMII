@@ -26,6 +26,7 @@ class InformationRequestServiceTest {
     private final InformationRequestExpirationService expirationService =
             mock(InformationRequestExpirationService.class);
     private final TicketSlaService ticketSlaService = mock(TicketSlaService.class);
+    private final NotificationService notifications = mock(NotificationService.class);
     private final TicketOutboxService outbox = mock(TicketOutboxService.class);
     private final AttachmentService attachmentService = mock(AttachmentService.class);
     private final AttachmentReferenceService attachmentReferenceService = mock(AttachmentReferenceService.class);
@@ -37,11 +38,11 @@ class InformationRequestServiceTest {
     @BeforeEach
     void setUp() {
         reset(tickets, requests, activities, expirationService, ticketSlaService, outbox,
-                attachmentService, attachmentReferenceService, requestAttachments);
+                attachmentService, attachmentReferenceService, requestAttachments, notifications);
         service = new InformationRequestService(tickets, requests, activities,
                 new InformationRequestDeadlineService(Clock.fixed(NOW, ZoneOffset.UTC), Duration.ofHours(72)),
                 expirationService, ticketSlaService, outbox, attachmentService,
-                attachmentReferenceService, requestAttachments);
+                attachmentReferenceService, requestAttachments, notifications);
         lenient().when(attachmentService.validate(any())).thenReturn(List.of());
         lenient().when(attachmentService.storeForTicket(any(), any(), anyList(), any())).thenReturn(List.of());
         lenient().when(attachmentReferenceService.downloadUrl(any()))
@@ -78,6 +79,7 @@ class InformationRequestServiceTest {
                 && actor.citizenId().toString().equals(value.getActorId())
                 && "M2".equals(value.getSourceModuleId())));
         verify(ticketSlaService).pauseActiveResolutionCycle(ticket, NOW);
+        verify(notifications).queue(ticket, NotificationType.INFORMATION_REQUIRED);
     }
 
     @Test
@@ -145,13 +147,13 @@ class InformationRequestServiceTest {
         verify(requests).save(argThat(value -> value.getAnsweredByType() == ActorType.CITIZEN
                 && actor.citizenId().toString().equals(value.getAnsweredById())
                 && !actor.subjectId().equals(value.getAnsweredById())));
-        verify(activities).save(argThat(value -> value.getActionType() == ActivityType.INFORMATION_PROVIDED
-                && value.getActorType() == ActorType.CITIZEN
+        verify(activities, times(1)).save(argThat(value -> value.getActionType() == ActivityType.INFORMATION_PROVIDED                && value.getActorType() == ActorType.CITIZEN
                 && actor.citizenId().toString().equals(value.getActorId())
                 && "M2".equals(value.getSourceModuleId())));
         verify(ticketSlaService).resumeActiveResolutionCycle(ticket, NOW);
         verify(outbox).informationProvided(ticket, "Respuesta", List.of(), ActorType.CITIZEN,
                 actor.citizenId().toString(), false, NOW);
+        verifyNoInteractions(notifications);
     }
 
     @Test

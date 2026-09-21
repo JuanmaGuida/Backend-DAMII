@@ -29,12 +29,17 @@ class InformationRequestFlowMigrationIntegrationTest {
                     .locations("classpath:db/migration")
                     .schemas(schema)
                     .defaultSchema(schema)
+                    .target("40")
                     .cleanDisabled(false)
                     .load();
             flyway.migrate();
             assertTrue(flyway.validateWithResult().validationSuccessful);
-            assertEquals("40", database.queryForObject("SELECT version FROM " + schema
-                    + ".flyway_schema_history WHERE success ORDER BY installed_rank DESC LIMIT 1", String.class));
+            assertEquals("40", database.queryForObject(
+                    "SELECT version FROM " + schema
+                            + ".flyway_schema_history "
+                            + "WHERE success "
+                            + "ORDER BY installed_rank DESC LIMIT 1",
+                    String.class));
             assertEquals(1, database.queryForObject("SELECT COUNT(*) FROM information_schema.tables "
                     + "WHERE table_schema=? AND table_name='information_request_attachments'",
                     Integer.class, schema));
