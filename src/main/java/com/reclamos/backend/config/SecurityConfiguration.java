@@ -74,6 +74,7 @@ public class SecurityConfiguration {
                                 "/api/catalog/request-types/{requestTypeId}/form").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/auth/me").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/attachments/*/content").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/indicators/**").hasAnyRole("AGENT", "ADMIN")
                         .requestMatchers(HttpMethod.GET, "/api/staff/labels", "/api/staff/labels/*")
                         .hasAnyRole("AGENT", "ADMIN")
                         .requestMatchers("/api/staff/labels/**").hasRole("ADMIN")
@@ -132,6 +133,7 @@ public class SecurityConfiguration {
                         .requestMatchers(HttpMethod.POST, "/api/tickets/*/resolution").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/tickets/*/resolution/confirm").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/tickets/*/resolution/reopen").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/api/tickets/*/satisfaction-survey").authenticated()
                         // POST /tickets/{id}/cancel (Entidades V1.49 §24): "Ciudadano owner
                         // / propietario anónimo acreditado / AGENT / ADMIN". Igual que el
                         // resto de las acciones sobre un ticket puntual, alcanza con estar

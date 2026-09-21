@@ -9,6 +9,15 @@ import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class GlobalExceptionHandlerTest {
+    @Test
+    void satisfactionSurveyConflictUsesSemanticCode() {
+        ResponseEntity<ApiErrorResponse> response = new GlobalExceptionHandler()
+                .handleSatisfactionSurveyConflict(new SatisfactionSurveyConflictException("Encuesta duplicada"));
+
+        assertEquals(409, response.getStatusCode().value());
+        assertEquals("SATISFACTION_SURVEY_CONFLICT", response.getBody().code());
+        assertEquals("Encuesta duplicada", response.getBody().message());
+    }
     // QA (FAIL de "validaciones de datos y relaciones jerárquicas del
     // catálogo"): antes de este handler, una DataIntegrityViolationException
     // (típicamente una constraint de base violada por una condición de

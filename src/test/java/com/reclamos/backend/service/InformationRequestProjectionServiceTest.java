@@ -22,7 +22,7 @@ class InformationRequestProjectionServiceTest {
             new InformationRequestProjectionService(requests, attachments, attachmentReferenceService);
 
     @Test
-    void pendingProjectionSeparatesCitizenFieldsFromStaffContext() {
+    void pendingProjectionExposesOnlyPublicRequestContextToCitizenAndKeepsStaffContext() {
         UUID ticketId = UUID.randomUUID();
         InformationRequest request = new InformationRequest();
         request.setId(UUID.randomUUID());
@@ -44,12 +44,18 @@ class InformationRequestProjectionServiceTest {
         contextAttachment.setSizeBytes(12);
         contextAttachment.setVisibility(MessageVisibility.PUBLIC);
         contextAttachment.setCreatedAt(request.getRequestedAt());
-        InformationRequestAttachment link = new InformationRequestAttachment();
-        link.setInformationRequest(request);
-        link.setAttachment(contextAttachment);
-        link.setRole(InformationAttachmentRole.REQUEST_CONTEXT);
+        Attachment internalAttachment = new Attachment();
+        internalAttachment.setId(8L);
+        internalAttachment.setFileName("internal-context.pdf");
+        internalAttachment.setContentType("application/pdf");
+        internalAttachment.setSizeBytes(24);
+        internalAttachment.setVisibility(MessageVisibility.INTERNAL);
+        internalAttachment.setCreatedAt(request.getRequestedAt());
+        InformationRequestAttachment publicLink = link(request, contextAttachment);
+        InformationRequestAttachment internalLink = link(request, internalAttachment);
         when(attachments.findAllByInformationRequest_IdAndRoleOrderByAttachment_CreatedAtAsc(
-                request.getId(), InformationAttachmentRole.REQUEST_CONTEXT)).thenReturn(List.of(link));
+                request.getId(), InformationAttachmentRole.REQUEST_CONTEXT))
+                .thenReturn(List.of(publicLink, internalLink));
         when(attachmentReferenceService.downloadUrl(contextAttachment))
                 .thenReturn("https://m2.example/api/attachments/7/content");
 
@@ -58,6 +64,8 @@ class InformationRequestProjectionServiceTest {
         assertEquals("Adjunte una foto", projection.citizen().messageForCitizen());
         assertEquals("https://m2.example/api/attachments/7/content",
                 projection.citizen().attachments().getFirst().getDownloadUrl());
+        assertEquals(1, projection.citizen().attachments().size());
+        verify(attachmentReferenceService, never()).downloadUrl(internalAttachment);
         assertEquals("Contexto privado", projection.staff().internalMessage());
         assertEquals("M6", projection.staff().requestedByModuleId());
         assertEquals(ActorType.EXTERNAL_USER, projection.staff().requestedByActorType());
@@ -71,5 +79,13 @@ class InformationRequestProjectionServiceTest {
                 .thenReturn(Optional.empty());
         assertNull(service.findPending(ticketId));
         verifyNoInteractions(attachments);
+    }
+
+    private InformationRequestAttachment link(InformationRequest request, Attachment attachment) {
+        InformationRequestAttachment link = new InformationRequestAttachment();
+        link.setInformationRequest(request);
+        link.setAttachment(attachment);
+        link.setRole(InformationAttachmentRole.REQUEST_CONTEXT);
+        return link;
     }
 }

@@ -238,6 +238,22 @@ class TicketSlaServiceTest {
         assertNull(resolution.getPausedAt());
     }
 
+    @Test void terminationRejectsAnExternalTimestampEarlierThanTheCyclesStartedAt() {
+        TicketSla firstResponse = cycle(1, SlaStatus.RUNNING);
+        firstResponse.setSlaType(SlaType.FIRST_RESPONSE);
+        when(slas.findActiveForUpdate(ticket.getId(), SlaType.FIRST_RESPONSE))
+                .thenReturn(Optional.of(firstResponse));
+        Instant beforeStart = START.minusSeconds(60);
+
+        TicketStateConflictException exception = assertThrows(TicketStateConflictException.class,
+                () -> service.terminateActiveCycles(ticket, beforeStart));
+
+        assertTrue(exception.getMessage().contains("no puede ser anterior al inicio del ciclo"));
+        assertNull(firstResponse.getCompletedAt());
+        assertEquals(SlaStatus.RUNNING, firstResponse.getStatus());
+        verify(slas, never()).save(any());
+    }
+
     @Test void duplicateLifecycleStopsOnlyResolution() {
         TicketSla resolution = cycle(1, SlaStatus.RUNNING);
         when(slas.findActiveForUpdate(ticket.getId(), SlaType.RESOLUTION)).thenReturn(Optional.of(resolution));
