@@ -214,6 +214,22 @@ public class TicketSlaService {
             return Optional.empty();
         }
         TicketSla sla = active.get();
+        // QA (snapshot dc88cc1bada97b22a1cfa80f0d19812e2a5a6510, detectado
+        // durante el diagnóstico de DDA2-180): un updateOccurredAt externo
+        // anterior al startedAt del ciclo activo dejaba completedAt <
+        // started_at, y recién lo frenaba ck_ticket_sla_completed en
+        // PostgreSQL — primero como 500, y después de mapear
+        // DataIntegrityViolationException, como 409 sin mensaje claro y con
+        // rollback completo del updateTicketStatus. Mismo patrón que la
+        // validación de resumedAt/pausedAt en resumeActiveResolutionCycle
+        // más arriba: se valida el orden temporal ANTES de tocar la fila y
+        // se rechaza con un 409 controlado en vez de dejar que lo frene la
+        // constraint de base.
+        if (terminalAt.isBefore(sla.getStartedAt())) {
+            throw new TicketStateConflictException(
+                    "El cierre del SLA no puede ser anterior al inicio del ciclo activo (startedAt: "
+                            + sla.getStartedAt() + ")");
+        }
         milestoneService.processMilestones(ticket, sla, terminalAt);
         if (sla.getStatus() != SlaStatus.BREACHED) {
             sla.setStatus(SlaStatus.STOPPED);
