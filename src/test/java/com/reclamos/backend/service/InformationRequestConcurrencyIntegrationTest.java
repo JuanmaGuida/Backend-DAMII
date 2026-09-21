@@ -2,6 +2,8 @@ package com.reclamos.backend.service;
 
 import com.reclamos.backend.dto.request.AnswerInformationRequest;
 import com.reclamos.backend.dto.request.CreateInformationRequest;
+import com.reclamos.backend.dto.UpdateTicketStatusEnvelope;
+import com.reclamos.backend.dto.UpdateTicketStatusRequest;
 import com.reclamos.backend.entity.ActivityType;
 import com.reclamos.backend.entity.ActorType;
 import com.reclamos.backend.entity.InformationRequestStatus;
@@ -10,6 +12,8 @@ import com.reclamos.backend.entity.Ticket;
 import com.reclamos.backend.entity.TicketActivity;
 import com.reclamos.backend.entity.TicketStatus;
 import com.reclamos.backend.exception.InformationRequestConflictException;
+import com.reclamos.backend.exception.TicketStateConflictException;
+import com.reclamos.backend.entity.UpdateTicketStatusType;
 import com.reclamos.backend.identity.AuthenticatedIdentity;
 import com.reclamos.backend.identity.ModuleRole;
 import com.reclamos.backend.repository.RequestTypeRepository;
@@ -56,6 +60,8 @@ class InformationRequestConcurrencyIntegrationTest {
 
     @Autowired
     private InformationRequestService informationRequestService;
+    @Autowired
+    private TicketStatusUpdateService ticketStatusUpdateService;
     @Autowired
     private TicketRepository ticketRepository;
     @Autowired
@@ -145,7 +151,110 @@ class InformationRequestConcurrencyIntegrationTest {
         cleanup(ticket.getId());
     }
 
+    @Test
+    void anonymousAnswerPersistsAnsweredWithNullActorIdOnPostgres() {
+        Ticket ticket = createPendingInformationTicket(true);
+
+        informationRequestService.answerAnonymousFromTracking(
+                ticket.getId(), new AnswerInformationRequest("Respuesta anónima"));
+
+        assertEquals("ANSWERED", scalar("SELECT status FROM information_requests WHERE ticket_id=?", ticket.getId()));
+        assertEquals("CITIZEN", scalar(
+                "SELECT answered_by_type FROM information_requests WHERE ticket_id=?", ticket.getId()));
+        assertNull(database.queryForObject(
+                "SELECT answered_by_id FROM information_requests WHERE ticket_id=?", String.class, ticket.getId()));
+        assertEquals("Respuesta anónima", scalar(
+                "SELECT response_message FROM information_requests WHERE ticket_id=?", ticket.getId()));
+        cleanup(ticket.getId());
+    }
+
+    @Test
+    void concurrentDeliveriesOfSameEventIdApplyInformationRequestOnlyOnce() throws Exception {
+        Ticket ticket = createExternalInformationTicket();
+        UUID eventId = UUID.randomUUID();
+        UpdateTicketStatusEnvelope envelope = informationRequiredEnvelope(ticket.getId(), eventId);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+
+        try (Connection blocker = lockTicket(ticket.getId())) {
+            int blockerPid = backendPid(blocker);
+            CountDownLatch firstStarted = new CountDownLatch(1);
+            CountDownLatch secondStarted = new CountDownLatch(1);
+            Future<Throwable> first = executor.submit(() -> runAt(clock.instant(), firstStarted,
+                    () -> ticketStatusUpdateService.applyUpdate(ticket.getId(), envelope)));
+            Future<Throwable> second = executor.submit(() -> runAt(clock.instant(), secondStarted,
+                    () -> ticketStatusUpdateService.applyUpdate(ticket.getId(), envelope)));
+            assertTrue(firstStarted.await(5, TimeUnit.SECONDS));
+            assertTrue(secondStarted.await(5, TimeUnit.SECONDS));
+            awaitBlockedBy(blockerPid, 2);
+
+            blocker.commit();
+
+            assertNull(first.get(15, TimeUnit.SECONDS));
+            assertNull(second.get(15, TimeUnit.SECONDS));
+        } finally {
+            executor.shutdownNow();
+        }
+
+        assertEquals(1, count("SELECT COUNT(*) FROM information_requests WHERE ticket_id=?", ticket.getId()));
+        assertEquals(1, database.queryForObject(
+                "SELECT COUNT(*) FROM inbox_events WHERE event_id=?", Integer.class, eventId));
+        assertEquals(1, count("SELECT COUNT(*) FROM ticket_activities "
+                + "WHERE ticket_id=? AND action_type='INFORMATION_REQUIRED'", ticket.getId()));
+        assertEquals("PENDING_INFORMATION", scalar("SELECT current_status FROM tickets WHERE id=?", ticket.getId()));
+        cleanupInbox(eventId);
+        cleanup(ticket.getId());
+    }
+
+    @Test
+    void concurrentDistinctEventsNeverCreateTwoPendingInformationRequests() throws Exception {
+        Ticket ticket = createExternalInformationTicket();
+        UUID firstEventId = UUID.randomUUID();
+        UUID secondEventId = UUID.randomUUID();
+        UpdateTicketStatusEnvelope firstEnvelope = informationRequiredEnvelope(ticket.getId(), firstEventId);
+        UpdateTicketStatusEnvelope secondEnvelope = informationRequiredEnvelope(ticket.getId(), secondEventId);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+
+        Throwable firstFailure;
+        Throwable secondFailure;
+        try (Connection blocker = lockTicket(ticket.getId())) {
+            int blockerPid = backendPid(blocker);
+            CountDownLatch firstStarted = new CountDownLatch(1);
+            CountDownLatch secondStarted = new CountDownLatch(1);
+            Future<Throwable> first = executor.submit(() -> runAt(clock.instant(), firstStarted,
+                    () -> ticketStatusUpdateService.applyUpdate(ticket.getId(), firstEnvelope)));
+            Future<Throwable> second = executor.submit(() -> runAt(clock.instant(), secondStarted,
+                    () -> ticketStatusUpdateService.applyUpdate(ticket.getId(), secondEnvelope)));
+            assertTrue(firstStarted.await(5, TimeUnit.SECONDS));
+            assertTrue(secondStarted.await(5, TimeUnit.SECONDS));
+            awaitBlockedBy(blockerPid, 2);
+
+            blocker.commit();
+
+            firstFailure = first.get(15, TimeUnit.SECONDS);
+            secondFailure = second.get(15, TimeUnit.SECONDS);
+        } finally {
+            executor.shutdownNow();
+        }
+
+        assertEquals(1, java.util.stream.Stream.of(firstFailure, secondFailure)
+                .filter(value -> value == null).count());
+        Throwable conflict = firstFailure == null ? secondFailure : firstFailure;
+        assertInstanceOf(TicketStateConflictException.class, conflict);
+        assertEquals(1, count("SELECT COUNT(*) FROM information_requests "
+                + "WHERE ticket_id=? AND status='PENDING'", ticket.getId()));
+        assertEquals(1, count("SELECT COUNT(*) FROM ticket_activities "
+                + "WHERE ticket_id=? AND action_type='INFORMATION_REQUIRED'", ticket.getId()));
+        assertEquals(1, database.queryForObject("SELECT COUNT(*) FROM inbox_events WHERE event_id IN (?,?)",
+                Integer.class, firstEventId, secondEventId));
+        cleanupInbox(firstEventId, secondEventId);
+        cleanup(ticket.getId());
+    }
+
     private Ticket createPendingInformationTicket() {
+        return createPendingInformationTicket(false);
+    }
+
+    private Ticket createPendingInformationTicket(boolean anonymous) {
         clock.setDefault(DEADLINE.minus(Duration.ofDays(3)));
         RequestType requestType = requestTypeRepository.findAll().stream()
                 .filter(RequestType::isActive)
@@ -154,8 +263,9 @@ class InformationRequestConcurrencyIntegrationTest {
         Ticket ticket = new Ticket();
         ticket.setPublicId("OP-RACE-" + UUID.randomUUID().toString().substring(0, 12));
         ticket.setTrackingCodeHash("race-" + UUID.randomUUID());
-        ticket.setCitizenId(CITIZEN_ID);
-        ticket.setAnonymous(false);
+        ticket.setCitizenId(anonymous ? null : CITIZEN_ID);
+        ticket.setAnonymous(anonymous);
+        ticket.setAnonymousAccessPasswordHash(anonymous ? "integration-test-hash" : null);
         ticket.setRequestType(requestType);
         ticket.setTicketType(requestType.getTicketType());
         ticket.setResponsibleAreaId(requestType.getResponsibleAreaId());
@@ -181,6 +291,42 @@ class InformationRequestConcurrencyIntegrationTest {
         informationRequestService.requestInformation(ticket.getId(),
                 new CreateInformationRequest("Aporte información", null), agent());
         return ticket;
+    }
+
+    private Ticket createExternalInformationTicket() {
+        clock.setDefault(DEADLINE.minus(Duration.ofDays(3)));
+        RequestType requestType = requestTypeRepository.findAll().stream()
+                .filter(RequestType::isActive)
+                .findFirst()
+                .orElseThrow();
+        Ticket ticket = new Ticket();
+        ticket.setPublicId("OP-INBOUND-" + UUID.randomUUID().toString().substring(0, 12));
+        ticket.setTrackingCodeHash("inbound-" + UUID.randomUUID());
+        ticket.setCitizenId(CITIZEN_ID);
+        ticket.setAnonymous(false);
+        ticket.setRequestType(requestType);
+        ticket.setTicketType(requestType.getTicketType());
+        ticket.setResponsibleAreaId("M6");
+        ticket.setSummary("Prueba inbound concurrente");
+        ticket.setDescription("Ticket temporal para validar idempotencia inbound");
+        ticket.setCurrentStatus(TicketStatus.ROUTED);
+        ticket.setCurrentPriority(requestType.getMinimumPriority());
+        ticket.setStatusChangedAt(clock.instant());
+        return ticketRepository.saveAndFlush(ticket);
+    }
+
+    private UpdateTicketStatusEnvelope informationRequiredEnvelope(UUID ticketId, UUID eventId) {
+        Instant occurredAt = clock.instant();
+        UpdateTicketStatusRequest.InformationRequest informationRequest =
+                new UpdateTicketStatusRequest.InformationRequest("Aporte información", null);
+        UpdateTicketStatusRequest.Details details =
+                new UpdateTicketStatusRequest.Details(informationRequest, null, null, null);
+        UpdateTicketStatusRequest request = new UpdateTicketStatusRequest(ticketId,
+                UpdateTicketStatusType.INFORMATION_REQUIRED, null, "Solicitud externa", null, details,
+                new UpdateTicketStatusRequest.Actor(ActorType.EXTERNAL_USER.name(), "external-actor"), occurredAt);
+        return new UpdateTicketStatusEnvelope("1.0", eventId, "updateTicketStatus", occurredAt,
+                new UpdateTicketStatusEnvelope.Producer("M6", "integration-test"),
+                "tickets/" + ticketId, request);
     }
 
     private Connection lockTicket(UUID ticketId) throws Exception {
@@ -272,10 +418,17 @@ class InformationRequestConcurrencyIntegrationTest {
 
     private void cleanup(UUID ticketId) {
         database.update("DELETE FROM outbox_events WHERE ticket_id=?", ticketId);
+        database.update("DELETE FROM ticket_messages WHERE ticket_id=?", ticketId);
         database.update("DELETE FROM ticket_activities WHERE ticket_id=?", ticketId);
         database.update("DELETE FROM ticket_cancellations WHERE ticket_id=?", ticketId);
         database.update("DELETE FROM information_requests WHERE ticket_id=?", ticketId);
         database.update("DELETE FROM tickets WHERE id=?", ticketId);
+    }
+
+    private void cleanupInbox(UUID... eventIds) {
+        for (UUID eventId : eventIds) {
+            database.update("DELETE FROM inbox_events WHERE event_id=?", eventId);
+        }
     }
 
     private AuthenticatedIdentity citizen() {

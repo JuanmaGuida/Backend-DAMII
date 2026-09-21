@@ -28,6 +28,8 @@ import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.mock.web.MockPart;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
@@ -35,12 +37,15 @@ import java.util.UUID;
 import java.time.Instant;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -87,6 +92,8 @@ class TicketControllerTest {
 
     @MockitoBean
     private TicketResolutionService ticketResolutionService;
+    @MockitoBean
+    private TicketAttachmentUploadService ticketAttachmentUploadService;
 
     @MockitoBean
     private AuthService authService;
@@ -220,7 +227,8 @@ class TicketControllerTest {
         response.setDescription("Descripción completa");
         response.setNeighborhoodName("Recoleta");
         response.setAttachments(List.of(new TicketAttachmentResponse(
-                1L, "foto.jpg", "image/jpeg", 123L, MessageVisibility.PUBLIC, Instant.EPOCH)));
+                1L, "foto.jpg", "image/jpeg", 123L, MessageVisibility.PUBLIC, Instant.EPOCH,
+                "https://m2.example/api/attachments/1/content")));
         response.setTicketActivities(List.of(new TicketActivityResponse(
                 1, ActivityType.TICKET_CREATED, null, TicketStatus.REGISTERED, Instant.EPOCH,
                 null, null, null, null, null)));
@@ -235,6 +243,8 @@ class TicketControllerTest {
                 .andExpect(jsonPath("$.anonymousContact").doesNotExist())
                 .andExpect(jsonPath("$.attachments[0].fileName").value("foto.jpg"))
                 .andExpect(jsonPath("$.attachments[0].storageKey").doesNotExist())
+                .andExpect(jsonPath("$.attachments[0].downloadUrl")
+                        .value("https://m2.example/api/attachments/1/content"))
                 .andExpect(jsonPath("$.ticketActivities[0].sequence").value(1))
                 .andExpect(jsonPath("$.ticketActivities[0].actorId").doesNotExist())
                 .andExpect(jsonPath("$.ticketActivities[0].sourceModuleId").doesNotExist())
@@ -441,6 +451,25 @@ class TicketControllerTest {
     }
 
     @Test
+    void identifiedInformationResponseAcceptsMultipartDataAndAttachments() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+        MockPart data = new MockPart("data", "{\"responseMessage\":\"Detalle\"}".getBytes());
+        data.getHeaders().setContentType(MediaType.APPLICATION_JSON);
+        MockMultipartFile attachment = new MockMultipartFile(
+                "attachments", "proof.png", "image/png", new byte[]{1});
+
+        mockMvc.perform(multipart("/api/tickets/{ticketId}/information-response", ticketId)
+                        .file(attachment)
+                        .part(data)
+                        .with(authentication(CITIZEN_AUTHENTICATION)))
+                .andExpect(status().isOk());
+
+        verify(informationRequestService).answerInformation(eq(ticketId), any(), eq(CITIZEN),
+                org.mockito.ArgumentMatchers.argThat(files -> files.length == 1
+                        && "proof.png".equals(files[0].getOriginalFilename())));
+    }
+
+    @Test
     void cancelOnNonOwnerReturnsForbidden() throws Exception {
         UUID ticketId = UUID.randomUUID();
         when(ticketService.cancelTicket(eq(ticketId), any(CancelTicketRequest.class), eq(CITIZEN)))
@@ -508,6 +537,48 @@ class TicketControllerTest {
                     .andExpect(status().isForbidden());
         }
         verifyNoInteractions(ticketService);
+    }
+
+    @Test
+    void authenticatedUploadAcceptsMultipartAndReturnsSafeAttachmentMetadata() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+        when(ticketAttachmentUploadService.upload(eq(ticketId), any(), any(), eq(CITIZEN)))
+                .thenReturn(List.of(new TicketAttachmentResponse(
+                        10L, "proof.pdf", "application/pdf", 3,
+                        MessageVisibility.PUBLIC, Instant.parse("2026-09-20T12:00:00Z"),
+                        "https://m2.example/api/attachments/10/content")));
+        MockPart data = new MockPart("data", "{\"visibility\":\"PUBLIC\"}".getBytes());
+        data.getHeaders().setContentType(MediaType.APPLICATION_JSON);
+        MockMultipartFile attachment = new MockMultipartFile(
+                "attachments", "proof.pdf", "application/pdf", new byte[]{1, 2, 3});
+
+        mockMvc.perform(multipart("/api/tickets/{ticketId}/attachments", ticketId)
+                        .file(attachment)
+                        .part(data)
+                        .with(authentication(CITIZEN_AUTHENTICATION)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$[0].id").value(10))
+                .andExpect(jsonPath("$[0].visibility").value("PUBLIC"))
+                .andExpect(jsonPath("$[0].downloadUrl")
+                        .value("https://m2.example/api/attachments/10/content"))
+                .andExpect(jsonPath("$[0].storageKey").doesNotExist());
+
+        verify(ticketAttachmentUploadService).upload(eq(ticketId), any(),
+                argThat(files -> files.length == 1 && "proof.pdf".equals(files[0].getOriginalFilename())),
+                eq(CITIZEN));
+    }
+
+    @Test
+    void generalUploadRequiresBearerAuthentication() throws Exception {
+        MockPart data = new MockPart("data", "{\"visibility\":\"PUBLIC\"}".getBytes());
+        data.getHeaders().setContentType(MediaType.APPLICATION_JSON);
+        MockMultipartFile attachment = new MockMultipartFile(
+                "attachments", "proof.pdf", "application/pdf", new byte[]{1});
+
+        mockMvc.perform(multipart("/api/tickets/{ticketId}/attachments", UUID.randomUUID())
+                        .file(attachment).part(data))
+                .andExpect(status().isUnauthorized());
+        verifyNoInteractions(ticketAttachmentUploadService);
     }
 
     private UsernamePasswordAuthenticationToken authenticationFor(ModuleRole role) {

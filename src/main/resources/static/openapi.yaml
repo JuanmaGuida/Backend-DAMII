@@ -1105,6 +1105,56 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+  /api/tickets/{ticketId}/attachments:
+    post:
+      tags: [Attachments]
+      summary: Adjuntar archivos a un ticket existente
+      description: |
+        El propietario identificado sólo puede agregar adjuntos PUBLIC. AGENT y ADMIN
+        pueden agregar PUBLIC o INTERNAL sobre tickets ajenos; AREA_RESPONSIBLE tiene
+        la misma capacidad únicamente dentro de su área. Un usuario staff que es owner
+        actúa como ciudadano. No modifica el estado ni los demás datos del ticket.
+      operationId: uploadTicketAttachments
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TicketId'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [data, attachments]
+              properties:
+                data:
+                  $ref: '#/components/schemas/AttachmentUploadRequest'
+                attachments:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: string
+                    format: binary
+      responses:
+        '201':
+          description: Metadatos seguros de los adjuntos creados.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TicketAttachmentResponse'
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/InvalidToken' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '413':
+          description: Se excedió el límite de cantidad o tamaño de adjuntos.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '503':
+          description: El almacenamiento de adjuntos no está disponible.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } }
   /api/staff/labels:
     get:
       tags: [ Labels ]
@@ -1410,6 +1460,18 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/AnswerInformationRequest'
+          multipart/form-data:
+            schema:
+              type: object
+              required: [data]
+              properties:
+                data:
+                  $ref: '#/components/schemas/AnswerInformationRequest'
+                attachments:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
       responses:
         '200':
           description: Solicitud de información respondida.
@@ -1614,6 +1676,120 @@ paths:
           $ref: '#/components/responses/TicketStateConflict'
         '415':
           $ref: '#/components/responses/UnsupportedMediaType'
+  /api/attachments/{attachmentId}/content:
+    get:
+      tags: [Attachments]
+      summary: Visualizar o descargar un adjunto autorizado
+      description: Resuelve el adjunto por su identificador público y valida ownership, rol, área y visibilidad antes de acceder al almacenamiento privado.
+      operationId: downloadAttachment
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: attachmentId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Contenido del adjunto.
+          headers:
+            Cache-Control:
+              schema: { type: string, example: no-store }
+            Content-Disposition:
+              schema: { type: string }
+            X-Content-Type-Options:
+              schema: { type: string, example: nosniff }
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '401': { $ref: '#/components/responses/InvalidToken' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/tracking/actions/attachments/{attachmentId}/content:
+    post:
+      tags: [Attachments, Tracking]
+      summary: Descargar un adjunto público de un ticket anónimo propio
+      description: Requiere código de seguimiento y contraseña anónima en el body. El código de seguimiento por sí solo no autoriza la descarga.
+      operationId: downloadAnonymousAttachment
+      security: []
+      parameters:
+        - name: attachmentId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnonymousTicketCredentialsRequest'
+      responses:
+        '200':
+          description: Contenido del adjunto PUBLIC perteneciente al ticket acreditado.
+          headers:
+            Cache-Control:
+              schema: { type: string, example: no-store }
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/InvalidAnonymousTicketCredentials' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+  /api/tracking/actions/attachments:
+    post:
+      tags: [Attachments, Tracking]
+      summary: Adjuntar archivos públicos a un ticket anónimo propio
+      description: Requiere código de seguimiento y contraseña anónima dentro de la parte data. No crea sesiones ni admite visibilidad INTERNAL.
+      operationId: uploadAnonymousTicketAttachments
+      security: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [data, attachments]
+              properties:
+                data:
+                  $ref: '#/components/schemas/AnonymousAttachmentUploadRequest'
+                attachments:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: string
+                    format: binary
+      responses:
+        '201':
+          description: Metadatos seguros de los adjuntos PUBLIC creados.
+          headers:
+            Cache-Control:
+              schema: { type: string, example: no-store }
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TicketAttachmentResponse'
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/InvalidAnonymousTicketCredentials' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '413':
+          description: Se excedió el límite de cantidad o tamaño de adjuntos.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '503':
+          description: El almacenamiento de adjuntos no está disponible.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } }
   /api/tracking/access:
     post:
       tags: [Tracking]
@@ -1689,7 +1865,7 @@ paths:
     post:
       tags: [Tracking]
       summary: Responder una solicitud de información de un ticket anónimo
-      description: Acredita al propietario anónimo y reutiliza la respuesta textual existente. No admite archivos.
+      description: Acredita al propietario anónimo y admite respuesta con texto, archivos o ambos.
       operationId: answerAnonymousInformationRequest
       security: []
       requestBody:
@@ -1698,6 +1874,18 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/AnonymousInformationResponseRequest'
+          multipart/form-data:
+            schema:
+              type: object
+              required: [data]
+              properties:
+                data:
+                  $ref: '#/components/schemas/AnonymousInformationResponseRequest'
+                attachments:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
       responses:
         '200':
           description: Solicitud respondida.
@@ -2639,7 +2827,7 @@ components:
                  escalatedAt, firstResponseDueAt, firstResponseNearDue, firstResponseBreached,
                  resolutionDueAt, slaNearDue, slaBreached, resolutionNearDueAt, neighborhoodName,
                  classificationFinalizedAt, statusChangedAt, createdAt, updatedAt, attachments,
-                 ticketActivities, labels]
+                 ticketActivities, labels, pendingInformationRequest]
       properties:
         id:
           type: string
@@ -2735,6 +2923,10 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/LabelSummaryResponse'
+        pendingInformationRequest:
+          allOf:
+            - $ref: '#/components/schemas/PendingInformationRequestResponse'
+          nullable: true
     StaffTicketDetailResponse:
       description: |
         Detalle interno. Extiende la proyección común con el contacto privado
@@ -2749,10 +2941,14 @@ components:
               allOf:
                 - $ref: '#/components/schemas/AnonymousContact'
               nullable: true
+            pendingInformationRequestContext:
+              allOf:
+                - $ref: '#/components/schemas/StaffInformationRequestContextResponse'
+              nullable: true
     TicketAttachmentResponse:
       type: object
       description: Metadatos seguros de un adjunto, sin claves ni internals de almacenamiento.
-      required: [id, fileName, contentType, sizeBytes, visibility, createdAt]
+      required: [id, fileName, contentType, sizeBytes, visibility, createdAt, downloadUrl]
       properties:
         id:
           type: integer
@@ -2771,6 +2967,19 @@ components:
         createdAt:
           type: string
           format: date-time
+        downloadUrl:
+          type: string
+          format: uri
+          description: Referencia estable al endpoint controlado de M2; nunca contiene la clave interna de almacenamiento.
+    AttachmentUploadRequest:
+      type: object
+      required: [visibility]
+      additionalProperties: false
+      properties:
+        visibility:
+          type: string
+          enum: [PUBLIC, INTERNAL]
+          description: INTERNAL sólo está permitido para una capacidad staff habilitada sobre un ticket ajeno.
     TicketActivityResponse:
       type: object
       description: |
@@ -2939,21 +3148,43 @@ components:
       additionalProperties: false
     AnswerInformationRequest:
       type: object
-      required: [responseMessage]
       properties:
         responseMessage:
           type: string
+          nullable: true
+          description: Opcional cuando se adjunta al menos un archivo válido.
       additionalProperties: false
     InformationRequestResponse:
       type: object
-      required: [informationRequestId, ticketId, status, messageForCitizen, requestedAt, dueAt, resumeStatus, responseMessage, answeredAt]
+      required: [status, currentStatus, messageForCitizen, requestedAt, dueAt, responseMessage, answeredAt, attachments]
       properties:
-        informationRequestId:
+        status:
+          $ref: '#/components/schemas/InformationRequestStatus'
+        currentStatus:
+          $ref: '#/components/schemas/TicketStatus'
+        messageForCitizen:
           type: string
-          format: uuid
-        ticketId:
+        requestedAt:
           type: string
-          format: uuid
+          format: date-time
+        dueAt:
+          type: string
+          format: date-time
+        responseMessage:
+          type: string
+          nullable: true
+        answeredAt:
+          type: string
+          format: date-time
+          nullable: true
+        attachments:
+          type: array
+          items:
+            $ref: '#/components/schemas/TicketAttachmentResponse'
+    PendingInformationRequestResponse:
+      type: object
+      required: [status, messageForCitizen, requestedAt, dueAt, attachments]
+      properties:
         status:
           $ref: '#/components/schemas/InformationRequestStatus'
         messageForCitizen:
@@ -2964,15 +3195,23 @@ components:
         dueAt:
           type: string
           format: date-time
+        attachments:
+          type: array
+          items:
+            $ref: '#/components/schemas/TicketAttachmentResponse'
+    StaffInformationRequestContextResponse:
+      type: object
+      required: [internalMessage, requestedByModuleId, requestedByActorType, resumeStatus]
+      properties:
+        internalMessage:
+          type: string
+          nullable: true
+        requestedByModuleId:
+          type: string
+        requestedByActorType:
+          $ref: '#/components/schemas/ActorType'
         resumeStatus:
           $ref: '#/components/schemas/TicketStatus'
-        responseMessage:
-          type: string
-          nullable: true
-        answeredAt:
-          type: string
-          format: date-time
-          nullable: true
     ResolveTicketRequest:
       type: object
       required: [ type, publicMessage ]
@@ -3104,6 +3343,16 @@ components:
           format: password
           description: Contraseña propia del ticket anónimo enviada exclusivamente en el body.
       additionalProperties: false
+    AnonymousAttachmentUploadRequest:
+      allOf:
+        - $ref: '#/components/schemas/AnonymousTicketCredentialsRequest'
+        - type: object
+          required: [payload]
+          properties:
+            payload:
+              allOf:
+                - $ref: '#/components/schemas/AttachmentUploadRequest'
+              description: Para propietarios anónimos visibility debe ser PUBLIC.
     AnonymousCancelTicketRequest:
       allOf:
         - $ref: '#/components/schemas/AnonymousTicketCredentialsRequest'
@@ -3130,7 +3379,7 @@ components:
               $ref: '#/components/schemas/ReopenTicketRequest'
     TrackingTicketResponse:
       type: object
-      required: [publicId, status, summary, createdAt, statusChangedAt, requestType, category, subcategory, sla]
+      required: [publicId, status, summary, createdAt, statusChangedAt, requestType, category, subcategory, sla, pendingInformationRequest]
       properties:
         publicId:
           $ref: '#/components/schemas/TicketPublicId'
@@ -3152,6 +3401,10 @@ components:
           $ref: '#/components/schemas/TrackingSubcategorySummary'
         sla:
           $ref: '#/components/schemas/TrackingSlaSummary'
+        pendingInformationRequest:
+          allOf:
+            - $ref: '#/components/schemas/PendingInformationRequestResponse'
+          nullable: true
     TrackingSlaSummary:
       type: object
       required: [ firstResponseDueAt, resolutionDueAt ]

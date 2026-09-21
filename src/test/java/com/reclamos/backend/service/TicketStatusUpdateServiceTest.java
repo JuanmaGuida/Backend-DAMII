@@ -32,6 +32,7 @@ import com.reclamos.backend.identity.AuthenticatedIdentity;
 import com.reclamos.backend.identity.ModuleRole;
 import com.reclamos.backend.repository.InboxEventRepository;
 import com.reclamos.backend.repository.InformationRequestRepository;
+import com.reclamos.backend.repository.InformationRequestAttachmentRepository;
 import com.reclamos.backend.repository.TicketActivityRepository;
 import com.reclamos.backend.repository.TicketCancellationRepository;
 import com.reclamos.backend.repository.TicketLocationRepository;
@@ -99,6 +100,12 @@ class TicketStatusUpdateServiceTest {
     private TicketCancellationRepository cancellationRepository;
     @Mock
     private TicketOutboxService outbox;
+    @Mock
+    private AttachmentService attachmentService;
+    @Mock
+    private InformationRequestAttachmentRepository informationRequestAttachmentRepository;
+    @Mock
+    private AttachmentReferenceService attachmentReferenceService;
 
     private TicketStatusUpdateService service;
     private TicketResolutionService resolutionService;
@@ -124,7 +131,8 @@ class TicketStatusUpdateServiceTest {
                 ticketRepository, informationRequestRepository, activityRepository,
                 new InformationRequestDeadlineService(
                         Clock.fixed(FIXED_NOW, ZoneOffset.UTC), Duration.ofHours(72)),
-                informationRequestExpirationService, ticketSlaService, outbox);
+                informationRequestExpirationService, ticketSlaService, outbox,
+                attachmentService, attachmentReferenceService, informationRequestAttachmentRepository);
         service = new TicketStatusUpdateService(ticketRepository, activityRepository, locationRepository,
                 messageRepository, inboxEventRepository, resolutionService, ticketSlaService,
                 informationRequestService, cancellationRepository, outbox,
@@ -474,7 +482,7 @@ class TicketStatusUpdateServiceTest {
         processed.setEventId(envelope.eventId());
         processed.setStatus(InboxStatus.PROCESSED);
         when(inboxEventRepository.findById(envelope.eventId()))
-                .thenReturn(Optional.empty(), Optional.of(processed));
+                .thenReturn(Optional.empty(), Optional.empty(), Optional.of(processed));
 
         service.applyUpdate(ticketId, envelope);
         Instant originalDeadline = ticket.getResolutionConfirmationDueAt();
@@ -777,6 +785,7 @@ class TicketStatusUpdateServiceTest {
 
         when(inboxEventRepository.findById(envelope.eventId()))
                 .thenReturn(Optional.empty())          // primer envío: no visto
+                .thenReturn(Optional.empty())          // segundo chequeo después del lock
                 .thenReturn(Optional.of(alreadyProcessed)); // reenvío: ya procesado
 
         TicketResponse first = service.applyUpdate(ticketId, envelope);
@@ -791,6 +800,32 @@ class TicketStatusUpdateServiceTest {
         verify(ticketRepository, times(1)).save(any());
         verify(inboxEventRepository, times(1)).save(any());
         verify(outbox, times(1)).statusChanged(ticket, "Comenzamos a trabajar en esto.", FIXED_NOW);
+    }
+
+    @Test
+    void eventCommittedWhileWaitingForTicketLockIsHandledIdempotently() {
+        Ticket ticket = ticket(TicketStatus.PENDING_INFORMATION);
+        UpdateTicketStatusRequest.Details details = new UpdateTicketStatusRequest.Details(
+                new UpdateTicketStatusRequest.InformationRequest("Dato", null), null, null, null);
+        UpdateTicketStatusRequest data = new UpdateTicketStatusRequest(
+                ticketId, UpdateTicketStatusType.INFORMATION_REQUIRED, null, null, null, details,
+                externalActor, FIXED_NOW.minusSeconds(30));
+        UpdateTicketStatusEnvelope envelope = envelope(data);
+        InboxEvent processed = new InboxEvent();
+        processed.setEventId(envelope.eventId());
+        processed.setStatus(InboxStatus.PROCESSED);
+        when(inboxEventRepository.findById(envelope.eventId()))
+                .thenReturn(Optional.empty(), Optional.of(processed));
+        when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+        when(locationRepository.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+
+        TicketResponse response = service.applyUpdate(ticketId, envelope);
+
+        assertThat(response.getCurrentStatus()).isEqualTo(TicketStatus.PENDING_INFORMATION);
+        verify(informationRequestRepository, never()).save(any());
+        verify(inboxEventRepository, never()).save(any());
+        verifyNoInteractions(outbox);
     }
 
     @Test

@@ -10,6 +10,7 @@ import com.reclamos.backend.entity.TicketStatus;
 import com.reclamos.backend.exception.InvalidAuthenticationException;
 import com.reclamos.backend.identity.AuthenticatedIdentity;
 import com.reclamos.backend.service.InformationRequestService;
+import com.reclamos.backend.service.TicketAttachmentUploadService;
 import com.reclamos.backend.service.SatisfactionSurveyService;
 import com.reclamos.backend.service.TicketResolutionService;
 import com.reclamos.backend.service.TicketService;
@@ -39,6 +40,7 @@ public class TicketController {
     private final TicketService ticketService;
     private final InformationRequestService informationRequestService;
     private final TicketResolutionService ticketResolutionService;
+    private final TicketAttachmentUploadService ticketAttachmentUploadService;
     private final SatisfactionSurveyService satisfactionSurveyService;
 
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -151,6 +153,25 @@ public class TicketController {
             @Valid @RequestBody AnswerInformationRequest request,
             @AuthenticationPrincipal AuthenticatedIdentity identity) {
         return informationRequestService.answerInformation(ticketId, request, identity);
+    }
+
+    @PostMapping(path = "/{ticketId}/attachments", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @ResponseStatus(HttpStatus.CREATED)
+    public java.util.List<TicketAttachmentResponse> uploadAttachments(
+            @PathVariable UUID ticketId,
+            @Valid @RequestPart("data") AttachmentUploadRequest request,
+            @RequestPart("attachments") MultipartFile[] attachments,
+            @AuthenticationPrincipal AuthenticatedIdentity identity) {
+        return ticketAttachmentUploadService.upload(ticketId, request, attachments, identity);
+    }
+
+    @PostMapping(path = "/{ticketId}/information-response", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public InformationRequestResponse answerInformationMultipart(
+            @PathVariable UUID ticketId,
+            @Valid @RequestPart("data") AnswerInformationRequest request,
+            @RequestPart(value = "attachments", required = false) MultipartFile[] attachments,
+            @AuthenticationPrincipal AuthenticatedIdentity identity) {
+        return informationRequestService.answerInformation(ticketId, request, identity, attachments);
     }
 
     @PostMapping(path = "/{ticketId}/resolution", consumes = MediaType.APPLICATION_JSON_VALUE)

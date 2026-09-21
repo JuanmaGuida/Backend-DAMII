@@ -6,12 +6,14 @@ import com.reclamos.backend.entity.TicketStatus;
 import com.reclamos.backend.identity.IdentityProvider;
 import com.reclamos.backend.service.CatalogService;
 import com.reclamos.backend.service.AnonymousTicketAccessService;
+import com.reclamos.backend.service.AttachmentAccessService;
 import com.reclamos.backend.service.FormService;
 import com.reclamos.backend.service.InformationRequestService;
 import com.reclamos.backend.service.NeighborhoodService;
 import com.reclamos.backend.service.TicketService;
 import com.reclamos.backend.service.TrackingService;
 import com.reclamos.backend.service.TicketResolutionService;
+import com.reclamos.backend.service.TicketAttachmentUploadService;
 import com.reclamos.backend.entity.ResolutionType;
 import jakarta.servlet.DispatcherType;
 import org.junit.jupiter.api.BeforeEach;
@@ -20,6 +22,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -59,9 +62,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ActiveProfiles("dev")
 class SecurityHardeningIntegrationTest {
     private static final UUID TICKET_ID = UUID.fromString("20000000-0000-0000-0000-000000000001");
-    private static final UUID INFORMATION_REQUEST_ID =
-            UUID.fromString("30000000-0000-0000-0000-000000000001");
-
     @Autowired
     private MockMvc mockMvc;
 
@@ -79,11 +79,15 @@ class SecurityHardeningIntegrationTest {
     @MockitoBean
     private AnonymousTicketAccessService anonymousTicketAccessService;
     @MockitoBean
+    private AttachmentAccessService attachmentAccessService;
+    @MockitoBean
     private TicketService ticketService;
     @MockitoBean
     private InformationRequestService informationRequestService;
     @MockitoBean
     private TicketResolutionService ticketResolutionService;
+    @MockitoBean
+    private TicketAttachmentUploadService ticketAttachmentUploadService;
 
     @BeforeEach
     void configureControllerResponses() {
@@ -113,15 +117,24 @@ class SecurityHardeningIntegrationTest {
         ));
         when(anonymousTicketAccessService.authenticate(any(), any()))
                 .thenReturn(new AnonymousTicketAccessService.AnonymousTicketAccess(TICKET_ID));
+        when(attachmentAccessService.downloadAnonymous(any(), any()))
+                .thenReturn(new AttachmentAccessService.Download(
+                        new ByteArrayResource(new byte[]{1}), "proof.pdf", "application/pdf", 1));
+        when(attachmentAccessService.download(any(), any()))
+                .thenReturn(new AttachmentAccessService.Download(
+                        new ByteArrayResource(new byte[]{1}), "proof.pdf", "application/pdf", 1));
+        when(ticketAttachmentUploadService.upload(any(), any(), any(), any())).thenReturn(List.of());
+        when(ticketAttachmentUploadService.uploadAnonymous(any(), any(), any())).thenReturn(List.of());
 
         when(ticketService.create(any(), any(), any())).thenReturn(new CreateTicketResponse(
                 TICKET_ID, "TK-2026-000123", "tracking-code", TicketStatus.REGISTERED));
         InformationRequestResponse informationResponse = new InformationRequestResponse(
-                INFORMATION_REQUEST_ID, TICKET_ID, InformationRequestStatus.PENDING, "Dato requerido",
+                InformationRequestStatus.PENDING, TicketStatus.PENDING_INFORMATION, "Dato requerido",
                 Instant.parse("2026-09-01T10:00:00Z"), Instant.parse("2026-09-04T10:00:00Z"),
-                TicketStatus.IN_PROGRESS, null, null);
+                null, null);
         when(informationRequestService.requestInformation(any(), any(), any())).thenReturn(informationResponse);
         when(informationRequestService.answerInformation(any(), any(), any())).thenReturn(informationResponse);
+        when(informationRequestService.answerAnonymousFromTracking(any(), any())).thenReturn(informationResponse);
         when(ticketResolutionService.resolveManually(any(), any(), any())).thenReturn(new TicketResolutionResponse(
                 UUID.randomUUID(), TICKET_ID, TicketStatus.RESOLVED, ResolutionType.ACTION_COMPLETED,
                 "Listo", null, Instant.parse("2026-09-01T10:00:00Z")));
@@ -160,7 +173,10 @@ class SecurityHardeningIntegrationTest {
         mockMvc.perform(post("/api/tracking/actions/information-response")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(anonymousAction("{\"responseMessage\":\"Respuesta\"}")))
-                .andExpect(status().isOk());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.currentStatus").value("PENDING_INFORMATION"))
+                .andExpect(jsonPath("$.informationRequestId").doesNotExist())
+                .andExpect(jsonPath("$.resumeStatus").doesNotExist());
         mockMvc.perform(post("/api/tracking/actions/confirm-resolution")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(anonymousCredentials()))
@@ -169,6 +185,11 @@ class SecurityHardeningIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(anonymousAction("{\"reason\":\"Continúa\"}")))
                 .andExpect(status().isOk());
+        mockMvc.perform(post("/api/tracking/actions/attachments/1/content")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(anonymousCredentials()))
+                .andExpect(status().isOk());
+        mockMvc.perform(anonymousAttachmentUpload()).andExpect(status().isCreated());
 
         mockMvc.perform(ticketJsonRequest()).andExpect(status().isCreated())
                 .andExpect(header().string("Cache-Control", org.hamcrest.Matchers.containsString("no-store")));
@@ -275,6 +296,8 @@ class SecurityHardeningIntegrationTest {
     void everyProtectedEndpointReturnsCanonicalUnauthorizedWithoutValidToken() throws Exception {
         List<RequestBuilder> requests = List.of(
                 get("/api/auth/me"),
+                get("/api/attachments/1/content"),
+                identifiedAttachmentUpload(),
                 informationRequest(),
                 informationResponse(),
                 informationResponse(),
@@ -288,6 +311,7 @@ class SecurityHardeningIntegrationTest {
 
         List<MockHttpServletRequestBuilder> invalidBearerRequests = List.of(
                 get("/api/auth/me"),
+                get("/api/attachments/1/content"),
                 ticketJsonRequest(),
                 informationRequest(),
                 informationResponse(),
@@ -299,6 +323,7 @@ class SecurityHardeningIntegrationTest {
         for (MockHttpServletRequestBuilder request : invalidBearerRequests) {
             assertCanonicalUnauthorized(request.header("Authorization", "Bearer invalid"));
         }
+        assertCanonicalUnauthorized(identifiedAttachmentUpload().header("Authorization", "Bearer invalid"));
         assertCanonicalUnauthorized(multipartTicketRequest().header("Authorization", "Bearer invalid"));
         assertCanonicalUnauthorized(ticketJsonRequest().header("Authorization", "Basic malformed"));
     }
@@ -307,10 +332,16 @@ class SecurityHardeningIntegrationTest {
     void validBearerReachesEveryProtectedControllerVariant() throws Exception {
         String token = validToken();
         mockMvc.perform(withBearer(get("/api/auth/me"), token)).andExpect(status().isOk());
+        mockMvc.perform(withBearer(get("/api/attachments/1/content"), token)).andExpect(status().isOk());
+        mockMvc.perform(withBearer(identifiedAttachmentUpload(), token)).andExpect(status().isCreated());
         mockMvc.perform(withBearer(ticketJsonRequest(), token)).andExpect(status().isCreated());
         mockMvc.perform(withBearer(multipartTicketRequest(), token)).andExpect(status().isCreated());
         mockMvc.perform(withBearer(informationRequest(), token)).andExpect(status().isCreated());
-        mockMvc.perform(withBearer(informationResponse(), token)).andExpect(status().isOk());
+        mockMvc.perform(withBearer(informationResponse(), token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.currentStatus").value("PENDING_INFORMATION"))
+                .andExpect(jsonPath("$.informationRequestId").doesNotExist())
+                .andExpect(jsonPath("$.resumeStatus").doesNotExist());
         mockMvc.perform(withBearer(resolutionRequest(), token)).andExpect(status().isCreated());
         mockMvc.perform(withBearer(confirmResolutionRequest(), token)).andExpect(status().isOk());
         mockMvc.perform(withBearer(reopenResolutionRequest(), token)).andExpect(status().isOk());
@@ -408,6 +439,23 @@ class SecurityHardeningIntegrationTest {
                 }
                 """.getBytes(java.nio.charset.StandardCharsets.UTF_8));
         return multipart("/api/tickets").file(data);
+    }
+
+    private MockMultipartHttpServletRequestBuilder identifiedAttachmentUpload() {
+        MockMultipartFile data = new MockMultipartFile("data", "", MediaType.APPLICATION_JSON_VALUE,
+                "{\"visibility\":\"PUBLIC\"}".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        MockMultipartFile attachment = new MockMultipartFile(
+                "attachments", "proof.pdf", "application/pdf", new byte[]{1});
+        return multipart("/api/tickets/" + TICKET_ID + "/attachments").file(data).file(attachment);
+    }
+
+    private MockMultipartHttpServletRequestBuilder anonymousAttachmentUpload() {
+        MockMultipartFile data = new MockMultipartFile("data", "", MediaType.APPLICATION_JSON_VALUE,
+                anonymousAction("{\"visibility\":\"PUBLIC\"}")
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        MockMultipartFile attachment = new MockMultipartFile(
+                "attachments", "proof.pdf", "application/pdf", new byte[]{1});
+        return multipart("/api/tracking/actions/attachments").file(data).file(attachment);
     }
 
     private MockHttpServletRequestBuilder informationRequest() {

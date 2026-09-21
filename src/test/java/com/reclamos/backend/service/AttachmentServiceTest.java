@@ -138,6 +138,27 @@ class AttachmentServiceTest {
     }
 
     @Test
+    void generalUploadPersistsValidatedStaffActorAndInternalVisibility() {
+        Ticket ticket = ticket();
+        Instant now = Instant.parse("2026-09-20T12:00:00Z");
+        String actorId = UUID.randomUUID().toString();
+        when(storage.store(eq(ticket.getId()), any(InputStream.class)))
+                .thenReturn(new StoredFile("tickets/" + ticket.getId() + "/internal", 1));
+
+        Attachment saved = service.storeForTicket(ticket,
+                new AttachmentService.UploadActor(ActorType.AREA_RESPONSIBLE, actorId),
+                MessageVisibility.INTERNAL,
+                service.validate(new MultipartFile[]{file("internal.pdf", "application/pdf", 1)}), now)
+                .getFirst();
+
+        assertEquals(MessageVisibility.INTERNAL, saved.getVisibility());
+        assertEquals(ActorType.AREA_RESPONSIBLE, saved.getUploadedByType());
+        assertEquals(actorId, saved.getUploadedById());
+        assertEquals(ticket, saved.getTicket());
+        assertEquals(now, saved.getCreatedAt());
+    }
+
+    @Test
     void failureOnSecondFileCleansTheFirstAndDoesNotPersistMetadata() {
         Ticket ticket = ticket();
         String firstKey = "tickets/" + ticket.getId() + "/first";

@@ -14,6 +14,7 @@ import lombok.Setter;
 @EqualsAndHashCode(callSuper = true)
 public class StaffTicketDetailResponse extends TicketDetailResponse {
     private AnonymousContactResponse anonymousContact;
+    private StaffInformationRequestContextResponse pendingInformationRequestContext;
 
     @Override
     public String toString() {

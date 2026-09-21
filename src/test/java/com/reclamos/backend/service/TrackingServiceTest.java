@@ -1,6 +1,8 @@
 package com.reclamos.backend.service;
 
 import com.reclamos.backend.dto.response.TrackingTicketResponse;
+import com.reclamos.backend.dto.response.PendingInformationRequestResponse;
+import com.reclamos.backend.entity.InformationRequestStatus;
 import com.reclamos.backend.entity.Category;
 import com.reclamos.backend.entity.RequestType;
 import com.reclamos.backend.entity.Subcategory;
@@ -32,7 +34,8 @@ class TrackingServiceTest {
     private final TicketRepository tickets = mock(TicketRepository.class);
     private final TrackingCodeService trackingCodes = mock(TrackingCodeService.class);
     private final TicketSlaService ticketSlas = mock(TicketSlaService.class);
-    private final TrackingService service = new TrackingService(tickets, trackingCodes, ticketSlas);
+    private final InformationRequestProjectionService projections = mock(InformationRequestProjectionService.class);
+    private final TrackingService service = new TrackingService(tickets, trackingCodes, ticketSlas, projections);
 
     @BeforeEach
     void setUp() {
@@ -62,6 +65,21 @@ class TrackingServiceTest {
         verify(trackingCodes).hash(CODE);
         verify(tickets).findByTrackingCodeHash(HASH);
         verify(tickets, never()).save(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void trackingIncludesSafePendingInformationProjection() {
+        Ticket ticket = ticket();
+        var pending = new PendingInformationRequestResponse(InformationRequestStatus.PENDING,
+                "Adjunte una foto", Instant.parse("2026-09-20T10:00:00Z"),
+                Instant.parse("2026-09-21T10:00:00Z"), java.util.List.of());
+        when(trackingCodes.isValid(CODE)).thenReturn(true);
+        when(trackingCodes.hash(CODE)).thenReturn(HASH);
+        when(tickets.findByTrackingCodeHash(HASH)).thenReturn(Optional.of(ticket));
+        when(projections.findPending(ticket.getId()))
+                .thenReturn(new InformationRequestProjectionService.Projection(pending, null));
+
+        assertEquals(pending, service.findByTrackingCode(CODE).getPendingInformationRequest());
     }
 
     @Test

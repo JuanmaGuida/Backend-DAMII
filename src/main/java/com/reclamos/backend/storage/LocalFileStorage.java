@@ -2,6 +2,8 @@ package com.reclamos.backend.storage;
 
 import com.reclamos.backend.config.AttachmentProperties;
 import com.reclamos.backend.exception.AttachmentStorageUnavailableException;
+import com.reclamos.backend.exception.StoredFileNotFoundException;
+import org.springframework.core.io.FileSystemResource;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -49,6 +51,32 @@ public class LocalFileStorage implements FileStorage {
                     // The primary storage failure is reported by the operation above.
                 }
             }
+        }
+    }
+
+    @Override
+    public StoredContent read(String storageKey) {
+        Path target = resolveSecurely(storageKey);
+        try {
+            if (!Files.isRegularFile(target)) {
+                throw new StoredFileNotFoundException();
+            }
+            Path realRoot = root.toRealPath();
+            Path realTarget = target.toRealPath();
+            if (!realTarget.startsWith(realRoot) || !Files.isRegularFile(realTarget)) {
+                throw new AttachmentStorageUnavailableException();
+            }
+            long sizeBytes = Files.size(realTarget);
+            if (sizeBytes <= 0) {
+                throw new StoredFileNotFoundException();
+            }
+            return new StoredContent(new FileSystemResource(realTarget), sizeBytes);
+        } catch (StoredFileNotFoundException | AttachmentStorageUnavailableException exception) {
+            throw exception;
+        } catch (java.nio.file.NoSuchFileException exception) {
+            throw new StoredFileNotFoundException();
+        } catch (IOException exception) {
+            throw new AttachmentStorageUnavailableException(exception);
         }
     }
 

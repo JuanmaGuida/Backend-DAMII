@@ -84,12 +84,14 @@ public class TicketService {
     private final TicketCancellationRepository cancellationRepository;
     private final TicketSlaService ticketSlaService;
     private final InformationRequestService informationRequestService;
+    private final InformationRequestProjectionService informationRequestProjectionService;
     private final FormValidationService formValidationService;
     private final RiskCalculationService riskCalculationService;
     private final TicketOutboxService ticketOutboxService;
     private final TrackingCodeService trackingCodeService;
     private final TicketPublicIdGenerator publicIdGenerator;
     private final AttachmentService attachmentService;
+    private final AttachmentReferenceService attachmentReferenceService;
     private final AnonymousTicketCredentialService anonymousTicketCredentialService;
     private final AnonymousContactValidator anonymousContactValidator;
     private final ModuleUserRepository moduleUserRepository;
@@ -776,6 +778,13 @@ public class TicketService {
         detail.setCreatedAt(base.getCreatedAt());
         detail.setUpdatedAt(base.getUpdatedAt());
 
+        InformationRequestProjectionService.Projection pending =
+                informationRequestProjectionService.findPending(ticket.getId());
+        detail.setPendingInformationRequest(pending == null ? null : pending.citizen());
+        if (detail instanceof StaffTicketDetailResponse staffDetail) {
+            staffDetail.setPendingInformationRequestContext(pending == null ? null : pending.staff());
+        }
+
         List<Attachment> attachments = staffView
                 ? attachmentRepository.findAllByTicket_IdOrderByCreatedAtAsc(ticket.getId())
                 : attachmentRepository.findAllByTicket_IdAndVisibilityOrderByCreatedAtAsc(
@@ -797,7 +806,7 @@ public class TicketService {
     private TicketAttachmentResponse toAttachmentResponse(Attachment attachment) {
         return new TicketAttachmentResponse(attachment.getId(), attachment.getFileName(),
                 attachment.getContentType(), attachment.getSizeBytes(), attachment.getVisibility(),
-                attachment.getCreatedAt());
+                attachment.getCreatedAt(), attachmentReferenceService.downloadUrl(attachment));
     }
 
     private boolean isCitizenVisibleActivity(TicketActivity activity) {

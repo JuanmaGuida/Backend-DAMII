@@ -15,8 +15,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import org.springframework.web.multipart.MultipartFile;
 
 @Service
 @RequiredArgsConstructor
@@ -33,6 +35,9 @@ public class InformationRequestService {
     private final InformationRequestExpirationService expirationService;
     private final TicketSlaService ticketSlaService;
     private final TicketOutboxService ticketOutboxService;
+    private final AttachmentService attachmentService;
+    private final AttachmentReferenceService attachmentReferenceService;
+    private final InformationRequestAttachmentRepository informationRequestAttachmentRepository;
 
     @Transactional
     public InformationRequestResponse requestInformation(UUID ticketId, CreateInformationRequest request,
@@ -57,10 +62,13 @@ public class InformationRequestService {
                                                         String messageForCitizen, String internalMessage,
                                                         Instant requestedAt, Instant requiredBy,
                                                         UUID externalEventId) {
-        Instant dueAt = requiredBy != null ? requiredBy : deadlineService.calculateDueAt(requestedAt);
-        if (!dueAt.isAfter(requestedAt)) {
-            throw new InvalidTicketRequestException("details.informationRequest.requiredBy debe ser posterior a updateOccurredAt");
+        Instant m2Now = deadlineService.now();
+        Instant defaultDueAt = deadlineService.calculateDueAt(m2Now);
+        if (requiredBy != null && !requiredBy.isAfter(m2Now)) {
+            throw new InvalidTicketRequestException(
+                    "details.informationRequest.requiredBy debe ser posterior al momento actual de M2");
         }
+        Instant dueAt = requiredBy == null || requiredBy.isAfter(defaultDueAt) ? defaultDueAt : requiredBy;
         return createPending(lockedTicket, new InformationRequestApplication(
                 sourceModuleId, actorType, actorId, messageForCitizen, internalMessage,
                 requestedAt, dueAt, externalEventId));
@@ -103,26 +111,43 @@ public class InformationRequestService {
 
     @Transactional
     public InformationRequestResponse answerInformation(UUID ticketId, AnswerInformationRequest request,
-                                                        AuthenticatedIdentity identity) {
+                                                         AuthenticatedIdentity identity) {
+        return answerInformation(ticketId, request, identity, new MultipartFile[0]);
+    }
+
+    @Transactional
+    public InformationRequestResponse answerInformation(UUID ticketId, AnswerInformationRequest request,
+                                                         AuthenticatedIdentity identity,
+                                                         MultipartFile[] attachments) {
         if (identity == null) throw new UnauthorizedTicketOperationException();
+        List<AttachmentService.ValidatedAttachment> validated = validateAnswer(request, attachments);
         Ticket ticket = lockedTicket(ticketId);
         if (ticket.isAnonymous() || ticket.getCitizenId() == null
                 || !ticket.getCitizenId().equals(identity.citizenId())) {
             throw new UnauthorizedTicketOperationException();
         }
-        return answerPending(ticket, request.getResponseMessage(), identity.citizenId().toString());
+        return answerPending(ticket, normalizedMessage(request), identity.citizenId().toString(), identity, validated);
     }
 
     @Transactional
     public InformationRequestResponse answerAnonymousFromTracking(UUID ticketId, AnswerInformationRequest request) {
+        return answerAnonymousFromTracking(ticketId, request, new MultipartFile[0]);
+    }
+
+    @Transactional
+    public InformationRequestResponse answerAnonymousFromTracking(UUID ticketId, AnswerInformationRequest request,
+                                                                  MultipartFile[] attachments) {
+        List<AttachmentService.ValidatedAttachment> validated = validateAnswer(request, attachments);
         Ticket ticket = lockedTicket(ticketId);
         if (!ticket.isAnonymous() || ticket.getCitizenId() != null) {
             throw new UnauthorizedTicketOperationException();
         }
-        return answerPending(ticket, request.getResponseMessage(), null);
+        return answerPending(ticket, normalizedMessage(request), null, null, validated);
     }
 
-    private InformationRequestResponse answerPending(Ticket ticket, String responseMessage, String actorId) {
+    private InformationRequestResponse answerPending(Ticket ticket, String responseMessage, String actorId,
+                                                     AuthenticatedIdentity identity,
+                                                     List<AttachmentService.ValidatedAttachment> validatedAttachments) {
         if (ticket.getCurrentStatus() != TicketStatus.PENDING_INFORMATION) {
             throw new InformationRequestConflictException(
                     "El ticket ya no admite respuestas a solicitudes de información");
@@ -135,6 +160,16 @@ public class InformationRequestService {
             throw new InformationRequestExpiredException();
         }
         Instant answeredAt = deadlineService.now();
+        List<Attachment> storedAttachments = attachmentService.storeForTicket(
+                ticket, identity, validatedAttachments, answeredAt);
+        List<InformationRequestAttachment> links = storedAttachments.stream().map(attachment -> {
+            InformationRequestAttachment link = new InformationRequestAttachment();
+            link.setInformationRequest(informationRequest);
+            link.setAttachment(attachment);
+            link.setRole(InformationAttachmentRole.RESPONSE);
+            return link;
+        }).toList();
+        informationRequestAttachmentRepository.saveAll(links);
         informationRequest.setResponseMessage(responseMessage);
         informationRequest.setAnsweredAt(answeredAt);
         informationRequest.setAnsweredByType(ActorType.CITIZEN);
@@ -149,9 +184,10 @@ public class InformationRequestService {
         saveActivity(ticket, ActivityType.INFORMATION_PROVIDED, TicketStatus.PENDING_INFORMATION,
                 informationRequest.getResumeStatus(), ActorType.CITIZEN, actorId,
                 MODULE_ID, null, responseMessage, answeredAt, null);
-        ticketOutboxService.informationProvided(ticket, responseMessage,
+        ticketOutboxService.informationProvided(ticket, responseMessage, storedAttachments,
+                ActorType.CITIZEN, actorId,
                 !MODULE_ID.equalsIgnoreCase(informationRequest.getRequestedByModuleId()), answeredAt);
-        return response(informationRequest);
+        return response(informationRequest, storedAttachments);
     }
 
     /**
@@ -209,9 +245,34 @@ public class InformationRequestService {
     }
 
     private InformationRequestResponse response(InformationRequest request) {
-        return new InformationRequestResponse(request.getId(), request.getTicket().getId(), request.getStatus(),
+        return response(request, List.of());
+    }
+
+    private InformationRequestResponse response(InformationRequest request, List<Attachment> attachments) {
+        return new InformationRequestResponse(request.getStatus(), request.getTicket().getCurrentStatus(),
                 request.getMessageForCitizen(), request.getRequestedAt(), request.getDueAt(),
-                request.getResumeStatus(), request.getResponseMessage(), request.getAnsweredAt());
+                request.getResponseMessage(), request.getAnsweredAt(),
+                attachments.stream().map(attachment -> new com.reclamos.backend.dto.response.TicketAttachmentResponse(
+                        attachment.getId(), attachment.getFileName(), attachment.getContentType(),
+                        attachment.getSizeBytes(), attachment.getVisibility(), attachment.getCreatedAt(),
+                        attachmentReferenceService.downloadUrl(attachment))).toList());
+    }
+
+    private List<AttachmentService.ValidatedAttachment> validateAnswer(
+            AnswerInformationRequest request, MultipartFile[] attachments) {
+        if (request == null) {
+            throw new InvalidTicketRequestException("La respuesta de información es obligatoria");
+        }
+        List<AttachmentService.ValidatedAttachment> validated = attachmentService.validate(attachments);
+        if ((request.getResponseMessage() == null || request.getResponseMessage().isBlank()) && validated.isEmpty()) {
+            throw new InvalidTicketRequestException("La respuesta debe incluir texto o al menos un archivo");
+        }
+        return validated;
+    }
+
+    private String normalizedMessage(AnswerInformationRequest request) {
+        return request.getResponseMessage() == null || request.getResponseMessage().isBlank()
+                ? null : request.getResponseMessage().strip();
     }
 
     private record InformationRequestApplication(
