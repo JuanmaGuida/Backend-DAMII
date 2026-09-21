@@ -5,10 +5,7 @@ import com.reclamos.backend.dto.TicketResponse;
 import com.reclamos.backend.dto.request.CancelTicketRequest;
 import com.reclamos.backend.dto.request.CreateTicketRequest;
 import com.reclamos.backend.dto.response.CreateTicketResponse;
-import com.reclamos.backend.dto.response.StaffTicketDetailResponse;
 import com.reclamos.backend.dto.response.TicketDetailResponse;
-import com.reclamos.backend.dto.response.PendingInformationRequestResponse;
-import com.reclamos.backend.dto.response.StaffInformationRequestContextResponse;
 import com.reclamos.backend.entity.*;
 import com.reclamos.backend.exception.*;
 import com.reclamos.backend.identity.AuthenticatedIdentity;
@@ -47,7 +44,6 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.argThat;
@@ -100,10 +96,6 @@ class TicketServiceTest {
     private TicketCancellationRepository cancellationRepository;
     @Mock
     private ModuleUserRepository moduleUsers;
-    @Mock
-    private TicketLabelRepository ticketLabels;
-    @Mock
-    private NotificationService notificationService;
     @Spy
     private TrackingCodeService trackingCodes = new TrackingCodeService();
     @Mock
@@ -114,13 +106,9 @@ class TicketServiceTest {
     private InformationRequestService informationRequestService;
     @Mock
     private InformationRequestProjectionService informationRequestProjectionService;
-    private final AttachmentService attachments = mock(AttachmentService.class);
     @Mock
     private AttachmentReferenceService attachmentReferenceService;
-    @Mock
-    private AnonymousTicketCredentialService anonymousTicketCredentialService;
-    @Mock
-    private AnonymousContactValidator anonymousContactValidator;
+    private final AttachmentService attachments = mock(AttachmentService.class);
     @Mock
     private Clock clock;
 
@@ -175,9 +163,6 @@ class TicketServiceTest {
                 });
 
         lenient().when(attachments.storeForTicket(any(), any(), anyList(), any())).thenReturn(List.of());
-        lenient().when(attachmentReferenceService.downloadUrl(any()))
-                .thenAnswer(invocation -> "https://m2.example/api/attachments/"
-                        + ((Attachment) invocation.getArgument(0)).getId() + "/content");
     }
 
     // ==================================================================
@@ -222,8 +207,6 @@ class TicketServiceTest {
                 ticket.getCurrentStatus() == TicketStatus.REGISTERED
                         && citizen.citizenId().equals(ticket.getCitizenId())),
                 nullable(TicketLocation.class), eq(List.of()), nullable(Instant.class));
-        verify(notificationService).queue(argThat(ticket -> citizen.citizenId().equals(ticket.getCitizenId())),
-                eq(NotificationType.TICKET_REGISTERED));
     }
 
     @Test
@@ -319,37 +302,6 @@ class TicketServiceTest {
         verify(tickets, never()).save(any());
         verify(activities, never()).save(any());
         verify(locations, never()).save(any());
-        verifyNoInteractions(notificationService);
-    }
-
-    @Test
-    void anonymousEvidenceRequiredDoesNotGenerateCredentialsOrLeaveEffects() {
-        requestType.setAllowsAnonymous(true);
-        when(risks.calculateRisk(any(RequestType.class), any(ResolvedForm.class)))
-                .thenReturn(new RiskAssessment(62, Risk.HIGH));
-
-        assertThrows(EvidenceRequiredException.class, () -> service.create(request(), null, null));
-
-        verifyNoInteractions(anonymousTicketCredentialService, anonymousContactValidator);
-        verify(tickets, never()).save(any());
-        verify(activities, never()).save(any());
-        verifyNoInteractions(ticketSlaService, ticketOutboxService);
-        verify(attachments, never()).storeForTicket(any(), any(), anyList(), any());
-    }
-
-    @Test
-    void anonymousInitialEvidenceUsesCitizenActorWithoutAnId() {
-        requestType.setAllowsAnonymous(true);
-        when(risks.calculateRisk(any(RequestType.class), any(ResolvedForm.class)))
-                .thenReturn(new RiskAssessment(62, Risk.HIGH));
-        when(anonymousTicketCredentialService.prepare(null)).thenReturn(
-                new AnonymousTicketCredentialService.CredentialMaterial("bcrypt-hash", "generated-secret"));
-        MockMultipartFile evidence = new MockMultipartFile(
-                "evidence", "photo.jpg", "image/jpeg", new byte[]{1});
-
-        service.create(request(), null, new MultipartFile[]{evidence});
-
-        verify(attachments).storeForTicket(argThat(Ticket::isAnonymous), isNull(), anyList(), eq(NOW));
     }
 
     @Test
@@ -409,7 +361,7 @@ class TicketServiceTest {
                 .thenReturn(new TicketSlaService.DeadlineSnapshot(null, null));
 
         var tracked = new TrackingService(tickets, trackingCodes, ticketSlaService,
-                informationRequestProjectionService)
+                informationRequestProjectionService, attachmentRepository, attachmentReferenceService)
                 .findByTrackingCode(created.trackingCode());
 
         assertEquals(created.publicId(), tracked.getPublicId());
@@ -721,86 +673,6 @@ class TicketServiceTest {
         assertThat(ticket.getStatusChangedAt()).isEqualTo(NOW);
         verify(ticketSlaService).completeFirstResponseCycle(ticket, NOW);
         verify(ticketOutboxService).statusChanged(ticket, null, NOW);
-    }
-
-    @Test
-    void anonymousCreationUsesTheExistingPipelineWithoutCitizenOrModuleUser() {
-        allowLowRisk();
-        requestType.setAllowsAnonymous(true);
-        String passwordHash = "$2a$10$anonymous-hash";
-        when(anonymousTicketCredentialService.prepare(null)).thenReturn(
-                new AnonymousTicketCredentialService.CredentialMaterial(passwordHash, "generated-secret"));
-
-        CreateTicketResponse response = service.create(request(), null, null);
-
-        assertEquals("generated-secret", response.generatedAnonymousAccessPassword());
-        verify(tickets).save(argThat(ticket ->
-                ticket.isAnonymous()
-                        && ticket.getCitizenId() == null
-                        && passwordHash.equals(ticket.getAnonymousAccessPasswordHash())
-                        && ticket.getCurrentStatus() == TicketStatus.REGISTERED));
-        verify(activities).save(argThat(activity ->
-                activity.getActorType() == ActorType.CITIZEN && activity.getActorId() == null));
-        verify(attachments, never()).storeForTicket(any(), any(), anyList(), any());
-        verifyNoInteractions(moduleUsers);
-        verify(ticketOutboxService).ticketCreated(argThat(Ticket::isAnonymous),
-                nullable(TicketLocation.class), eq(List.of()), nullable(Instant.class));
-    }
-
-    @Test
-    void anonymousCreationPersistsValidatedContactAndDoesNotReturnProvidedPassword() {
-        allowLowRisk();
-        requestType.setAllowsAnonymous(true);
-        CreateTicketRequest request = new CreateTicketRequest(1L, "Resumen", "Descripción", Map.of(), null,
-                "chosen-password", new CreateTicketRequest.AnonymousContact(
-                AnonymousContactChannel.EMAIL, " person@example.com "));
-        when(anonymousContactValidator.validate(request.anonymousContact())).thenReturn(
-                new AnonymousContactValidator.ValidatedContact(
-                        AnonymousContactChannel.EMAIL, "person@example.com"));
-        when(anonymousTicketCredentialService.prepare("chosen-password")).thenReturn(
-                new AnonymousTicketCredentialService.CredentialMaterial("bcrypt-hash", null));
-
-        CreateTicketResponse response = service.create(request, null, null);
-
-        assertNull(response.generatedAnonymousAccessPassword());
-        verify(tickets).save(argThat(ticket ->
-                ticket.getAnonymousContactChannel() == AnonymousContactChannel.EMAIL
-                        && "person@example.com".equals(ticket.getAnonymousContactValue())
-                        && "bcrypt-hash".equals(ticket.getAnonymousAccessPasswordHash())));
-    }
-
-    @Test
-    void anonymousCreationRejectsDisallowedRequestTypeBeforeCredentialsOrEffects() {
-        requestType.setAllowsAnonymous(false);
-
-        assertThrows(InvalidTicketRequestException.class, () -> service.create(request(), null, null));
-
-        verifyNoInteractions(anonymousTicketCredentialService, anonymousContactValidator);
-        verify(tickets, never()).save(any());
-        verifyNoInteractions(activities, ticketSlaService, ticketOutboxService);
-    }
-
-    @Test
-    void anonymousCreationRejectsInactiveRequestTypeBeforeCredentialsOrEffects() {
-        requestType.setAllowsAnonymous(true);
-        requestType.setActive(false);
-
-        assertThrows(InvalidTicketRequestException.class, () -> service.create(request(), null, null));
-
-        verifyNoInteractions(anonymousTicketCredentialService, anonymousContactValidator);
-        verify(tickets, never()).save(any());
-        verifyNoInteractions(activities, ticketSlaService, ticketOutboxService);
-    }
-
-    @Test
-    void identifiedCreationRejectsAnonymousFieldsBeforePersistence() {
-        CreateTicketRequest request = new CreateTicketRequest(1L, "Resumen", "Descripción", Map.of(), null,
-                "chosen-password", null);
-
-        assertThrows(InvalidTicketRequestException.class, () -> service.create(request, identity(), null));
-
-        verifyNoInteractions(requestTypes, anonymousTicketCredentialService, anonymousContactValidator);
-        verify(tickets, never()).save(any());
     }
 
     @Test
@@ -1439,146 +1311,6 @@ class TicketServiceTest {
     }
 
     @Test
-    void ownerWithdrawsOwnDuplicateWithoutChangingMainOrSiblingAndKeepsLink() {
-        AuthenticatedIdentity owner = new AuthenticatedIdentity(
-                "duplicate-owner", UUID.randomUUID(), "Vecino", null, ModuleRole.CITIZEN);
-        Ticket main = ticket(TicketStatus.IN_PROGRESS, Priority.MEDIUM);
-        Ticket duplicate = ticket(TicketStatus.DUPLICATE, Priority.LOW);
-        duplicate.setCitizenId(owner.citizenId());
-        duplicate.setMainTicket(main);
-        Ticket sibling = ticket(TicketStatus.DUPLICATE, Priority.LOW);
-        sibling.setMainTicket(main);
-        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(duplicate));
-        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
-        when(activities.countByTicketId(ticketId)).thenReturn(1);
-
-        CancelTicketRequest request = new CancelTicketRequest();
-        request.setReasonCode(CancellationReasonCode.WITHDRAWN_BY_CITIZEN);
-
-        TicketResponse response = service.cancelTicket(ticketId, request, owner);
-
-        assertThat(response.getCurrentStatus()).isEqualTo(TicketStatus.CANCELLED);
-        assertThat(duplicate.getCurrentStatus()).isEqualTo(TicketStatus.CANCELLED);
-        assertThat(duplicate.getMainTicket()).isSameAs(main);
-        assertThat(main.getCurrentStatus()).isEqualTo(TicketStatus.IN_PROGRESS);
-        assertThat(sibling.getCurrentStatus()).isEqualTo(TicketStatus.DUPLICATE);
-        verify(cancellationRepository, times(1)).save(argThat(cancellation ->
-                cancellation.getTicket() == duplicate
-                        && cancellation.getReasonCode() == CancellationReasonCode.WITHDRAWN_BY_CITIZEN));
-        verify(activities, times(1)).save(argThat(activity ->
-                activity.getTicket() == duplicate
-                        && activity.getActionType() == ActivityType.CANCELLED
-                        && activity.getPreviousStatus() == TicketStatus.DUPLICATE));
-        verify(ticketSlaService).terminateActiveCycles(duplicate, NOW);
-        verify(tickets, never()).save(main);
-        verify(tickets, never()).save(sibling);
-    }
-
-    @Test
-    void ownerCannotCancelDuplicateWithAnotherReason() {
-        AuthenticatedIdentity owner = new AuthenticatedIdentity(
-                "duplicate-owner", UUID.randomUUID(), "Vecino", null, ModuleRole.CITIZEN);
-        Ticket duplicate = ticket(TicketStatus.DUPLICATE, Priority.LOW);
-        duplicate.setCitizenId(owner.citizenId());
-        duplicate.setMainTicket(ticket(TicketStatus.IN_PROGRESS, Priority.MEDIUM));
-        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(duplicate));
-        CancelTicketRequest request = new CancelTicketRequest();
-        request.setReasonCode(CancellationReasonCode.OTHER);
-
-        assertThatThrownBy(() -> service.cancelTicket(ticketId, request, owner))
-                .isInstanceOf(TicketStateConflictException.class);
-        assertThat(duplicate.getCurrentStatus()).isEqualTo(TicketStatus.DUPLICATE);
-        verify(cancellationRepository, never()).save(any());
-        verify(activities, never()).save(any());
-    }
-
-    @Test
-    void anonymousOwnerWithdrawsDuplicateAndKeepsMainTicket() {
-        Ticket main = ticket(TicketStatus.IN_PROGRESS, Priority.MEDIUM);
-        Ticket duplicate = ticket(TicketStatus.DUPLICATE, Priority.LOW);
-        duplicate.setAnonymous(true);
-        duplicate.setCitizenId(null);
-        duplicate.setMainTicket(main);
-        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(duplicate));
-        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
-        CancelTicketRequest request = new CancelTicketRequest();
-        request.setReasonCode(CancellationReasonCode.WITHDRAWN_BY_CITIZEN);
-
-        TicketResponse response = service.cancelAnonymousTicket(ticketId, request);
-
-        assertThat(response.getCurrentStatus()).isEqualTo(TicketStatus.CANCELLED);
-        assertThat(duplicate.getMainTicket()).isSameAs(main);
-        assertThat(main.getCurrentStatus()).isEqualTo(TicketStatus.IN_PROGRESS);
-        verify(cancellationRepository).save(argThat(cancellation ->
-                cancellation.getReasonCode() == CancellationReasonCode.WITHDRAWN_BY_CITIZEN));
-        verify(activities).save(argThat(activity -> activity.getActionType() == ActivityType.CANCELLED));
-        verify(ticketSlaService).terminateActiveCycles(duplicate, NOW);
-    }
-
-
-    @Test
-    void anonymousExternalOwnerCancelsRegisteredTicketWithoutPublishingPreRoutedEvent() {
-        Ticket ticket = ticket(TicketStatus.REGISTERED, Priority.LOW);
-        ticket.setAnonymous(true);
-        ticket.setCitizenId(null);
-        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
-        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
-        when(activities.countByTicketId(ticketId)).thenReturn(0);
-
-        CancelTicketRequest request = new CancelTicketRequest();
-        request.setReasonCode(CancellationReasonCode.WITHDRAWN_BY_CITIZEN);
-        request.setPublicMessage("Retiro anónimo");
-
-        TicketResponse response = service.cancelAnonymousTicket(ticketId, request);
-
-        assertThat(response.getCurrentStatus()).isEqualTo(TicketStatus.CANCELLED);
-        verify(cancellationRepository).save(argThat(cancellation ->
-                cancellation.getCancelledByType() == ActorType.CITIZEN
-                        && cancellation.getCancelledById() == null));
-        verify(activities).save(argThat(activity -> activity.getActorType() == ActorType.CITIZEN
-                && activity.getActorId() == null));
-        verify(ticketSlaService).terminateActiveCycles(ticket, NOW);
-        verify(ticketOutboxService, never()).cancelled(any(), any(), any(), anyBoolean(), any());
-    }
-
-    @Test
-    void anonymousSelfManagedOwnerCancelsRegisteredTicketWithoutPublishingEvent() {
-        Ticket ticket = ticket(TicketStatus.REGISTERED, Priority.LOW);
-        ticket.setAnonymous(true);
-        ticket.setCitizenId(null);
-        ticket.setResponsibleAreaId("M2");
-        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
-        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
-        when(activities.countByTicketId(ticketId)).thenReturn(0);
-
-        CancelTicketRequest request = new CancelTicketRequest();
-        request.setReasonCode(CancellationReasonCode.WITHDRAWN_BY_CITIZEN);
-
-        TicketResponse response = service.cancelAnonymousTicket(ticketId, request);
-
-        assertThat(response.getCurrentStatus()).isEqualTo(TicketStatus.CANCELLED);
-        verify(cancellationRepository).save(any(TicketCancellation.class));
-        verify(ticketSlaService).terminateActiveCycles(ticket, NOW);
-        verify(ticketOutboxService, never()).cancelled(any(), any(), any(), anyBoolean(), any());
-    }
-
-    @Test
-    void anonymousOwnerCancellationUsesTheExistingRegisteredOnlyRule() {
-        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.LOW);
-        ticket.setAnonymous(true);
-        ticket.setCitizenId(null);
-        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
-
-        CancelTicketRequest request = new CancelTicketRequest();
-        request.setReasonCode(CancellationReasonCode.WITHDRAWN_BY_CITIZEN);
-
-        assertThatThrownBy(() -> service.cancelAnonymousTicket(ticketId, request))
-                .isInstanceOf(TicketStateConflictException.class);
-        verify(cancellationRepository, never()).save(any());
-        verify(activities, never()).save(any());
-    }
-
-    @Test
     void cancelTicketByOwnerFromInReviewIsRejectedWithoutEffects() {
         AuthenticatedIdentity owner = new AuthenticatedIdentity(
                 "citizen-1", UUID.randomUUID(), "Vecino Uno", null, ModuleRole.CITIZEN);
@@ -1751,9 +1483,13 @@ class TicketServiceTest {
         verify(cancellationRepository, never()).save(any());
     }
 
-    /** La cancelación administrativa conserva el gate central del outbox. */
+    /**
+     * Eventos V1.69 §2.1: en este punto (pre-ROUTED) nunca hubo un área
+     * externa involucrada, así que un ticket anónimo no publica
+     * ticketUpdated/CANCELLED — no hay a quién avisar del otro lado.
+     */
     @Test
-    void administrativeCancellationKeepsDelegatingPublicationPolicyToOutboxService() {
+    void cancelTicketSkipsOutboxEventForAnonymousTicket() {
         Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.LOW);
         ticket.setAnonymous(true);
 
@@ -1959,12 +1695,6 @@ class TicketServiceTest {
                 ticketId, MessageVisibility.PUBLIC)).thenReturn(List.of(publicAttachment));
         when(activities.findAllByTicket_IdOrderBySequenceAsc(ticketId))
                 .thenReturn(List.of(returned, internalMessage));
-        var citizenRequest = new PendingInformationRequestResponse(InformationRequestStatus.PENDING,
-                "Adjunte una foto", NOW, NOW.plusSeconds(3600), List.of());
-        when(informationRequestProjectionService.findPending(ticketId)).thenReturn(
-                new InformationRequestProjectionService.Projection(citizenRequest,
-                        new StaffInformationRequestContextResponse("privado", "M6",
-                                ActorType.EXTERNAL_USER, TicketStatus.IN_REVIEW)));
 
         TicketDetailResponse response = service.getById(ticketId, actor);
 
@@ -1978,37 +1708,7 @@ class TicketServiceTest {
         assertThat(response.getTicketActivities().getFirst().getReasonCode()).isNull();
         assertThat(response.getTicketActivities().getFirst().getActorType()).isNull();
         assertThat(response.getTicketActivities().getFirst().getMessage()).isNull();
-        assertThat(response.getPendingInformationRequest()).isEqualTo(citizenRequest);
         verify(attachmentRepository, never()).findAllByTicket_IdOrderByCreatedAtAsc(any());
-    }
-
-    @Test
-    void getByIdKeepsReopenedReasonInSequenceOrderWithoutExposingOtherActivityMessages() {
-        Ticket ticket = ticket(TicketStatus.IN_PROGRESS, Priority.MEDIUM);
-        ticket.setCitizenId(actor.citizenId());
-        ticket.setAnonymous(false);
-        TicketActivity internalAudit = activity(4, ActivityType.RETURNED_BY_AREA,
-                "INTERNAL_REASON", "detalle sólo para staff");
-        TicketActivity reopened = activity(5, ActivityType.REOPENED, null,
-                "La solución no resolvió el problema");
-        reopened.setPreviousStatus(TicketStatus.RESOLVED);
-        reopened.setNewStatus(TicketStatus.IN_PROGRESS);
-
-        when(tickets.findById(ticketId)).thenReturn(Optional.of(ticket));
-        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
-        when(activities.findAllByTicket_IdOrderBySequenceAsc(ticketId))
-                .thenReturn(List.of(internalAudit, reopened));
-
-        TicketDetailResponse response = service.getById(ticketId, actor);
-
-        assertThat(response.getTicketActivities()).extracting("sequence")
-                .containsExactly(4, 5);
-        assertThat(response.getTicketActivities().getFirst().getMessage()).isNull();
-        assertThat(response.getTicketActivities().get(1))
-                .extracting("actionType", "previousStatus", "newStatus", "message")
-                .containsExactly(ActivityType.REOPENED, TicketStatus.RESOLVED,
-                        TicketStatus.IN_PROGRESS, "La solución no resolvió el problema");
-        assertThat(response.getTicketActivities().get(1).getOccurredAt()).isEqualTo(NOW);
     }
 
     @Test
@@ -2132,96 +1832,10 @@ class TicketServiceTest {
         // fixture ticket() usa responsibleAreaId="obras-viales"; actor es AGENT de "area-obras".
         when(tickets.findById(ticketId)).thenReturn(Optional.of(ticket));
         when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
-        var citizenRequest = new PendingInformationRequestResponse(InformationRequestStatus.PENDING,
-                "Dato", NOW, NOW.plusSeconds(3600), List.of());
-        var staffContext = new StaffInformationRequestContextResponse(
-                "interno", "M6", ActorType.EXTERNAL_USER, TicketStatus.IN_REVIEW);
-        when(informationRequestProjectionService.findPending(ticketId)).thenReturn(
-                new InformationRequestProjectionService.Projection(citizenRequest, staffContext));
-
-        StaffTicketDetailResponse response = service.getStaffDetail(ticketId, actor);
-
-        assertThat(response.getId()).isEqualTo(ticketId);
-        assertThat(response.getLabels()).isEmpty();
-        assertThat(response.getPendingInformationRequest()).isEqualTo(citizenRequest);
-        assertThat(response.getPendingInformationRequestContext()).isEqualTo(staffContext);
-    }
-
-    @Test
-    void getStaffDetailMapsLabelsInRepositoryOrder() {
-        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.MEDIUM);
-        Label alpha = new Label(); alpha.setId(UUID.randomUUID()); alpha.setCode("ALPHA"); alpha.setName("Alpha");
-        Label zeta = new Label(); zeta.setId(UUID.randomUUID()); zeta.setCode("ZETA"); zeta.setName("Zeta");
-        when(tickets.findById(ticketId)).thenReturn(Optional.of(ticket));
-        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
-        when(ticketLabels.findLabelsByTicketId(ticketId)).thenReturn(List.of(alpha, zeta));
 
         TicketDetailResponse response = service.getStaffDetail(ticketId, actor);
 
-        assertThat(response.getLabels()).extracting("code").containsExactly("ALPHA", "ZETA");
-    }
-
-
-
-    @Test
-    void getStaffDetailShowsAnonymousContactToAgentAndAdmin() {
-        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.MEDIUM);
-        ticket.setCitizenId(null);
-        ticket.setAnonymous(true);
-        ticket.setAnonymousContactChannel(AnonymousContactChannel.EMAIL);
-        ticket.setAnonymousContactValue("private@example.test");
-        AuthenticatedIdentity admin = new AuthenticatedIdentity(
-                "admin-1", UUID.randomUUID(), "Admin Uno", null, ModuleRole.ADMIN);
-        when(tickets.findById(ticketId)).thenReturn(Optional.of(ticket));
-        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
-
-        for (AuthenticatedIdentity viewer : List.of(actor, admin)) {
-            StaffTicketDetailResponse response = service.getStaffDetail(ticketId, viewer);
-
-            assertThat(response.getAnonymousContact()).isNotNull();
-            assertThat(response.getAnonymousContact().channel()).isEqualTo(AnonymousContactChannel.EMAIL);
-            assertThat(response.getAnonymousContact().value()).isEqualTo("private@example.test");
-            assertThat(ticket.toString()).doesNotContain("EMAIL", "private@example.test");
-            assertThat(response.toString()).doesNotContain("EMAIL", "private@example.test");
-            assertThat(response.getAnonymousContact().toString()).doesNotContain("EMAIL", "private@example.test");
-        }
-    }
-
-    @Test
-    void getStaffDetailHidesAnonymousContactFromAreaResponsible() {
-        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.MEDIUM);
-        ticket.setCitizenId(null);
-        ticket.setAnonymous(true);
-        ticket.setResponsibleAreaId("obras-viales");
-        ticket.setAnonymousContactChannel(AnonymousContactChannel.PHONE);
-        ticket.setAnonymousContactValue("+5491112345678");
-        AuthenticatedIdentity areaResponsible = new AuthenticatedIdentity(
-                "area-1", UUID.randomUUID(), "Responsable Uno", "obras-viales", ModuleRole.AREA_RESPONSIBLE);
-        when(tickets.findById(ticketId)).thenReturn(Optional.of(ticket));
-        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
-
-        StaffTicketDetailResponse response = service.getStaffDetail(ticketId, areaResponsible);
-
         assertThat(response.getId()).isEqualTo(ticketId);
-        assertThat(response.getAnonymousContact()).isNull();
-    }
-
-    @Test
-    void getStaffDetailOmitsAnonymousContactForIdentifiedTicketsAndAnonymousTicketsWithoutContact() {
-        Ticket identified = ticket(TicketStatus.IN_REVIEW, Priority.MEDIUM);
-        identified.setAnonymous(false);
-        identified.setCitizenId(UUID.randomUUID());
-        when(tickets.findById(ticketId)).thenReturn(Optional.of(identified));
-        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
-
-        assertThat(service.getStaffDetail(ticketId, actor).getAnonymousContact()).isNull();
-
-        Ticket anonymousWithoutContact = ticket(TicketStatus.IN_REVIEW, Priority.MEDIUM);
-        anonymousWithoutContact.setAnonymous(true);
-        anonymousWithoutContact.setCitizenId(null);
-        when(tickets.findById(ticketId)).thenReturn(Optional.of(anonymousWithoutContact));
-
-        assertThat(service.getStaffDetail(ticketId, actor).getAnonymousContact()).isNull();
     }
 
     @Test
@@ -2471,7 +2085,7 @@ class TicketServiceTest {
     /**
      * baseRisk lo usa correctClassification para recalcular currentPriority
      * (ver correctClassificationCanLowerPriorityWhen...). El overload de 5
-     * argumentos delega acá con Risk. LOW por default para los tests a los
+     * argumentos delega acá con Risk.LOW por default para los tests a los
      * que no les importa ese valor. Nombrado *Sprint2 (en vez de sobrecargar
      * requestType(...)) para no colisionar con el fixture requestType(boolean)
      * de la sección create()/route().

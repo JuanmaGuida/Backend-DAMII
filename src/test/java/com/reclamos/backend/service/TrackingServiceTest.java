@@ -1,14 +1,18 @@
 package com.reclamos.backend.service;
 
+import com.reclamos.backend.dto.response.TicketAttachmentResponse;
 import com.reclamos.backend.dto.response.TrackingTicketResponse;
 import com.reclamos.backend.dto.response.PendingInformationRequestResponse;
+import com.reclamos.backend.entity.Attachment;
 import com.reclamos.backend.entity.InformationRequestStatus;
 import com.reclamos.backend.entity.Category;
+import com.reclamos.backend.entity.MessageVisibility;
 import com.reclamos.backend.entity.RequestType;
 import com.reclamos.backend.entity.Subcategory;
 import com.reclamos.backend.entity.Ticket;
 import com.reclamos.backend.entity.TicketStatus;
 import com.reclamos.backend.exception.TrackingTicketNotFoundException;
+import com.reclamos.backend.repository.AttachmentRepository;
 import com.reclamos.backend.repository.TicketRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
@@ -16,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -35,12 +40,17 @@ class TrackingServiceTest {
     private final TrackingCodeService trackingCodes = mock(TrackingCodeService.class);
     private final TicketSlaService ticketSlas = mock(TicketSlaService.class);
     private final InformationRequestProjectionService projections = mock(InformationRequestProjectionService.class);
-    private final TrackingService service = new TrackingService(tickets, trackingCodes, ticketSlas, projections);
+    private final AttachmentRepository attachmentRepository = mock(AttachmentRepository.class);
+    private final AttachmentReferenceService attachmentReferenceService = mock(AttachmentReferenceService.class);
+    private final TrackingService service = new TrackingService(
+            tickets, trackingCodes, ticketSlas, projections, attachmentRepository, attachmentReferenceService);
 
     @BeforeEach
     void setUp() {
         when(ticketSlas.findDeadlineSnapshot(any()))
                 .thenReturn(new TicketSlaService.DeadlineSnapshot(null, null));
+        when(attachmentRepository.findAllByTicket_IdAndVisibilityOrderByCreatedAtAsc(any(), any()))
+                .thenReturn(List.of());
     }
 
     @Test
@@ -55,6 +65,7 @@ class TrackingServiceTest {
         assertEquals("TK-2026-000123", response.getPublicId());
         assertEquals(TicketStatus.IN_PROGRESS, response.getStatus());
         assertEquals("Resumen público", response.getSummary());
+        assertEquals("Descripción completa del reclamo", response.getDescription());
         assertEquals(Instant.parse("2026-09-01T10:00:00Z"), response.getCreatedAt());
         assertEquals(Instant.parse("2026-09-02T10:00:00Z"), response.getStatusChangedAt());
         assertEquals("Tipo de solicitud", response.getRequestType().getName());
@@ -80,6 +91,49 @@ class TrackingServiceTest {
                 .thenReturn(new InformationRequestProjectionService.Projection(pending, null));
 
         assertEquals(pending, service.findByTrackingCode(CODE).getPendingInformationRequest());
+    }
+
+    @Test
+    void trackingIncludesOnlyPublicAttachmentsWithTheirDownloadReference() {
+        Ticket ticket = ticket();
+        Attachment attachment = new Attachment();
+        attachment.setId(9L);
+        attachment.setFileName("foto.jpg");
+        attachment.setContentType("image/jpeg");
+        attachment.setSizeBytes(1024L);
+        attachment.setVisibility(MessageVisibility.PUBLIC);
+        attachment.setCreatedAt(Instant.parse("2026-09-05T10:00:00Z"));
+        when(trackingCodes.isValid(CODE)).thenReturn(true);
+        when(trackingCodes.hash(CODE)).thenReturn(HASH);
+        when(tickets.findByTrackingCodeHash(HASH)).thenReturn(Optional.of(ticket));
+        when(attachmentRepository.findAllByTicket_IdAndVisibilityOrderByCreatedAtAsc(
+                ticket.getId(), MessageVisibility.PUBLIC)).thenReturn(List.of(attachment));
+        when(attachmentReferenceService.downloadUrl(attachment))
+                .thenReturn("http://localhost:8080/api/attachments/9/content");
+
+        List<TicketAttachmentResponse> attachments = service.findByTrackingCode(CODE).getAttachments();
+
+        TicketAttachmentResponse expected = new TicketAttachmentResponse(9L, "foto.jpg", "image/jpeg", 1024L,
+                MessageVisibility.PUBLIC, Instant.parse("2026-09-05T10:00:00Z"),
+                "http://localhost:8080/api/attachments/9/content");
+        assertEquals(List.of(expected), attachments);
+        // El propietario anónimo nunca queda autenticado por Bearer, así que este
+        // caso sólo prueba que TrackingService pide PUBLIC — nunca todos los del
+        // ticket — al repositorio; que ese endpoint responda 401 sin token es
+        // responsabilidad de AttachmentAccessService/AttachmentController.
+        verify(attachmentRepository, never()).findAllByTicket_IdOrderByCreatedAtAsc(any());
+    }
+
+    @Test
+    void attachmentsAreAnEmptyListRatherThanNullWhenTheTicketHasNonePublic() {
+        Ticket ticket = ticket();
+        when(trackingCodes.isValid(CODE)).thenReturn(true);
+        when(trackingCodes.hash(CODE)).thenReturn(HASH);
+        when(tickets.findByTrackingCodeHash(HASH)).thenReturn(Optional.of(ticket));
+        when(attachmentRepository.findAllByTicket_IdAndVisibilityOrderByCreatedAtAsc(
+                ticket.getId(), MessageVisibility.PUBLIC)).thenReturn(List.of());
+
+        assertEquals(List.of(), service.findByTrackingCode(CODE).getAttachments());
     }
 
     @Test
@@ -218,6 +272,7 @@ class TrackingServiceTest {
         ticket.setResponsibleAreaId("internal-area");
         ticket.setRequestType(requestType);
         ticket.setSummary("Resumen público");
+        ticket.setDescription("Descripción completa del reclamo");
         ticket.setCurrentStatus(TicketStatus.IN_PROGRESS);
         ticket.setCreatedAt(Instant.parse("2026-09-01T10:00:00Z"));
         ticket.setStatusChangedAt(Instant.parse("2026-09-02T10:00:00Z"));
