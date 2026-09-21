@@ -106,9 +106,24 @@ class TicketServiceTest {
     private InformationRequestService informationRequestService;
     @Mock
     private InformationRequestProjectionService informationRequestProjectionService;
+
     @Mock
     private AttachmentReferenceService attachmentReferenceService;
+
+    @Mock
+    private TicketLabelRepository ticketLabelRepository;
+
+    @Mock
+    private NotificationService notificationService;
+
+    @Mock
+    private AnonymousTicketCredentialService anonymousTicketCredentialService;
+
+    @Mock
+    private AnonymousContactValidator anonymousContactValidator;
+
     private final AttachmentService attachments = mock(AttachmentService.class);
+
     @Mock
     private Clock clock;
 
@@ -124,12 +139,17 @@ class TicketServiceTest {
     @BeforeEach
     void setUp() {
         lenient().when(clock.instant()).thenReturn(NOW);
-        lenient().when(publicIds.generate(NOW)).thenReturn("TK-2026-000123");
+        lenient().when(publicIds.generate(NOW))
+                .thenReturn("TK-2026-000123");
+
         requestType = requestType(true);
 
         lenient().when(requestTypes.findByIdForUpdate(anyLong()))
-                .thenAnswer(invocation -> requestTypes.findById(invocation.getArgument(0)));
-        lenient().when(requestTypes.findById(1L)).thenReturn(Optional.of(requestType));
+                .thenAnswer(invocation ->
+                        requestTypes.findById(invocation.getArgument(0)));
+
+        lenient().when(requestTypes.findById(1L))
+                .thenReturn(Optional.of(requestType));
 
         FormTemplate template = new FormTemplate();
         template.setId(3L);
@@ -138,31 +158,56 @@ class TicketServiceTest {
         lenient().when(forms.resolveAndValidate(any(), any()))
                 .thenAnswer(invocation -> {
                     Map<String, Object> data = invocation.getArgument(1);
-                    return new ResolvedForm(template, List.of(), data == null ? Map.of() : data);
+
+                    return new ResolvedForm(
+                            template,
+                            List.of(),
+                            data == null ? Map.of() : data
+                    );
                 });
 
         lenient().when(tickets.save(any()))
                 .thenAnswer(invocation -> {
                     Ticket ticket = invocation.getArgument(0);
+
                     if (ticket.getId() == null) {
                         ticket.setId(UUID.randomUUID());
                     }
+
                     return ticket;
                 });
 
-        lenient().when(attachments.validate(nullable(MultipartFile[].class)))
-                .thenAnswer(invocation -> {
-                    MultipartFile[] files = invocation.getArgument(0);
-                    if (files == null || files.length == 0) {
-                        return List.of();
-                    }
-                    return Arrays.stream(files)
-                            .map(file -> new AttachmentService.ValidatedAttachment(
-                                    file, file.getOriginalFilename(), file.getContentType(), file.getSize()))
-                            .toList();
-                });
+        lenient().when(
+                attachments.validate(nullable(MultipartFile[].class))
+        ).thenAnswer(invocation -> {
+            MultipartFile[] files = invocation.getArgument(0);
 
-        lenient().when(attachments.storeForTicket(any(), any(), anyList(), any())).thenReturn(List.of());
+            if (files == null || files.length == 0) {
+                return List.of();
+            }
+
+            return Arrays.stream(files)
+                    .map(file ->
+                            new AttachmentService.ValidatedAttachment(
+                                    file,
+                                    file.getOriginalFilename(),
+                                    file.getContentType(),
+                                    file.getSize()
+                            ))
+                    .toList();
+        });
+
+        lenient().when(
+                        attachments.storeForTicket(
+                                any(),
+                                any(),
+                                anyList(),
+                                any()
+                        ))
+                .thenReturn(List.of());
+
+        lenient().when(ticketLabelRepository.findLabelsByTicketId(any()))
+                .thenReturn(List.of());
     }
 
     // ==================================================================
