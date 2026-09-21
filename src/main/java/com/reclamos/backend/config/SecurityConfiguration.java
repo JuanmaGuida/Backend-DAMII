@@ -73,6 +73,7 @@ public class SecurityConfiguration {
                                 "/api/catalog/subcategories/{subcategoryId}/request-types",
                                 "/api/catalog/request-types/{requestTypeId}/form").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/auth/me").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/indicators/**").hasAnyRole("AGENT", "ADMIN")
                         .requestMatchers(HttpMethod.GET, "/api/staff/labels", "/api/staff/labels/*")
                         .hasAnyRole("AGENT", "ADMIN")
                         .requestMatchers("/api/staff/labels/**").hasRole("ADMIN")

@@ -52,6 +52,11 @@ class OpenApiContractTest {
             "POST /api/admin/catalog/request-types/{requestTypeId}/activate",
             "GET /api/admin/catalog/request-types/{requestTypeId}/form",
             "PUT /api/admin/catalog/request-types/{requestTypeId}/form",
+            "GET /api/indicators/categories",
+            "GET /api/indicators/neighborhoods",
+            "GET /api/indicators/priorities",
+            "GET /api/indicators/areas",
+            "GET /api/indicators/sla",
             "GET /api/me/tickets",
             "GET /api/tickets",
             "POST /api/tickets",
@@ -101,6 +106,11 @@ class OpenApiContractTest {
             "POST /api/admin/catalog/request-types/{requestTypeId}/activate",
             "GET /api/admin/catalog/request-types/{requestTypeId}/form",
             "PUT /api/admin/catalog/request-types/{requestTypeId}/form",
+            "GET /api/indicators/categories",
+            "GET /api/indicators/neighborhoods",
+            "GET /api/indicators/priorities",
+            "GET /api/indicators/areas",
+            "GET /api/indicators/sla",
             "GET /api/me/tickets",
             "GET /api/tickets",
             "GET /api/tickets/{ticketId}",
@@ -154,7 +164,12 @@ class OpenApiContractTest {
             "FormFieldAdminResponse",
             "RiskRuleAdminResponse",
             "LabelResponse",
-            "LabelSummaryResponse"
+            "LabelSummaryResponse",
+            "CategoryIndicatorResponse",
+            "NeighborhoodIndicatorResponse",
+            "PriorityIndicatorResponse",
+            "AreaIndicatorResponse",
+            "SlaIndicatorResponse"
     );
 
     private static Map<String, Object> spec;
@@ -175,7 +190,7 @@ class OpenApiContractTest {
     void versionedFileIsAValidOpenApi3DocumentWithExactlyTheCurrentBusinessOperations() {
         assertTrue(string(spec.get("openapi")).startsWith("3."));
         assertEquals("3.0.3", parsedOpenApi.getOpenapi());
-        assertEquals(48, parsedOpenApi.getPaths().size());
+        assertEquals(53, parsedOpenApi.getPaths().size());
         assertNotNull(map(spec, "info").get("title"));
         assertNotNull(map(spec, "components").get("schemas"));
         assertEquals(EXPECTED_OPERATIONS, documentedOperations());
@@ -208,6 +223,28 @@ class OpenApiContractTest {
                                 || java.util.List.of().equals(operationNode.get("security")),
                         operation + " debe ser público");            }
         }
+    }
+
+    @Test
+    void indicatorOperationsShareFiltersResponsesAndDocumentLatestSlaCycleSemantics() {
+        Set<String> expectedParameters = Set.of("categoryId", "neighborhoodId", "priority",
+                "responsibleAreaId", "status", "slaType", "slaStatus");
+        for (String path : Set.of("categories", "neighborhoods", "priorities", "areas", "sla")) {
+            Map<String, Object> operation = operation("GET /api/indicators/" + path);
+            Set<String> names = new LinkedHashSet<>();
+            for (Object rawParameter : (java.util.List<?>) operation.get("parameters")) {
+                String reference = string(map(rawParameter).get("$ref"));
+                String componentName = reference.substring(reference.lastIndexOf('/') + 1);
+                names.add(string(map(map(spec, "components"), "parameters", componentName).get("name")));
+            }
+            assertEquals(expectedParameters, names, path);
+            assertEquals(Set.of("200", "400", "401", "403"), map(operation, "responses").keySet(), path);
+        }
+        String description = string(operation("GET /api/indicators/sla").get("description"));
+        assertTrue(description.contains("MAX cycleNumber"));
+        assertTrue(description.contains("independientes"));
+        assertTrue(string(map(map(spec, "components"), "parameters", "IndicatorSlaStatus")
+                .get("description")).contains("al menos un tipo"));
     }
 
     @Test
