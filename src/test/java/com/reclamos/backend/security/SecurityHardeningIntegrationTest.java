@@ -13,6 +13,7 @@ import com.reclamos.backend.service.NeighborhoodService;
 import com.reclamos.backend.service.TicketService;
 import com.reclamos.backend.service.TrackingService;
 import com.reclamos.backend.service.TicketResolutionService;
+import com.reclamos.backend.service.TicketAttachmentUploadService;
 import com.reclamos.backend.entity.ResolutionType;
 import jakarta.servlet.DispatcherType;
 import org.junit.jupiter.api.BeforeEach;
@@ -85,6 +86,8 @@ class SecurityHardeningIntegrationTest {
     private InformationRequestService informationRequestService;
     @MockitoBean
     private TicketResolutionService ticketResolutionService;
+    @MockitoBean
+    private TicketAttachmentUploadService ticketAttachmentUploadService;
 
     @BeforeEach
     void configureControllerResponses() {
@@ -120,6 +123,8 @@ class SecurityHardeningIntegrationTest {
         when(attachmentAccessService.download(any(), any()))
                 .thenReturn(new AttachmentAccessService.Download(
                         new ByteArrayResource(new byte[]{1}), "proof.pdf", "application/pdf", 1));
+        when(ticketAttachmentUploadService.upload(any(), any(), any(), any())).thenReturn(List.of());
+        when(ticketAttachmentUploadService.uploadAnonymous(any(), any(), any())).thenReturn(List.of());
 
         when(ticketService.create(any(), any(), any())).thenReturn(new CreateTicketResponse(
                 TICKET_ID, "TK-2026-000123", "tracking-code", TicketStatus.REGISTERED));
@@ -184,6 +189,7 @@ class SecurityHardeningIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(anonymousCredentials()))
                 .andExpect(status().isOk());
+        mockMvc.perform(anonymousAttachmentUpload()).andExpect(status().isCreated());
 
         mockMvc.perform(ticketJsonRequest()).andExpect(status().isCreated())
                 .andExpect(header().string("Cache-Control", org.hamcrest.Matchers.containsString("no-store")));
@@ -291,6 +297,7 @@ class SecurityHardeningIntegrationTest {
         List<RequestBuilder> requests = List.of(
                 get("/api/auth/me"),
                 get("/api/attachments/1/content"),
+                identifiedAttachmentUpload(),
                 informationRequest(),
                 informationResponse(),
                 informationResponse(),
@@ -316,6 +323,7 @@ class SecurityHardeningIntegrationTest {
         for (MockHttpServletRequestBuilder request : invalidBearerRequests) {
             assertCanonicalUnauthorized(request.header("Authorization", "Bearer invalid"));
         }
+        assertCanonicalUnauthorized(identifiedAttachmentUpload().header("Authorization", "Bearer invalid"));
         assertCanonicalUnauthorized(multipartTicketRequest().header("Authorization", "Bearer invalid"));
         assertCanonicalUnauthorized(ticketJsonRequest().header("Authorization", "Basic malformed"));
     }
@@ -325,6 +333,7 @@ class SecurityHardeningIntegrationTest {
         String token = validToken();
         mockMvc.perform(withBearer(get("/api/auth/me"), token)).andExpect(status().isOk());
         mockMvc.perform(withBearer(get("/api/attachments/1/content"), token)).andExpect(status().isOk());
+        mockMvc.perform(withBearer(identifiedAttachmentUpload(), token)).andExpect(status().isCreated());
         mockMvc.perform(withBearer(ticketJsonRequest(), token)).andExpect(status().isCreated());
         mockMvc.perform(withBearer(multipartTicketRequest(), token)).andExpect(status().isCreated());
         mockMvc.perform(withBearer(informationRequest(), token)).andExpect(status().isCreated());
@@ -430,6 +439,23 @@ class SecurityHardeningIntegrationTest {
                 }
                 """.getBytes(java.nio.charset.StandardCharsets.UTF_8));
         return multipart("/api/tickets").file(data);
+    }
+
+    private MockMultipartHttpServletRequestBuilder identifiedAttachmentUpload() {
+        MockMultipartFile data = new MockMultipartFile("data", "", MediaType.APPLICATION_JSON_VALUE,
+                "{\"visibility\":\"PUBLIC\"}".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        MockMultipartFile attachment = new MockMultipartFile(
+                "attachments", "proof.pdf", "application/pdf", new byte[]{1});
+        return multipart("/api/tickets/" + TICKET_ID + "/attachments").file(data).file(attachment);
+    }
+
+    private MockMultipartHttpServletRequestBuilder anonymousAttachmentUpload() {
+        MockMultipartFile data = new MockMultipartFile("data", "", MediaType.APPLICATION_JSON_VALUE,
+                anonymousAction("{\"visibility\":\"PUBLIC\"}")
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        MockMultipartFile attachment = new MockMultipartFile(
+                "attachments", "proof.pdf", "application/pdf", new byte[]{1});
+        return multipart("/api/tracking/actions/attachments").file(data).file(attachment);
     }
 
     private MockHttpServletRequestBuilder informationRequest() {

@@ -959,6 +959,56 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+  /api/tickets/{ticketId}/attachments:
+    post:
+      tags: [Attachments]
+      summary: Adjuntar archivos a un ticket existente
+      description: |
+        El propietario identificado sólo puede agregar adjuntos PUBLIC. AGENT y ADMIN
+        pueden agregar PUBLIC o INTERNAL sobre tickets ajenos; AREA_RESPONSIBLE tiene
+        la misma capacidad únicamente dentro de su área. Un usuario staff que es owner
+        actúa como ciudadano. No modifica el estado ni los demás datos del ticket.
+      operationId: uploadTicketAttachments
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TicketId'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [data, attachments]
+              properties:
+                data:
+                  $ref: '#/components/schemas/AttachmentUploadRequest'
+                attachments:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: string
+                    format: binary
+      responses:
+        '201':
+          description: Metadatos seguros de los adjuntos creados.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TicketAttachmentResponse'
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/InvalidToken' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '413':
+          description: Se excedió el límite de cantidad o tamaño de adjuntos.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '503':
+          description: El almacenamiento de adjuntos no está disponible.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } }
   /api/staff/labels:
     get:
       tags: [ Labels ]
@@ -1511,6 +1561,52 @@ paths:
         '401': { $ref: '#/components/responses/InvalidAnonymousTicketCredentials' }
         '404': { $ref: '#/components/responses/NotFound' }
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+  /api/tracking/actions/attachments:
+    post:
+      tags: [Attachments, Tracking]
+      summary: Adjuntar archivos públicos a un ticket anónimo propio
+      description: Requiere código de seguimiento y contraseña anónima dentro de la parte data. No crea sesiones ni admite visibilidad INTERNAL.
+      operationId: uploadAnonymousTicketAttachments
+      security: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [data, attachments]
+              properties:
+                data:
+                  $ref: '#/components/schemas/AnonymousAttachmentUploadRequest'
+                attachments:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: string
+                    format: binary
+      responses:
+        '201':
+          description: Metadatos seguros de los adjuntos PUBLIC creados.
+          headers:
+            Cache-Control:
+              schema: { type: string, example: no-store }
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TicketAttachmentResponse'
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/InvalidAnonymousTicketCredentials' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '413':
+          description: Se excedió el límite de cantidad o tamaño de adjuntos.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '503':
+          description: El almacenamiento de adjuntos no está disponible.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } }
   /api/tracking/access:
     post:
       tags: [Tracking]
@@ -2628,6 +2724,15 @@ components:
           type: string
           format: uri
           description: Referencia estable al endpoint controlado de M2; nunca contiene la clave interna de almacenamiento.
+    AttachmentUploadRequest:
+      type: object
+      required: [visibility]
+      additionalProperties: false
+      properties:
+        visibility:
+          type: string
+          enum: [PUBLIC, INTERNAL]
+          description: INTERNAL sólo está permitido para una capacidad staff habilitada sobre un ticket ajeno.
     TicketActivityResponse:
       type: object
       description: |
@@ -2954,6 +3059,16 @@ components:
           format: password
           description: Contraseña propia del ticket anónimo enviada exclusivamente en el body.
       additionalProperties: false
+    AnonymousAttachmentUploadRequest:
+      allOf:
+        - $ref: '#/components/schemas/AnonymousTicketCredentialsRequest'
+        - type: object
+          required: [payload]
+          properties:
+            payload:
+              allOf:
+                - $ref: '#/components/schemas/AttachmentUploadRequest'
+              description: Para propietarios anónimos visibility debe ser PUBLIC.
     AnonymousCancelTicketRequest:
       allOf:
         - $ref: '#/components/schemas/AnonymousTicketCredentialsRequest'

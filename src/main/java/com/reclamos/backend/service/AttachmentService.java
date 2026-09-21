@@ -80,6 +80,14 @@ public class AttachmentService {
 
     public List<Attachment> storeForTicket(Ticket ticket, AuthenticatedIdentity identity,
                                            List<ValidatedAttachment> validated, Instant createdAt) {
+        return storeForTicket(ticket,
+                new UploadActor(ActorType.CITIZEN,
+                        identity == null ? null : identity.citizenId().toString()),
+                MessageVisibility.PUBLIC, validated, createdAt);
+    }
+
+    public List<Attachment> storeForTicket(Ticket ticket, UploadActor actor, MessageVisibility visibility,
+                                           List<ValidatedAttachment> validated, Instant createdAt) {
         if (validated.isEmpty()) {
             return List.of();
         }
@@ -94,7 +102,7 @@ public class AttachmentService {
                 if (stored.sizeBytes() != item.sizeBytes()) {
                     throw new AttachmentStorageUnavailableException();
                 }
-                attachments.add(toEntity(ticket, identity, item, stored, createdAt));
+                attachments.add(toEntity(ticket, actor, visibility, item, stored, createdAt));
             }
             return attachmentRepository.saveAll(attachments);
         } catch (RuntimeException exception) {
@@ -111,17 +119,17 @@ public class AttachmentService {
         }
     }
 
-    private Attachment toEntity(Ticket ticket, AuthenticatedIdentity identity, ValidatedAttachment item,
-                                StoredFile stored, Instant createdAt) {
+    private Attachment toEntity(Ticket ticket, UploadActor actor, MessageVisibility visibility,
+                                ValidatedAttachment item, StoredFile stored, Instant createdAt) {
         Attachment attachment = new Attachment();
         attachment.setTicket(ticket);
         attachment.setFileName(item.fileName());
         attachment.setContentType(item.contentType());
         attachment.setSizeBytes(stored.sizeBytes());
         attachment.setStorageKey(stored.storageKey());
-        attachment.setVisibility(MessageVisibility.PUBLIC);
-        attachment.setUploadedByType(ActorType.CITIZEN);
-        attachment.setUploadedById(identity == null ? null : identity.citizenId().toString());
+        attachment.setVisibility(visibility);
+        attachment.setUploadedByType(actor.type());
+        attachment.setUploadedById(actor.id());
         attachment.setSourceModuleId(null);
         attachment.setCreatedAt(createdAt);
         return attachment;
@@ -175,5 +183,8 @@ public class AttachmentService {
     }
 
     public record ValidatedAttachment(MultipartFile file, String fileName, String contentType, long sizeBytes) {
+    }
+
+    public record UploadActor(ActorType type, String id) {
     }
 }

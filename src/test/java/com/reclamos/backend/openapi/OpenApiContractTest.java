@@ -56,6 +56,7 @@ class OpenApiContractTest {
             "GET /api/tickets",
             "POST /api/tickets",
             "GET /api/tickets/{ticketId}",
+            "POST /api/tickets/{ticketId}/attachments",
             "GET /api/staff/tickets/{ticketId}",
             "GET /api/staff/tickets/{ticketId}/citizen-view",
             "GET /api/staff/tickets/{ticketId}/duplicate-candidates",
@@ -81,6 +82,7 @@ class OpenApiContractTest {
             "POST /api/tracking/actions/information-response",
             "POST /api/tracking/actions/confirm-resolution",
             "POST /api/tracking/actions/reopen",
+            "POST /api/tracking/actions/attachments",
             "POST /api/tracking/actions/attachments/{attachmentId}/content"
     );
     private static final Set<String> PROTECTED_OPERATIONS = Set.of(
@@ -105,6 +107,7 @@ class OpenApiContractTest {
             "GET /api/me/tickets",
             "GET /api/tickets",
             "GET /api/tickets/{ticketId}",
+            "POST /api/tickets/{ticketId}/attachments",
             "GET /api/staff/tickets/{ticketId}",
             "GET /api/staff/tickets/{ticketId}/citizen-view",
             "GET /api/staff/tickets/{ticketId}/duplicate-candidates",
@@ -175,7 +178,7 @@ class OpenApiContractTest {
     void versionedFileIsAValidOpenApi3DocumentWithExactlyTheCurrentBusinessOperations() {
         assertTrue(string(spec.get("openapi")).startsWith("3."));
         assertEquals("3.0.3", parsedOpenApi.getOpenapi());
-        assertEquals(49, parsedOpenApi.getPaths().size());
+        assertEquals(51, parsedOpenApi.getPaths().size());
         assertNotNull(map(spec, "info").get("title"));
         assertNotNull(map(spec, "components").get("schemas"));
         assertEquals(EXPECTED_OPERATIONS, documentedOperations());
@@ -353,6 +356,34 @@ class OpenApiContractTest {
         assertFalse(informationResponse.containsKey("resumeStatus"));
         assertFalse(informationResponse.containsKey("internalMessage"));
         assertFalse(informationResponse.containsKey("requestedByActorId"));
+    }
+
+    @Test
+    void generalAttachmentUploadsDocumentMultipartVisibilityAndSafeResponses() {
+        Map<String, Object> identified = operation("POST /api/tickets/{ticketId}/attachments");
+        Map<String, Object> identifiedSchema = map(identified, "requestBody", "content",
+                "multipart/form-data", "schema");
+        assertEquals(Set.of("data", "attachments"), Set.copyOf(list(identifiedSchema, "required")));
+        assertEquals("#/components/schemas/AttachmentUploadRequest",
+                map(identifiedSchema, "properties", "data").get("$ref"));
+        assertEquals("binary", map(identifiedSchema, "properties", "attachments", "items").get("format"));
+        assertEquals("#/components/schemas/TicketAttachmentResponse",
+                map(identified, "responses", "201", "content", "application/json", "schema", "items")
+                        .get("$ref"));
+
+        Map<String, Object> anonymous = operation("POST /api/tracking/actions/attachments");
+        assertEquals(java.util.List.of(), anonymous.get("security"));
+        assertEquals("#/components/schemas/AnonymousAttachmentUploadRequest",
+                map(anonymous, "requestBody", "content", "multipart/form-data", "schema", "properties", "data")
+                        .get("$ref"));
+        assertEquals("#/components/responses/InvalidAnonymousTicketCredentials",
+                map(anonymous, "responses", "401").get("$ref"));
+        assertEquals("no-store",
+                map(anonymous, "responses", "201", "headers", "Cache-Control", "schema").get("example"));
+
+        Map<String, Object> visibility = map(map(spec, "components", "schemas"),
+                "AttachmentUploadRequest", "properties", "visibility");
+        assertEquals(Set.of("PUBLIC", "INTERNAL"), Set.copyOf(list(visibility, "enum")));
     }
 
     @Test
