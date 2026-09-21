@@ -64,10 +64,14 @@ class TicketMessageServiceTest {
 
         owner = new AuthenticatedIdentity("owner", ownerId, "Vecino", null, ModuleRole.CITIZEN);
 
-        when(messageRepository.save(any())).thenAnswer(invocation -> {
+        when(messageRepository.save(any(TicketMessage.class))).thenAnswer(invocation -> {
             TicketMessage message = invocation.getArgument(0);
-            message.setId(1L);
-            message.setCreatedAt(NOW);
+            if (message.getId() == null) {
+                message.setId(1L);
+            }
+            if (message.getCreatedAt() == null) {
+                message.setCreatedAt(NOW);
+            }
             return message;
         });
     }

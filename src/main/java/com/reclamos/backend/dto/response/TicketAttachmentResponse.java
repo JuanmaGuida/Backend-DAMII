@@ -1,12 +1,15 @@
 package com.reclamos.backend.dto.response;
 
 import com.reclamos.backend.entity.MessageVisibility;
+import lombok.EqualsAndHashCode;
 import lombok.Getter;
 
 import java.time.Instant;
 
 @Getter
+@EqualsAndHashCode
 public class TicketAttachmentResponse {
+
     private final Long id;
     private final String fileName;
     private final String contentType;
@@ -15,8 +18,15 @@ public class TicketAttachmentResponse {
     private final Instant createdAt;
     private final String downloadUrl;
 
-    public TicketAttachmentResponse(Long id, String fileName, String contentType, long sizeBytes,
-                                    MessageVisibility visibility, Instant createdAt, String downloadUrl) {
+    public TicketAttachmentResponse(
+            Long id,
+            String fileName,
+            String contentType,
+            long sizeBytes,
+            MessageVisibility visibility,
+            Instant createdAt,
+            String downloadUrl) {
+
         this.id = id;
         this.fileName = fileName;
         this.contentType = contentType;
@@ -26,8 +36,22 @@ public class TicketAttachmentResponse {
         this.downloadUrl = downloadUrl;
     }
 
-    public TicketAttachmentResponse(Long id, String fileName, String contentType, long sizeBytes,
-                                    MessageVisibility visibility, Instant createdAt) {
-        this(id, fileName, contentType, sizeBytes, visibility, createdAt, null);
+    public TicketAttachmentResponse(
+            Long id,
+            String fileName,
+            String contentType,
+            long sizeBytes,
+            MessageVisibility visibility,
+            Instant createdAt) {
+
+        this(
+                id,
+                fileName,
+                contentType,
+                sizeBytes,
+                visibility,
+                createdAt,
+                null
+        );
     }
 }
