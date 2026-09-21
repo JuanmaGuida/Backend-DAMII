@@ -16,6 +16,8 @@ import java.util.UUID;
 public interface InformationRequestRepository extends JpaRepository<InformationRequest, UUID> {
     boolean existsByTicketIdAndStatus(UUID ticketId, InformationRequestStatus status);
 
+    Optional<InformationRequest> findByTicketIdAndStatus(UUID ticketId, InformationRequestStatus status);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select ir from InformationRequest ir where ir.ticket.id = :ticketId and ir.status = :status")
     Optional<InformationRequest> findByTicketIdAndStatusForUpdate(

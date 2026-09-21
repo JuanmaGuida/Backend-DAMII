@@ -88,9 +88,10 @@ class CatalogAdminServiceConcurrencyIntegrationTest {
         CyclicBarrier preCheckBarrier = new CyclicBarrier(2);
         CategoryRepository coordinatedRepository = mock(CategoryRepository.class, delegatesTo(categoryRepository));
         doAnswer(invocation -> {
-            preCheckBarrier.await(10, TimeUnit.SECONDS);
             String actualName = invocation.getArgument(0);
-            return categoryRepository.existsByNameIgnoreCase(actualName);
+            boolean exists = categoryRepository.existsByNameIgnoreCase(actualName);
+            preCheckBarrier.await(10, TimeUnit.SECONDS);
+            return exists;
         }).when(coordinatedRepository).existsByNameIgnoreCase(any());
         CatalogAdminService service =
                 new CatalogAdminService(
@@ -139,9 +140,10 @@ class CatalogAdminServiceConcurrencyIntegrationTest {
         CyclicBarrier preCheckBarrier = new CyclicBarrier(2);
         CategoryRepository coordinatedRepository = mock(CategoryRepository.class, delegatesTo(categoryRepository));
         doAnswer(invocation -> {
-            preCheckBarrier.await(10, TimeUnit.SECONDS);
             String actualName = invocation.getArgument(0);
-            return categoryRepository.existsByNameIgnoreCase(actualName);
+            boolean exists = categoryRepository.existsByNameIgnoreCase(actualName);
+            preCheckBarrier.await(10, TimeUnit.SECONDS);
+            return exists;
         }).when(coordinatedRepository).existsByNameIgnoreCase(any());
         CatalogAdminService service =
                 new CatalogAdminService(

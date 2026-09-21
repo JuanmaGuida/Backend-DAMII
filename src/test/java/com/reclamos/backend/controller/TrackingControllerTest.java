@@ -14,6 +14,8 @@ import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.mock.web.MockPart;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -26,6 +28,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -50,6 +53,8 @@ class TrackingControllerTest {
     private InformationRequestService informationRequestService;
     @MockitoBean
     private TicketResolutionService ticketResolutionService;
+    @MockitoBean
+    private TicketAttachmentUploadService ticketAttachmentUploadService;
     @MockitoBean
     private AuthService authService;
 
@@ -206,6 +211,80 @@ class TrackingControllerTest {
         verify(ticketResolutionService).confirmAnonymous(ticketId);
         verify(ticketResolutionService).reopenAnonymous(eq(ticketId), any());
         verify(anonymousTicketAccessService, times(4)).authenticate(CODE, "correct-password");
+    }
+
+    @Test
+    void anonymousInformationResponseAcceptsMultipartOnlyAfterPasswordAuthentication() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+        when(anonymousTicketAccessService.authenticate(CODE, "correct-password"))
+                .thenReturn(new AnonymousTicketAccessService.AnonymousTicketAccess(ticketId));
+        MockPart data = new MockPart("data", actionJson("{}").getBytes());
+        data.getHeaders().setContentType(MediaType.APPLICATION_JSON);
+        MockMultipartFile attachment = new MockMultipartFile(
+                "attachments", "proof.pdf", "application/pdf", new byte[]{1});
+
+        mockMvc.perform(multipart("/api/tracking/actions/information-response")
+                        .file(attachment)
+                        .part(data))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, containsString("no-store")));
+
+        verify(anonymousTicketAccessService).authenticate(CODE, "correct-password");
+        verify(informationRequestService).answerAnonymousFromTracking(eq(ticketId), any(),
+                argThat(files -> files.length == 1 && "proof.pdf".equals(files[0].getOriginalFilename())));
+    }
+
+    @Test
+    void anonymousAttachmentUploadRequiresPasswordAndDelegatesPublicMultipart() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+        when(anonymousTicketAccessService.authenticate(CODE, "correct-password"))
+                .thenReturn(new AnonymousTicketAccessService.AnonymousTicketAccess(ticketId));
+        when(ticketAttachmentUploadService.uploadAnonymous(eq(ticketId), any(), any()))
+                .thenReturn(java.util.List.of(new com.reclamos.backend.dto.response.TicketAttachmentResponse(
+                        10L, "proof.pdf", "application/pdf", 1,
+                        com.reclamos.backend.entity.MessageVisibility.PUBLIC,
+                        Instant.parse("2026-09-20T12:00:00Z"),
+                        "https://m2.example/api/attachments/10/content")));
+        MockPart data = new MockPart("data", actionJson("{\"visibility\":\"PUBLIC\"}").getBytes());
+        data.getHeaders().setContentType(MediaType.APPLICATION_JSON);
+        MockMultipartFile attachment = new MockMultipartFile(
+                "attachments", "proof.pdf", "application/pdf", new byte[]{1});
+
+        mockMvc.perform(multipart("/api/tracking/actions/attachments")
+                        .file(attachment).part(data))
+                .andExpect(status().isCreated())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, containsString("no-store")))
+                .andExpect(jsonPath("$[0].downloadUrl")
+                        .value("https://m2.example/api/attachments/10/content"))
+                .andExpect(jsonPath("$[0].storageKey").doesNotExist());
+
+        verify(anonymousTicketAccessService).authenticate(CODE, "correct-password");
+        verify(ticketAttachmentUploadService).uploadAnonymous(eq(ticketId), any(),
+                argThat(files -> files.length == 1));
+    }
+
+    @Test
+    void anonymousAttachmentUploadRejectsTrackingOnlyAndWrongPassword() throws Exception {
+        MockMultipartFile attachment = new MockMultipartFile(
+                "attachments", "proof.pdf", "application/pdf", new byte[]{1});
+        MockPart missingPassword = new MockPart("data", ("{\"trackingCode\":\"" + CODE
+                + "\",\"payload\":{\"visibility\":\"PUBLIC\"}}").getBytes());
+        missingPassword.getHeaders().setContentType(MediaType.APPLICATION_JSON);
+        mockMvc.perform(multipart("/api/tracking/actions/attachments")
+                        .file(attachment).part(missingPassword))
+                .andExpect(status().isBadRequest());
+
+        when(anonymousTicketAccessService.authenticate(CODE, "wrong-password"))
+                .thenThrow(new InvalidAnonymousTicketCredentialsException());
+        MockPart wrongPassword = new MockPart("data", ("{\"trackingCode\":\"" + CODE
+                + "\",\"anonymousAccessPassword\":\"wrong-password\","
+                + "\"payload\":{\"visibility\":\"PUBLIC\"}}").getBytes());
+        wrongPassword.getHeaders().setContentType(MediaType.APPLICATION_JSON);
+        mockMvc.perform(multipart("/api/tracking/actions/attachments")
+                        .file(attachment).part(wrongPassword))
+                .andExpect(status().isUnauthorized());
+
+        verifyNoInteractions(ticketAttachmentUploadService);
     }
 
     void formerPublicGetRouteIsNoLongerExposed() throws Exception {

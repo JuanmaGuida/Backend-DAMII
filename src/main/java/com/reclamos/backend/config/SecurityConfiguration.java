@@ -73,6 +73,7 @@ public class SecurityConfiguration {
                                 "/api/catalog/subcategories/{subcategoryId}/request-types",
                                 "/api/catalog/request-types/{requestTypeId}/form").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/auth/me").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/attachments/*/content").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/indicators/**").hasAnyRole("AGENT", "ADMIN")
                         .requestMatchers(HttpMethod.GET, "/api/staff/labels", "/api/staff/labels/*")
                         .hasAnyRole("AGENT", "ADMIN")
@@ -128,6 +129,7 @@ public class SecurityConfiguration {
                         .requestMatchers(HttpMethod.POST, "/api/tickets/*/route").hasAnyRole("AGENT", "ADMIN")
                         .requestMatchers(HttpMethod.POST, "/api/tickets/*/information-request").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/tickets/*/information-response").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/api/tickets/*/attachments").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/tickets/*/resolution").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/tickets/*/resolution/confirm").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/tickets/*/resolution/reopen").authenticated()
@@ -143,7 +145,9 @@ public class SecurityConfiguration {
                                 "/api/tracking/actions/cancel",
                                 "/api/tracking/actions/information-response",
                                 "/api/tracking/actions/confirm-resolution",
-                                "/api/tracking/actions/reopen").permitAll()
+                                "/api/tracking/actions/reopen",
+                                "/api/tracking/actions/attachments",
+                                "/api/tracking/actions/attachments/*/content").permitAll()
                         // El simulador sólo existe cuando app.simulator.enabled=true y aun
                         // entonces requiere una sesión válida; nunca queda público por accidente.
                         .requestMatchers(HttpMethod.POST, "/api/tickets/*/simulate-status-update").authenticated()

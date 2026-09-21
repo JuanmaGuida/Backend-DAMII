@@ -17,6 +17,7 @@ public class TrackingService {
     private final TicketRepository ticketRepository;
     private final TrackingCodeService trackingCodeService;
     private final TicketSlaService ticketSlaService;
+    private final InformationRequestProjectionService informationRequestProjectionService;
 
     @Transactional(readOnly = true)
     public TrackingTicketResponse findByTrackingCode(String trackingCode) {
@@ -45,7 +46,14 @@ public class TrackingService {
                 new TrackingTicketResponse.SubcategorySummary(subcategory.getName()),
                 new TrackingTicketResponse.SlaSummary(
                         deadlines.firstResponseDueAt(),
-                        deadlines.resolutionDueAt())
+                        deadlines.resolutionDueAt()),
+                projection(ticket)
         );
+    }
+
+    private com.reclamos.backend.dto.response.PendingInformationRequestResponse projection(Ticket ticket) {
+        InformationRequestProjectionService.Projection pending =
+                informationRequestProjectionService.findPending(ticket.getId());
+        return pending == null ? null : pending.citizen();
     }
 }
