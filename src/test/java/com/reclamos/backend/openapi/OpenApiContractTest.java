@@ -71,6 +71,7 @@ class OpenApiContractTest {
             "GET /api/staff/labels/{labelId}",
             "PUT /api/staff/labels/{labelId}",
             "DELETE /api/staff/labels/{labelId}",
+            "GET /api/staff/labels/{labelId}/tickets",
             "POST /api/staff/tickets/{ticketId}/labels",
             "DELETE /api/staff/tickets/{ticketId}/labels/{labelId}",
             "POST /api/tickets/{ticketId}/review",
@@ -129,6 +130,7 @@ class OpenApiContractTest {
             "GET /api/staff/labels/{labelId}",
             "PUT /api/staff/labels/{labelId}",
             "DELETE /api/staff/labels/{labelId}",
+            "GET /api/staff/labels/{labelId}/tickets",
             "POST /api/staff/tickets/{ticketId}/labels",
             "DELETE /api/staff/tickets/{ticketId}/labels/{labelId}",
             "POST /api/tickets/{ticketId}/review",
@@ -198,7 +200,7 @@ class OpenApiContractTest {
     void versionedFileIsAValidOpenApi3DocumentWithExactlyTheCurrentBusinessOperations() {
         assertTrue(string(spec.get("openapi")).startsWith("3."));
         assertEquals("3.0.3", parsedOpenApi.getOpenapi());
-        assertEquals(58, parsedOpenApi.getPaths().size());
+        assertEquals(59, parsedOpenApi.getPaths().size());
         assertNotNull(map(spec, "info").get("title"));
         assertNotNull(map(spec, "components").get("schemas"));
         assertEquals(EXPECTED_OPERATIONS, documentedOperations());
@@ -546,6 +548,44 @@ class OpenApiContractTest {
                 map(operation("GET /api/me/tickets"), "responses", "200", "content", "application/json", "schema")
                         .get("$ref"));
     }
+
+    @Test
+    void staffTicketListDocumentsOptionalAnyLabelIdsFilterOnlyOnTheSupportedEndpoint() {
+        Map<String, Object> staffList = operation("GET /api/tickets");
+        java.util.List<?> parameters = (java.util.List<?>) staffList.get("parameters");
+        Map<String, Object> labelIds = parameters.stream()
+                .map(value -> map(value))
+                .filter(parameter -> "labelIds".equals(parameter.get("name")))
+                .findFirst()
+                .orElseThrow();
+
+        assertEquals("query", labelIds.get("in"));
+        assertEquals(Boolean.FALSE, labelIds.get("required"));
+        assertTrue(labelIds.get("description").toString().contains("ANY"));
+        assertEquals("array", map(labelIds, "schema").get("type"));
+        assertEquals("uuid", map(labelIds, "schema", "items").get("format"));
+
+        java.util.List<?> meParameters = (java.util.List<?>) operation("GET /api/me/tickets").get("parameters");
+        assertFalse(meParameters.stream().map(value -> map(value))
+                .anyMatch(parameter -> "labelIds".equals(parameter.get("name"))));
+    }
+
+    @Test
+    void labelTicketsOperationIsPagedProtectedAndDocumentsItsResponses() {
+        Map<String, Object> operation = operation("GET /api/staff/labels/{labelId}/tickets");
+        assertEquals("bearerAuth", firstSecurityScheme(operation));
+        assertEquals("#/components/schemas/PagedTicketResponse",
+                map(operation, "responses", "200", "content", "application/json", "schema").get("$ref"));
+        assertEquals("#/components/responses/InvalidToken", map(operation, "responses", "401").get("$ref"));
+        assertEquals("#/components/responses/Forbidden", map(operation, "responses", "403").get("$ref"));
+        assertEquals("#/components/responses/NotFound", map(operation, "responses", "404").get("$ref"));
+
+        java.util.List<?> parameters = (java.util.List<?>) operation.get("parameters");
+        assertEquals(Set.of("labelId", "page", "size", "sort"), parameters.stream()
+                .map(value -> map(value).get("name").toString())
+                .collect(java.util.stream.Collectors.toSet()));
+    }
+
 
     private static String firstPath(RequestMapping mapping) {
         if (mapping == null || mapping.path().length == 0) {

@@ -75,6 +75,7 @@ public class SecurityConfiguration {
                         .requestMatchers(HttpMethod.GET, "/api/auth/me").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/attachments/*/content").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/indicators/**").hasAnyRole("AGENT", "ADMIN")
+                        .requestMatchers(HttpMethod.GET, "/api/staff/labels/*/tickets").hasAnyRole("AGENT", "ADMIN")
                         .requestMatchers(HttpMethod.GET, "/api/staff/labels", "/api/staff/labels/*")
                         .hasAnyRole("AGENT", "ADMIN")
                         .requestMatchers(HttpMethod.POST, "/api/staff/labels").hasRole("ADMIN")

@@ -1,11 +1,16 @@
 package com.reclamos.backend.controller;
 
+import com.reclamos.backend.dto.TicketResponse;
 import com.reclamos.backend.dto.request.CreateLabelRequest;
 import com.reclamos.backend.dto.request.UpdateLabelRequest;
 import com.reclamos.backend.dto.response.LabelResponse;
 import com.reclamos.backend.service.LabelService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
@@ -34,6 +39,14 @@ public class StaffLabelController {
     public LabelResponse get(@PathVariable("labelId") UUID labelId) {
         return labelService.get(labelId);
     }
+
+    @GetMapping("/{labelId}/tickets")
+    public Page<TicketResponse> listTickets(
+            @PathVariable("labelId") UUID labelId,
+            @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
+        return labelService.listTickets(labelId, pageable);
+    }
+
 
     @PutMapping("/{labelId}")
     public LabelResponse update(

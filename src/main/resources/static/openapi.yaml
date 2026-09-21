@@ -703,15 +703,6 @@ paths:
       security:
         - bearerAuth: [ ]
       parameters:
-        - name: labelIds
-          in: query
-          required: false
-          description: UUIDs separados por coma; coincide con cualquiera de las etiquetas (ANY).
-          schema:
-            type: array
-            items:
-              type: string
-              format: uuid
         - name: page
           in: query
           required: false
@@ -897,7 +888,8 @@ paths:
       summary: Listar tickets con filtros
       description: |
         Bandeja de tickets para agentes/administradores, con filtros combinables
-        por categoría, prioridad, barrio, área responsable y estado (Story 3.1).
+        por categoría, prioridad, barrio, área responsable, estado y etiquetas
+        (Story 3.1). Los filtros de distinto tipo se combinan con AND.
       operationId: listTickets
       security:
         - bearerAuth: [ ]
@@ -929,6 +921,16 @@ paths:
           required: false
           schema:
             $ref: '#/components/schemas/TicketStatus'
+        - name: labelIds
+          in: query
+          required: false
+          description: UUIDs de etiquetas por los que filtrar. Puede enviarse como lista separada por comas o como parámetro repetido. El ticket coincide si contiene al menos una de las etiquetas indicadas (ANY).
+          schema:
+            type: array
+            uniqueItems: true
+            items:
+              type: string
+              format: uuid
         - name: page
           in: query
           required: false
@@ -1198,6 +1200,30 @@ paths:
       security: [ { bearerAuth: [ ] } ]
       parameters: [ { name: labelId, in: path, required: true, schema: { type: string, format: uuid } } ]
       responses: { '204': { description: Eliminada }, '409': { description: La etiqueta está referenciada } }
+  /api/staff/labels/{labelId}/tickets:
+    get:
+      tags: [ Labels ]
+      summary: Listar los tickets asociados a una etiqueta
+      description: Devuelve de forma paginada los tickets que tienen asignada la etiqueta indicada.
+      operationId: listTicketsByLabel
+      security: [ { bearerAuth: [ ] } ]
+      parameters:
+        - { name: labelId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: page, in: query, required: false, schema: { type: integer, format: int32, default: 0 } }
+        - { name: size, in: query, required: false, schema: { type: integer, format: int32, default: 20 } }
+        - name: sort
+          in: query
+          required: false
+          description: Propiedades ordenables de Ticket; formato `campo,direccion`.
+          schema: { type: array, items: { type: string } }
+          example: [ "createdAt,desc" ]
+      responses:
+        '200':
+          description: Página de tickets que tienen asignada la etiqueta.
+          content: { application/json: { schema: { $ref: '#/components/schemas/PagedTicketResponse' } } }
+        '401': { $ref: '#/components/responses/InvalidToken' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /api/staff/tickets/{ticketId}/labels:
     post:
       tags: [ Labels ]
