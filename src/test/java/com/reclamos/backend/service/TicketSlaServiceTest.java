@@ -128,6 +128,21 @@ class TicketSlaServiceTest {
         verify(milestones).processMilestones(ticket, active, resolvedAt);
     }
 
+    @Test void resolutionRejectsAnExternalResolvedAtEarlierThanTheCyclesStartedAt() {
+        TicketSla active = cycle(1, SlaStatus.RUNNING);
+        when(slas.findActiveForUpdate(ticket.getId(), SlaType.RESOLUTION)).thenReturn(Optional.of(active));
+        Instant beforeStart = START.minusSeconds(60);
+
+        TicketStateConflictException exception = assertThrows(TicketStateConflictException.class,
+                () -> service.completeActiveResolutionCycle(ticket, beforeStart));
+
+        assertTrue(exception.getMessage().contains("no puede ser anterior al inicio del ciclo"));
+        assertNull(active.getCompletedAt());
+        assertEquals(SlaStatus.RUNNING, active.getStatus());
+        verify(slas, never()).save(any());
+        verify(milestones, never()).processMilestones(any(), any(), any());
+    }
+
     @Test void initialReclassificationNeverRewritesCompletedHistory() {
         when(slas.findActiveForUpdate(ticket.getId(), SlaType.RESOLUTION)).thenReturn(Optional.empty());
         when(slas.findMaxCycleNumber(ticket.getId(), SlaType.RESOLUTION)).thenReturn(Optional.of(1));

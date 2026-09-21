@@ -196,6 +196,17 @@ public class TicketSlaService {
             return Optional.empty();
         }
         TicketSla sla = active.get();
+        // Mismo defecto que terminateActiveCycle más abajo (ver su comentario:
+        // QA, snapshot dc88cc1bada97b22a1cfa80f0d19812e2a5a6510), aplicado acá
+        // porque completeActiveCycle es el gemelo que cierra el ciclo por
+        // RESOLVED en vez de REJECTED — mismo ck_ticket_sla_completed, mismo
+        // riesgo si el resolvedAt/reviewedAt recibido es anterior al
+        // startedAt del ciclo activo.
+        if (completedAt.isBefore(sla.getStartedAt())) {
+            throw new TicketStateConflictException(
+                    "El cierre del SLA no puede ser anterior al inicio del ciclo activo (startedAt: "
+                            + sla.getStartedAt() + ")");
+        }
         milestoneService.processMilestones(ticket, sla, completedAt);
         if (sla.getStatus() == SlaStatus.RUNNING || sla.getStatus() == SlaStatus.NEAR_DUE) {
             sla.setStatus(SlaStatus.MET);
