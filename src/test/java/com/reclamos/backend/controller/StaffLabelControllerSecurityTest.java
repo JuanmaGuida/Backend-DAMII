@@ -48,9 +48,38 @@ class StaffLabelControllerSecurityTest {
         perform(endpoint, null).andExpect(status().isUnauthorized());
     }
 
-    @ParameterizedTest @MethodSource("nonAdminWrites")
-    void administrationRejectsEveryNonAdminRole(Endpoint endpoint, RoleAuth role) throws Exception {
-        perform(endpoint, role).andExpect(status().isForbidden());
+    @ParameterizedTest
+    @MethodSource("agentAllowedWrites")
+    void agentCanCreateAndUpdateLabels(Endpoint endpoint) throws Exception {
+        perform(endpoint, AGENT)
+                .andExpect(status().is(endpoint.success()));
+    }
+
+    @ParameterizedTest
+    @MethodSource("writes")
+    void areaResponsibleCannotAdministerLabels(Endpoint endpoint) throws Exception {
+        perform(endpoint, AREA)
+                .andExpect(status().isForbidden());
+    }
+
+    @ParameterizedTest
+    @MethodSource("writes")
+    void citizenCannotAdministerLabels(Endpoint endpoint) throws Exception {
+        perform(endpoint, CITIZEN)
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void agentCannotDeleteLabels() throws Exception {
+        perform(
+                new Endpoint(
+                        HttpMethod.DELETE,
+                        "/api/staff/labels/{id}",
+                        null,
+                        204
+                ),
+                AGENT
+        ).andExpect(status().isForbidden());
     }
 
     @ParameterizedTest @MethodSource("writes")
@@ -138,7 +167,12 @@ class StaffLabelControllerSecurityTest {
             new Endpoint(HttpMethod.POST, "/api/staff/labels", CREATE, 201),
             new Endpoint(HttpMethod.PUT, "/api/staff/labels/{id}", UPDATE, 200),
             new Endpoint(HttpMethod.DELETE, "/api/staff/labels/{id}", null, 204)); }
-    static Stream<Arguments> nonAdminWrites() { return writes().flatMap(e -> Stream.of(AGENT, AREA, CITIZEN).map(r -> Arguments.of(e, r))); }
+    static Stream<Endpoint> agentAllowedWrites() {
+        return Stream.of(
+                new Endpoint(HttpMethod.POST, "/api/staff/labels", CREATE, 201),
+                new Endpoint(HttpMethod.PUT, "/api/staff/labels/{id}", UPDATE, 200)
+        );
+    }
     static Stream<RoleAuth> rolesWithoutLabelReadAccess() { return Stream.of(AREA, CITIZEN); }
     static RoleAuth auth(ModuleRole role) {
         var identity = new AuthenticatedIdentity(role.name(), UUID.randomUUID(), role.name(),
