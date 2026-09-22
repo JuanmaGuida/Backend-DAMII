@@ -1398,6 +1398,50 @@ class TicketServiceTest {
         verify(tickets, never()).save(any());
     }
 
+    /**
+     * La idea de permitir que el propietario retire su propio DUPLICATE por
+     * WITHDRAWN_BY_CITIZEN se descartó: sólo REGISTERED habilita la
+     * cancelación directa del ciudadano, igual que IN_REVIEW/PENDING_INFORMATION.
+     */
+    @Test
+    void cancelTicketByOwnerFromDuplicateIsRejectedWithoutEffects() {
+        AuthenticatedIdentity owner = new AuthenticatedIdentity(
+                "citizen-1", UUID.randomUUID(), "Vecino Uno", null, ModuleRole.CITIZEN);
+        Ticket ticket = ticket(TicketStatus.DUPLICATE, Priority.LOW);
+        ticket.setCitizenId(owner.citizenId());
+        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+
+        CancelTicketRequest request = new CancelTicketRequest();
+        request.setReasonCode(CancellationReasonCode.WITHDRAWN_BY_CITIZEN);
+
+        assertThatThrownBy(() -> service.cancelTicket(ticketId, request, owner))
+                .isInstanceOf(TicketStateConflictException.class);
+
+        assertThat(ticket.getCurrentStatus()).isEqualTo(TicketStatus.DUPLICATE);
+        verifyNoInteractions(cancellationRepository, informationRequestService, ticketSlaService,
+                activities, ticketOutboxService);
+        verify(tickets, never()).save(any());
+    }
+
+    /** Mismo criterio que cancelTicketByOwnerFromDuplicateIsRejectedWithoutEffects, vía el camino anónimo. */
+    @Test
+    void cancelAnonymousTicketFromDuplicateIsRejectedWithoutEffects() {
+        Ticket ticket = ticket(TicketStatus.DUPLICATE, Priority.LOW);
+        ticket.setAnonymous(true);
+        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+
+        CancelTicketRequest request = new CancelTicketRequest();
+        request.setReasonCode(CancellationReasonCode.WITHDRAWN_BY_CITIZEN);
+
+        assertThatThrownBy(() -> service.cancelAnonymousTicket(ticketId, request))
+                .isInstanceOf(TicketStateConflictException.class);
+
+        assertThat(ticket.getCurrentStatus()).isEqualTo(TicketStatus.DUPLICATE);
+        verifyNoInteractions(cancellationRepository, informationRequestService, ticketSlaService,
+                activities, ticketOutboxService);
+        verify(tickets, never()).save(any());
+    }
+
     @Test
     void cancelTicketTreatsInternalRoleOwnersAsCitizensAfterRegistered() {
         CancelTicketRequest request = new CancelTicketRequest();

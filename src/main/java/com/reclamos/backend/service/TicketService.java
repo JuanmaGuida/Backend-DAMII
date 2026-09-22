@@ -396,8 +396,9 @@ public class TicketService {
      * AGENT/ADMIN conservan la cancelación administrativa de tickets ajenos
      * en {@link #ADMIN_CANCELLABLE_STATUSES}. ROUTED/IN_PROGRESS se cancelan
      * por el flujo de integración (updateTicketStatus/REJECTED), no por acá.
-     * Un propietario también puede retirar su propio DUPLICATE, únicamente
-     * mediante WITHDRAWN_BY_CITIZEN, sin alterar el vínculo ni otros tickets.
+     * DUPLICATE tampoco es cancelable directamente por el propietario acá:
+     * la idea de permitir retirar un DUPLICATE propio se descartó — sólo
+     * REGISTERED habilita la cancelación directa del ciudadano.
      */
     @Transactional
     public TicketResponse cancelTicket(UUID ticketId, CancelTicketRequest request, AuthenticatedIdentity actor) {
@@ -422,11 +423,7 @@ public class TicketService {
 
     private TicketResponse cancelTicket(Ticket ticket, CancelTicketRequest request, ActorType actorType,
                                         String actorId, boolean ownerAction, boolean publishCancellation) {
-        boolean ownerWithdrawsDuplicate = ownerAction
-                && ticket.getCurrentStatus() == TicketStatus.DUPLICATE
-                && request.getReasonCode() == CancellationReasonCode.WITHDRAWN_BY_CITIZEN;
-        if (ownerAction && ticket.getCurrentStatus() != TicketStatus.REGISTERED
-                && !ownerWithdrawsDuplicate) {
+        if (ownerAction && ticket.getCurrentStatus() != TicketStatus.REGISTERED) {
             throw new TicketStateConflictException(
                     "El ticket está en estado " + ticket.getCurrentStatus()
                             + " y el propietario sólo puede cancelarlo directamente en REGISTERED");
