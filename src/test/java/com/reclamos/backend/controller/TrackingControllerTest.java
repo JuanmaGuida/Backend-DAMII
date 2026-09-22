@@ -1,7 +1,9 @@
 package com.reclamos.backend.controller;
 
 import com.reclamos.backend.config.SecurityConfiguration;
+import com.reclamos.backend.dto.response.TicketMessageResponse;
 import com.reclamos.backend.dto.response.TrackingTicketResponse;
+import com.reclamos.backend.entity.ActorType;
 import com.reclamos.backend.entity.TicketStatus;
 import com.reclamos.backend.exception.GlobalExceptionHandler;
 import com.reclamos.backend.exception.InvalidAnonymousTicketCredentialsException;
@@ -55,6 +57,8 @@ class TrackingControllerTest {
     private TicketResolutionService ticketResolutionService;
     @MockitoBean
     private TicketAttachmentUploadService ticketAttachmentUploadService;
+    @MockitoBean
+    private TicketMessageService ticketMessageService;
     @MockitoBean
     private AuthService authService;
 
@@ -285,6 +289,44 @@ class TrackingControllerTest {
                 .andExpect(status().isUnauthorized());
 
         verifyNoInteractions(ticketAttachmentUploadService);
+    }
+
+    @Test
+    void anonymousMessageActionRequiresPasswordAndDelegatesOnlyAfterAuthentication() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+        when(anonymousTicketAccessService.authenticate(CODE, "correct-password"))
+                .thenReturn(new AnonymousTicketAccessService.AnonymousTicketAccess(ticketId));
+        when(ticketMessageService.createAnonymous(eq(ticketId), any()))
+                .thenReturn(new TicketMessageResponse(11L, ActorType.CITIZEN, null,
+                        com.reclamos.backend.entity.MessageVisibility.PUBLIC, "Hola",
+                        Instant.parse("2026-09-21T15:00:00Z"), null));
+
+        mockMvc.perform(post("/api/tracking/actions/messages")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(actionJson("{\"visibility\":\"PUBLIC\",\"text\":\"Hola\"}")))
+                .andExpect(status().isCreated())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, containsString("no-store")))
+                .andExpect(jsonPath("$.id").value(11));
+
+        verify(anonymousTicketAccessService).authenticate(CODE, "correct-password");
+        verify(ticketMessageService).createAnonymous(eq(ticketId), argThat(
+                request -> "Hola".equals(request.getText())));
+    }
+
+    @Test
+    void anonymousMessageActionRejectsWrongPasswordWithoutDelegating() throws Exception {
+        when(anonymousTicketAccessService.authenticate(CODE, "wrong-password"))
+                .thenThrow(new InvalidAnonymousTicketCredentialsException());
+
+        mockMvc.perform(post("/api/tracking/actions/messages")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"trackingCode":"%s","anonymousAccessPassword":"wrong-password",
+                                 "payload":{"visibility":"PUBLIC","text":"Hola"}}
+                                """.formatted(CODE)))
+                .andExpect(status().isUnauthorized());
+
+        verifyNoInteractions(ticketMessageService);
     }
 
     void formerPublicGetRouteIsNoLongerExposed() throws Exception {

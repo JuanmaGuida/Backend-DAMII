@@ -1,18 +1,25 @@
 package com.reclamos.backend.service;
 
 import com.reclamos.backend.dto.response.TicketAttachmentResponse;
+import com.reclamos.backend.dto.response.TicketMessageResponse;
 import com.reclamos.backend.dto.response.TrackingTicketResponse;
 import com.reclamos.backend.dto.response.PendingInformationRequestResponse;
+import com.reclamos.backend.entity.ActorType;
 import com.reclamos.backend.entity.Attachment;
 import com.reclamos.backend.entity.InformationRequestStatus;
 import com.reclamos.backend.entity.Category;
 import com.reclamos.backend.entity.MessageVisibility;
+import com.reclamos.backend.entity.Neighborhood;
 import com.reclamos.backend.entity.RequestType;
 import com.reclamos.backend.entity.Subcategory;
 import com.reclamos.backend.entity.Ticket;
+import com.reclamos.backend.entity.TicketLocation;
+import com.reclamos.backend.entity.TicketMessage;
 import com.reclamos.backend.entity.TicketStatus;
 import com.reclamos.backend.exception.TrackingTicketNotFoundException;
 import com.reclamos.backend.repository.AttachmentRepository;
+import com.reclamos.backend.repository.TicketLocationRepository;
+import com.reclamos.backend.repository.TicketMessageRepository;
 import com.reclamos.backend.repository.TicketRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
@@ -42,14 +49,20 @@ class TrackingServiceTest {
     private final InformationRequestProjectionService projections = mock(InformationRequestProjectionService.class);
     private final AttachmentRepository attachmentRepository = mock(AttachmentRepository.class);
     private final AttachmentReferenceService attachmentReferenceService = mock(AttachmentReferenceService.class);
+    private final TicketLocationRepository locations = mock(TicketLocationRepository.class);
+    private final TicketMessageRepository messages = mock(TicketMessageRepository.class);
     private final TrackingService service = new TrackingService(
-            tickets, trackingCodes, ticketSlas, projections, attachmentRepository, attachmentReferenceService);
+            tickets, trackingCodes, ticketSlas, projections, attachmentRepository, attachmentReferenceService,
+            locations, messages);
 
     @BeforeEach
     void setUp() {
         when(ticketSlas.findDeadlineSnapshot(any()))
                 .thenReturn(new TicketSlaService.DeadlineSnapshot(null, null));
         when(attachmentRepository.findAllByTicket_IdAndVisibilityOrderByCreatedAtAsc(any(), any()))
+                .thenReturn(List.of());
+        when(locations.findByTicket_Id(any())).thenReturn(Optional.empty());
+        when(messages.findAllByTicket_IdAndVisibilityOrderByCreatedAtAsc(any(), any()))
                 .thenReturn(List.of());
     }
 
@@ -134,6 +147,84 @@ class TrackingServiceTest {
                 ticket.getId(), MessageVisibility.PUBLIC)).thenReturn(List.of());
 
         assertEquals(List.of(), service.findByTrackingCode(CODE).getAttachments());
+    }
+
+    @Test
+    void trackingIncludesTheNeighborhoodNameWhenTheTicketHasALocationWithAMatchedNeighborhood() {
+        Ticket ticket = ticket();
+        TicketLocation location = new TicketLocation();
+        Neighborhood neighborhood = new Neighborhood();
+        neighborhood.setName("Palermo");
+        location.setNeighborhood(neighborhood);
+        when(trackingCodes.isValid(CODE)).thenReturn(true);
+        when(trackingCodes.hash(CODE)).thenReturn(HASH);
+        when(tickets.findByTrackingCodeHash(HASH)).thenReturn(Optional.of(ticket));
+        when(locations.findByTicket_Id(ticket.getId())).thenReturn(Optional.of(location));
+
+        assertEquals("Palermo", service.findByTrackingCode(CODE).getNeighborhoodName());
+    }
+
+    @Test
+    void neighborhoodNameIsNullWhenTheTicketHasNoLocation() {
+        Ticket ticket = ticket();
+        when(trackingCodes.isValid(CODE)).thenReturn(true);
+        when(trackingCodes.hash(CODE)).thenReturn(HASH);
+        when(tickets.findByTrackingCodeHash(HASH)).thenReturn(Optional.of(ticket));
+        when(locations.findByTicket_Id(ticket.getId())).thenReturn(Optional.empty());
+
+        assertNull(service.findByTrackingCode(CODE).getNeighborhoodName());
+    }
+
+    @Test
+    void neighborhoodNameIsNullWhenTheLocationHasNoMatchedNeighborhood() {
+        Ticket ticket = ticket();
+        TicketLocation location = new TicketLocation();
+        when(trackingCodes.isValid(CODE)).thenReturn(true);
+        when(trackingCodes.hash(CODE)).thenReturn(HASH);
+        when(tickets.findByTrackingCodeHash(HASH)).thenReturn(Optional.of(ticket));
+        when(locations.findByTicket_Id(ticket.getId())).thenReturn(Optional.of(location));
+
+        assertNull(service.findByTrackingCode(CODE).getNeighborhoodName());
+    }
+
+    @Test
+    void trackingIncludesOnlyPublicMessagesInCreatedAtOrder() {
+        Ticket ticket = ticket();
+        TicketMessage message = new TicketMessage();
+        message.setId(7L);
+        message.setAuthorType(ActorType.CITIZEN);
+        message.setAuthorId(null);
+        message.setVisibility(MessageVisibility.PUBLIC);
+        message.setText("Hola, ¿alguna novedad?");
+        message.setCreatedAt(Instant.parse("2026-09-06T10:00:00Z"));
+        when(trackingCodes.isValid(CODE)).thenReturn(true);
+        when(trackingCodes.hash(CODE)).thenReturn(HASH);
+        when(tickets.findByTrackingCodeHash(HASH)).thenReturn(Optional.of(ticket));
+        when(messages.findAllByTicket_IdAndVisibilityOrderByCreatedAtAsc(
+                ticket.getId(), MessageVisibility.PUBLIC)).thenReturn(List.of(message));
+
+        List<TicketMessageResponse> result = service.findByTrackingCode(CODE).getMessages();
+
+        assertEquals(1, result.size());
+        assertEquals(7L, result.getFirst().id());
+        assertEquals("Hola, ¿alguna novedad?", result.getFirst().text());
+        assertEquals(ActorType.CITIZEN, result.getFirst().authorType());
+        // El propietario anónimo nunca queda autenticado por Bearer, así que este
+        // caso sólo prueba que TrackingService pide PUBLIC — nunca todos los del
+        // ticket — al repositorio; el chat INTERNAL nunca se expone acá.
+        verify(messages, never()).findAllByTicket_IdOrderByCreatedAtAsc(any());
+    }
+
+    @Test
+    void messagesIsAnEmptyListRatherThanNullWhenTheTicketHasNonePublic() {
+        Ticket ticket = ticket();
+        when(trackingCodes.isValid(CODE)).thenReturn(true);
+        when(trackingCodes.hash(CODE)).thenReturn(HASH);
+        when(tickets.findByTrackingCodeHash(HASH)).thenReturn(Optional.of(ticket));
+        when(messages.findAllByTicket_IdAndVisibilityOrderByCreatedAtAsc(
+                ticket.getId(), MessageVisibility.PUBLIC)).thenReturn(List.of());
+
+        assertEquals(List.of(), service.findByTrackingCode(CODE).getMessages());
     }
 
     @Test

@@ -169,7 +169,14 @@ public class SecurityConfiguration {
                                 "/api/tracking/actions/confirm-resolution",
                                 "/api/tracking/actions/reopen",
                                 "/api/tracking/actions/attachments",
-                                "/api/tracking/actions/attachments/*/content").permitAll()
+                                "/api/tracking/actions/attachments/*/content",
+                                // POST /tracking/actions/messages: el propietario anónimo escribe
+                                // en su propio chat sin JWT, acreditándose con trackingCode+
+                                // password en el body — mismo patrón que el resto de
+                                // /tracking/actions/*. La autorización real (ticket anónimo,
+                                // sin citizenId, PUBLIC únicamente) la valida
+                                // TicketMessageService.createAnonymous.
+                                "/api/tracking/actions/messages").permitAll()
                         // El simulador sólo existe cuando app.simulator.enabled=true y aun
                         // entonces requiere una sesión válida; nunca queda público por accidente.
                         .requestMatchers(HttpMethod.POST, "/api/tickets/*/simulate-status-update").authenticated()

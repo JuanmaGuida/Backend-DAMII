@@ -1,6 +1,7 @@
 package com.reclamos.backend.service;
 
 import com.reclamos.backend.dto.response.TicketAttachmentResponse;
+import com.reclamos.backend.dto.response.TicketMessageResponse;
 import com.reclamos.backend.dto.response.TrackingTicketResponse;
 import com.reclamos.backend.entity.Attachment;
 import com.reclamos.backend.entity.Category;
@@ -8,8 +9,12 @@ import com.reclamos.backend.entity.MessageVisibility;
 import com.reclamos.backend.entity.RequestType;
 import com.reclamos.backend.entity.Subcategory;
 import com.reclamos.backend.entity.Ticket;
+import com.reclamos.backend.entity.TicketLocation;
+import com.reclamos.backend.entity.TicketMessage;
 import com.reclamos.backend.exception.TrackingTicketNotFoundException;
 import com.reclamos.backend.repository.AttachmentRepository;
+import com.reclamos.backend.repository.TicketLocationRepository;
+import com.reclamos.backend.repository.TicketMessageRepository;
 import com.reclamos.backend.repository.TicketRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -26,6 +31,8 @@ public class TrackingService {
     private final InformationRequestProjectionService informationRequestProjectionService;
     private final AttachmentRepository attachmentRepository;
     private final AttachmentReferenceService attachmentReferenceService;
+    private final TicketLocationRepository locationRepository;
+    private final TicketMessageRepository messageRepository;
 
     @Transactional(readOnly = true)
     public TrackingTicketResponse findByTrackingCode(String trackingCode) {
@@ -57,8 +64,24 @@ public class TrackingService {
                         deadlines.firstResponseDueAt(),
                         deadlines.resolutionDueAt()),
                 publicAttachments(ticket),
-                projection(ticket)
+                projection(ticket),
+                neighborhoodName(ticket),
+                publicMessages(ticket)
         );
+    }
+
+    /**
+     * Barrio resuelto de la location del ticket (mismo criterio que
+     * TicketService usa para TicketDetailResponse.neighborhoodName): la
+     * location es null-safe (no todo ticket la tiene cargada) y el barrio
+     * también lo es (carga libre en mapa, sin un Neighborhood catalogado
+     * que la contenga).
+     */
+    private String neighborhoodName(Ticket ticket) {
+        TicketLocation location = locationRepository.findByTicket_Id(ticket.getId()).orElse(null);
+        return location != null && location.getNeighborhood() != null
+                ? location.getNeighborhood().getName()
+                : null;
     }
 
     /**
@@ -85,6 +108,27 @@ public class TrackingService {
         return new TicketAttachmentResponse(attachment.getId(), attachment.getFileName(),
                 attachment.getContentType(), attachment.getSizeBytes(), attachment.getVisibility(),
                 attachment.getCreatedAt(), attachmentReferenceService.downloadUrl(attachment));
+    }
+
+    /**
+     * Chat del ticket para el propietario anónimo: sólo PUBLIC, mismo criterio
+     * que publicAttachments (nunca INTERNAL, que puede existir si lo agregó
+     * staff). Un vecino anónimo no tiene JWT, así que no puede pasar por
+     * GET /api/tickets/{id}/messages (requireReadAuthority ahí exige
+     * AuthenticatedIdentity) — esto es lo que le permite leer su propio chat.
+     * Para escribir, ver TicketMessageService.createAnonymous y
+     * POST /api/tracking/actions/messages.
+     */
+    private List<TicketMessageResponse> publicMessages(Ticket ticket) {
+        return messageRepository.findAllByTicket_IdAndVisibilityOrderByCreatedAtAsc(
+                        ticket.getId(), MessageVisibility.PUBLIC).stream()
+                .map(this::toMessageResponse)
+                .toList();
+    }
+
+    private TicketMessageResponse toMessageResponse(TicketMessage message) {
+        return new TicketMessageResponse(message.getId(), message.getAuthorType(), message.getAuthorId(),
+                message.getVisibility(), message.getText(), message.getCreatedAt(), message.getUpdatedAt());
     }
 
     private com.reclamos.backend.dto.response.PendingInformationRequestResponse projection(Ticket ticket) {
