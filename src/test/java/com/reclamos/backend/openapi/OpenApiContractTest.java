@@ -95,7 +95,8 @@ class OpenApiContractTest {
             "POST /api/tracking/actions/confirm-resolution",
             "POST /api/tracking/actions/reopen",
             "POST /api/tracking/actions/attachments",
-            "POST /api/tracking/actions/attachments/{attachmentId}/content"
+            "POST /api/tracking/actions/attachments/{attachmentId}/content",
+            "POST /api/tracking/actions/messages"
     );
     private static final Set<String> PROTECTED_OPERATIONS = Set.of(
             "GET /api/auth/me",
@@ -209,7 +210,7 @@ class OpenApiContractTest {
     void versionedFileIsAValidOpenApi3DocumentWithExactlyTheCurrentBusinessOperations() {
         assertTrue(string(spec.get("openapi")).startsWith("3."));
         assertEquals("3.0.3", parsedOpenApi.getOpenapi());
-        assertEquals(61, parsedOpenApi.getPaths().size());
+        assertEquals(62, parsedOpenApi.getPaths().size());
         assertNotNull(map(spec, "info").get("title"));
         assertNotNull(map(spec, "components").get("schemas"));
         assertEquals(EXPECTED_OPERATIONS, documentedOperations());
@@ -356,6 +357,10 @@ class OpenApiContractTest {
         assertTrue(map(schemas, "TrackingTicketResponse", "properties").containsKey("attachments"));
         assertEquals("#/components/schemas/TicketAttachmentResponse",
                 map(schemas, "TrackingTicketResponse", "properties", "attachments", "items").get("$ref"));
+        assertTrue(map(schemas, "TrackingTicketResponse", "properties").containsKey("neighborhoodName"));
+        assertTrue(map(schemas, "TrackingTicketResponse", "properties").containsKey("messages"));
+        assertEquals("#/components/schemas/TicketMessageResponse",
+                map(schemas, "TrackingTicketResponse", "properties", "messages", "items").get("$ref"));
         assertEquals(Set.of("name"), map(schemas, "TrackingRequestTypeSummary", "properties").keySet());
         assertTrue(map(schemas, "TicketResponse", "properties").containsKey("escalationReasonCode"));
         assertTrue(map(schemas, "TicketResponse", "properties").containsKey("escalatedAt"));
@@ -443,6 +448,28 @@ class OpenApiContractTest {
         Map<String, Object> visibility = map(map(spec, "components", "schemas"),
                 "AttachmentUploadRequest", "properties", "visibility");
         assertEquals(Set.of("PUBLIC", "INTERNAL"), Set.copyOf(list(visibility, "enum")));
+    }
+
+    @Test
+    void anonymousTicketMessageActionDocumentsBodyCredentialsAndSafeResponses() {
+        Map<String, Object> operation = operation("POST /api/tracking/actions/messages");
+        assertEquals(java.util.List.of(), operation.get("security"));
+        assertEquals("#/components/schemas/AnonymousTicketMessageRequest",
+                map(operation, "requestBody", "content", "application/json", "schema").get("$ref"));
+        assertEquals("#/components/responses/InvalidAnonymousTicketCredentials",
+                map(operation, "responses", "401").get("$ref"));
+        assertEquals("#/components/schemas/TicketMessageResponse",
+                map(operation, "responses", "201", "content", "application/json", "schema").get("$ref"));
+        assertEquals("no-store",
+                map(operation, "responses", "201", "headers", "Cache-Control", "schema").get("example"));
+
+        Map<String, Object> schemas = map(spec, "components", "schemas");
+        java.util.List<?> allOf = list(map(schemas, "AnonymousTicketMessageRequest"), "allOf");
+        Map<String, Object> objectPart = map(allOf.get(1));
+        assertEquals(java.util.List.of("payload"), objectPart.get("required"));
+        Map<String, Object> payloadProperty = map(map(objectPart, "properties"), "payload");
+        assertEquals("#/components/schemas/TicketMessageRequest",
+                map(list(payloadProperty, "allOf").getFirst()).get("$ref"));
     }
 
     @Test

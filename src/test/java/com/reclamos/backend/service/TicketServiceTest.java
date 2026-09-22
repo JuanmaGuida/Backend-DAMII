@@ -85,6 +85,8 @@ class TicketServiceTest {
     @Mock
     private TicketLocationRepository locations;
     @Mock
+    private TicketMessageRepository ticketMessages;
+    @Mock
     private NeighborhoodRepository neighborhoods;
     @Mock
     private FormValidationService forms;
@@ -406,7 +408,8 @@ class TicketServiceTest {
                 .thenReturn(new TicketSlaService.DeadlineSnapshot(null, null));
 
         var tracked = new TrackingService(tickets, trackingCodes, ticketSlaService,
-                informationRequestProjectionService, attachmentRepository, attachmentReferenceService)
+                informationRequestProjectionService, attachmentRepository, attachmentReferenceService,
+                locations, ticketMessages)
                 .findByTrackingCode(created.trackingCode());
 
         assertEquals(created.publicId(), tracked.getPublicId());

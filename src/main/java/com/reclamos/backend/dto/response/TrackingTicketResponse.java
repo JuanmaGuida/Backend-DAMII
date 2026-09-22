@@ -24,17 +24,33 @@ public class TrackingTicketResponse {
     private SlaSummary sla;
     private List<TicketAttachmentResponse> attachments;
     private PendingInformationRequestResponse pendingInformationRequest;
+    /**
+     * Barrio resuelto de la ubicación del ticket (mismo criterio que
+     * TicketDetailResponse.neighborhoodName). Null cuando el ticket no tiene
+     * location cargada o la location no tiene un barrio resuelto (carga libre
+     * en mapa) — ver TrackingService.neighborhoodName.
+     */
+    private String neighborhoodName;
+    /**
+     * Chat del ticket, sólo mensajes PUBLIC (el propietario anónimo nunca ve
+     * INTERNAL, mismo criterio que attachments). Antes de esto un vecino
+     * anónimo no tenía forma de leer ni escribir el chat de su propio ticket
+     * sin JWT; ver TrackingService.publicMessages y
+     * POST /api/tracking/actions/messages.
+     */
+    private List<TicketMessageResponse> messages;
 
     /**
-     * Overload histórico sin description/attachments/pendingInformationRequest,
-     * preservado porque varios tests de seguridad/routing (no relacionados con
-     * el contenido de estos campos) todavía lo instancian directamente.
+     * Overload histórico sin description/attachments/pendingInformationRequest/
+     * neighborhoodName/messages, preservado porque varios tests de
+     * seguridad/routing (no relacionados con el contenido de estos campos)
+     * todavía lo instancian directamente.
      */
     public TrackingTicketResponse(String publicId, TicketStatus status, String summary, Instant createdAt,
                                   Instant statusChangedAt, RequestTypeSummary requestType,
                                   CategorySummary category, SubcategorySummary subcategory, SlaSummary sla) {
         this(publicId, status, summary, null, createdAt, statusChangedAt, requestType, category, subcategory, sla,
-                null, null);
+                null, null, null, null);
     }
 
     @Data

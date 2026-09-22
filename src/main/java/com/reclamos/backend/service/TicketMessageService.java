@@ -75,6 +75,38 @@ public class TicketMessageService {
         return toResponse(message);
     }
 
+    /**
+     * POST /tracking/actions/messages: el propietario anónimo de un ticket
+     * (acreditado por trackingCode+password en TrackingController, nunca por
+     * JWT) agrega un mensaje al chat de su propio ticket. Mismo criterio que
+     * la rama "owner" de requireWriteAuthority — siempre CITIZEN, siempre
+     * PUBLIC — pero sin AuthenticatedIdentity: un ticket anónimo nunca tiene
+     * citizenId, así que el autor queda sin authorId (igual que
+     * TicketAttachmentUploadService.uploadAnonymous con
+     * ActorType.CITIZEN/actorId null).
+     */
+    @Transactional
+    public TicketMessageResponse createAnonymous(UUID ticketId, TicketMessageRequest request) {
+        Ticket ticket = findTicket(ticketId);
+        if (!ticket.isAnonymous() || ticket.getCitizenId() != null
+                || request.getVisibility() != MessageVisibility.PUBLIC) {
+            throw new UnauthorizedTicketOperationException();
+        }
+
+        TicketMessage message = new TicketMessage();
+        message.setTicket(ticket);
+        message.setAuthorType(ActorType.CITIZEN);
+        message.setAuthorId(null);
+        message.setSourceModuleId(SOURCE_MODULE_ID);
+        message.setVisibility(MessageVisibility.PUBLIC);
+        message.setText(request.getText().trim());
+        message = messageRepository.save(message);
+
+        recordActivity(ticket, ActorType.CITIZEN, null, MessageVisibility.PUBLIC, message.getText());
+
+        return toResponse(message);
+    }
+
     @Transactional(readOnly = true)
     public List<TicketMessageResponse> list(UUID ticketId, AuthenticatedIdentity identity) {
         Ticket ticket = findTicket(ticketId);

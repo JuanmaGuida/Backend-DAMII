@@ -219,6 +219,93 @@ class TicketMessageServiceTest {
         assertEquals(ActivityType.INTERNAL_MESSAGE_ADDED, captor.getValue().getActionType());
     }
 
+    // --- createAnonymous() ---
+
+    @Test
+    void anonymousOwnerCanSendAPublicMessageOnTheirOwnAnonymousTicket() {
+        Ticket anonymousTicket = new Ticket();
+        anonymousTicket.setId(ticketId);
+        anonymousTicket.setAnonymous(true);
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(anonymousTicket));
+
+        TicketMessageResponse response =
+                service.createAnonymous(ticketId, request(MessageVisibility.PUBLIC, "Hola"));
+
+        ArgumentCaptor<TicketMessage> captor = ArgumentCaptor.forClass(TicketMessage.class);
+        verify(messageRepository).save(captor.capture());
+        assertSame(anonymousTicket, captor.getValue().getTicket());
+        assertEquals(ActorType.CITIZEN, captor.getValue().getAuthorType());
+        assertNull(captor.getValue().getAuthorId());
+        assertEquals("M2", captor.getValue().getSourceModuleId());
+        assertEquals(MessageVisibility.PUBLIC, captor.getValue().getVisibility());
+        assertEquals("Hola", captor.getValue().getText());
+        assertEquals(ActorType.CITIZEN, response.authorType());
+        assertNull(response.authorId());
+    }
+
+    @Test
+    void createAnonymousAlsoRecordsAMatchingActivityWithoutAnActorId() {
+        Ticket anonymousTicket = new Ticket();
+        anonymousTicket.setId(ticketId);
+        anonymousTicket.setAnonymous(true);
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(anonymousTicket));
+        when(activityRepository.countByTicketId(ticketId)).thenReturn(0);
+
+        service.createAnonymous(ticketId, request(MessageVisibility.PUBLIC, "Hola"));
+
+        ArgumentCaptor<TicketActivity> captor = ArgumentCaptor.forClass(TicketActivity.class);
+        verify(activityRepository).save(captor.capture());
+        assertEquals(ActivityType.PUBLIC_MESSAGE_SENT, captor.getValue().getActionType());
+        assertNull(captor.getValue().getActorId());
+        assertEquals(1, captor.getValue().getSequence());
+    }
+
+    @Test
+    void createAnonymousRejectsANonAnonymousTicket() {
+        Ticket identifiedTicket = new Ticket();
+        identifiedTicket.setId(ticketId);
+        identifiedTicket.setAnonymous(false);
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(identifiedTicket));
+
+        assertThrows(UnauthorizedTicketOperationException.class,
+                () -> service.createAnonymous(ticketId, request(MessageVisibility.PUBLIC, "Hola")));
+        verifyNoInteractions(messageRepository);
+    }
+
+    @Test
+    void createAnonymousRejectsAnAnonymousTicketThatSomehowHasACitizenId() {
+        Ticket inconsistentTicket = new Ticket();
+        inconsistentTicket.setId(ticketId);
+        inconsistentTicket.setAnonymous(true);
+        inconsistentTicket.setCitizenId(ownerId);
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(inconsistentTicket));
+
+        assertThrows(UnauthorizedTicketOperationException.class,
+                () -> service.createAnonymous(ticketId, request(MessageVisibility.PUBLIC, "Hola")));
+        verifyNoInteractions(messageRepository);
+    }
+
+    @Test
+    void createAnonymousRejectsInternalVisibility() {
+        Ticket anonymousTicket = new Ticket();
+        anonymousTicket.setId(ticketId);
+        anonymousTicket.setAnonymous(true);
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(anonymousTicket));
+
+        assertThrows(UnauthorizedTicketOperationException.class,
+                () -> service.createAnonymous(ticketId, request(MessageVisibility.INTERNAL, "nota")));
+        verifyNoInteractions(messageRepository);
+    }
+
+    @Test
+    void createAnonymousOnAMissingTicketIsNotFound() {
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.empty());
+
+        assertThrows(ResourceNotFoundException.class,
+                () -> service.createAnonymous(ticketId, request(MessageVisibility.PUBLIC, "Hola")));
+        verifyNoInteractions(messageRepository);
+    }
+
     // --- list() ---
 
     @Test

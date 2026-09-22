@@ -2069,6 +2069,39 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+  /api/tracking/actions/messages:
+    post:
+      tags: [Tracking]
+      summary: Agregar un mensaje público al chat de un ticket anónimo propio
+      description: |
+        Acredita al propietario anónimo con trackingCode+password desde el
+        body (nunca JWT) y agrega un mensaje a su propio chat, siempre en
+        capacidad CITIZEN y siempre PUBLIC. La lectura del chat viaja dentro
+        de TrackingTicketResponse.messages (POST /api/tracking/access), no
+        por un endpoint de listado separado.
+      operationId: createAnonymousTicketMessage
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnonymousTicketMessageRequest'
+      responses:
+        '201':
+          description: Mensaje registrado.
+          headers:
+            Cache-Control:
+              schema: { type: string, example: no-store }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketMessageResponse'
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/InvalidAnonymousTicketCredentials' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
   /api/tracking/actions/confirm-resolution:
     post:
       tags: [Tracking]
@@ -3616,9 +3649,19 @@ components:
           properties:
             payload:
               $ref: '#/components/schemas/ReopenTicketRequest'
+    AnonymousTicketMessageRequest:
+      allOf:
+        - $ref: '#/components/schemas/AnonymousTicketCredentialsRequest'
+        - type: object
+          required: [payload]
+          properties:
+            payload:
+              allOf:
+                - $ref: '#/components/schemas/TicketMessageRequest'
+              description: Para propietarios anónimos visibility debe ser PUBLIC.
     TrackingTicketResponse:
       type: object
-      required: [publicId, status, summary, description, createdAt, statusChangedAt, requestType, category, subcategory, sla, attachments, pendingInformationRequest]
+      required: [publicId, status, summary, description, createdAt, statusChangedAt, requestType, category, subcategory, sla, attachments, pendingInformationRequest, neighborhoodName, messages]
       properties:
         publicId:
           $ref: '#/components/schemas/TicketPublicId'
@@ -3651,6 +3694,15 @@ components:
           allOf:
             - $ref: '#/components/schemas/PendingInformationRequestResponse'
           nullable: true
+        neighborhoodName:
+          type: string
+          nullable: true
+          description: Barrio resuelto de la ubicación del ticket. Nulo si el ticket no tiene location cargada o su location no tiene un barrio resuelto.
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/TicketMessageResponse'
+          description: Sólo mensajes PUBLIC; el propietario anónimo nunca ve INTERNAL. Para escribir, ver POST /api/tracking/actions/messages.
     TrackingSlaSummary:
       type: object
       required: [ firstResponseDueAt, resolutionDueAt ]

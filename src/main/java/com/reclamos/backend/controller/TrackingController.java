@@ -4,10 +4,12 @@ import com.reclamos.backend.dto.request.*;
 import com.reclamos.backend.dto.TicketResponse;
 import com.reclamos.backend.dto.response.InformationRequestResponse;
 import com.reclamos.backend.dto.response.TicketAttachmentResponse;
+import com.reclamos.backend.dto.response.TicketMessageResponse;
 import com.reclamos.backend.dto.response.TicketResolutionActionResponse;
 import com.reclamos.backend.dto.response.TrackingTicketResponse;
 import com.reclamos.backend.service.AnonymousTicketAccessService;
 import com.reclamos.backend.service.InformationRequestService;
+import com.reclamos.backend.service.TicketMessageService;
 import com.reclamos.backend.service.TicketResolutionService;
 import com.reclamos.backend.service.TicketService;
 import com.reclamos.backend.service.TicketAttachmentUploadService;
@@ -34,6 +36,7 @@ public class TrackingController {
     private final InformationRequestService informationRequestService;
     private final TicketResolutionService ticketResolutionService;
     private final TicketAttachmentUploadService ticketAttachmentUploadService;
+    private final TicketMessageService ticketMessageService;
 
     @PostMapping(value = "/access", consumes = MediaType.APPLICATION_JSON_VALUE,
             produces = MediaType.APPLICATION_JSON_VALUE)
@@ -86,6 +89,26 @@ public class TrackingController {
                 .cacheControl(CacheControl.noStore())
                 .body(ticketAttachmentUploadService.uploadAnonymous(
                         access.ticketId(), request.payload(), attachments));
+    }
+
+    /**
+     * POST /tracking/actions/messages (Decisiones y adaptaciones M2): el
+     * propietario anónimo de un ticket no tiene JWT, así que no puede usar
+     * POST /tickets/{id}/messages (que exige AuthenticatedIdentity). Esta
+     * acción replica el mismo patrón que el resto de /tracking/actions/*:
+     * credenciales trackingCode+password en el body, sin sesión ni Bearer.
+     * La lectura del chat viaja dentro de TrackingTicketResponse.messages
+     * (ver TrackingService), no por un endpoint de listado separado.
+     */
+    @PostMapping(value = "/actions/messages", consumes = MediaType.APPLICATION_JSON_VALUE,
+            produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<TicketMessageResponse> createMessage(
+            @Valid @RequestBody AnonymousTicketActionRequest<@Valid TicketMessageRequest> request) {
+        var access = anonymousTicketAccessService.authenticate(
+                request.trackingCode(), request.anonymousAccessPassword());
+        return ResponseEntity.status(org.springframework.http.HttpStatus.CREATED)
+                .cacheControl(CacheControl.noStore())
+                .body(ticketMessageService.createAnonymous(access.ticketId(), request.payload()));
     }
 
     @PostMapping(value = "/actions/confirm-resolution", consumes = MediaType.APPLICATION_JSON_VALUE,
