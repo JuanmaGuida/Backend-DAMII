@@ -31,6 +31,12 @@ class TicketLabelPostgresIntegrationTest {
     private RequestTypeRepository requestTypes;
 
     @Autowired
+    private NeighborhoodRepository neighborhoods;
+
+    @Autowired
+    private TicketLocationRepository locations;
+
+    @Autowired
     private LabelRepository labels;
 
     @Autowired
@@ -50,6 +56,9 @@ class TicketLabelPostgresIntegrationTest {
     void clean() {
         ticketIds.forEach(id ->
                 jdbc.update("DELETE FROM ticket_labels WHERE ticket_id = ?", id));
+
+        ticketIds.forEach(id ->
+                jdbc.update("DELETE FROM ticket_locations WHERE ticket_id = ?", id));
 
         ticketIds.forEach(id ->
                 jdbc.update("DELETE FROM tickets WHERE id = ?", id));
@@ -233,6 +242,107 @@ class TicketLabelPostgresIntegrationTest {
                         TicketSpecifications.build(filter(null)));
 
         assertThat(withoutFilter).isGreaterThanOrEqualTo(3);
+    }
+
+    @Test
+    @Transactional
+    void searchMatchesPublicIdUuidSubstringAndSummaryBeforeCountAndPagination() {
+        String term = "luminaria" + UUID.randomUUID().toString().substring(0, 8);
+        String publicIdPart = "000123" + UUID.randomUUID().toString().substring(0, 8);
+        Label a = label("SEARCH-A");
+        Label b = label("SEARCH-B");
+        Neighborhood neighborhood = new Neighborhood();
+        neighborhood.setName("Search " + UUID.randomUUID());
+        neighborhood.setPopulation(1);
+        neighborhood = neighborhoods.saveAndFlush(neighborhood);
+
+        Ticket first = ticket("search-first");
+        first.setPublicId("S-" + publicIdPart);
+        first.setSummary(term.toUpperCase(Locale.ROOT) + " rota en la plaza");
+        first.setCurrentStatus(TicketStatus.IN_PROGRESS);
+        first.setCurrentPriority(Priority.HIGH);
+        first = tickets.saveAndFlush(first);
+
+        Ticket second = ticket("search-second");
+        second.setSummary("Otra " + term.toUpperCase(Locale.ROOT) + " rota");
+        second.setCurrentStatus(TicketStatus.IN_PROGRESS);
+        second.setCurrentPriority(Priority.HIGH);
+        second = tickets.saveAndFlush(second);
+
+        Ticket wrongStatus = ticket("search-wrong-status");
+        wrongStatus.setSummary(term + " pendiente");
+        wrongStatus.setCurrentPriority(Priority.HIGH);
+        tickets.saveAndFlush(wrongStatus);
+
+        Ticket unrelated = ticket("search-unrelated");
+
+        for (Ticket ticket : List.of(first, second)) {
+            TicketLocation location = new TicketLocation();
+            location.setTicket(ticket);
+            location.setNeighborhood(neighborhood);
+            locations.saveAndFlush(location);
+        }
+
+        UUID actor = UUID.randomUUID();
+        Instant now = Instant.now();
+        assignments.insertManualIfAbsent(first.getId(), a.getId(), actor, now);
+        assignments.insertManualIfAbsent(first.getId(), b.getId(), actor, now);
+        assignments.insertManualIfAbsent(second.getId(), b.getId(), actor, now);
+        assignments.insertManualIfAbsent(wrongStatus.getId(), a.getId(), actor, now);
+        assignments.insertManualIfAbsent(unrelated.getId(), a.getId(), actor, now);
+
+        assertThat(search("S-" + publicIdPart).getContent()).extracting(Ticket::getId)
+                .containsExactly(first.getId());
+        assertThat(search(publicIdPart).getContent()).extracting(Ticket::getId)
+                .containsExactly(first.getId());
+        assertThat(search(first.getId().toString()).getContent()).extracting(Ticket::getId)
+                .containsExactly(first.getId());
+        assertThat(search(first.getId().toString().substring(9, 17)).getContent())
+                .extracting(Ticket::getId).containsExactly(first.getId());
+
+        var summary = search("  " + term + "  ");
+        assertThat(summary.getContent()).extracting(Ticket::getId)
+                .containsExactlyInAnyOrder(first.getId(), second.getId(), wrongStatus.getId());
+        assertThat(search("no-matching-ticket-term")).isEmpty();
+
+        assertThat(search(" ").getTotalElements()).isEqualTo(search(null).getTotalElements());
+        assertThat(search("").getTotalElements()).isEqualTo(search(null).getTotalElements());
+
+        TicketFilter withStatus = new TicketFilter(null, null, null, null,
+                TicketStatus.IN_PROGRESS, null, term);
+        TicketFilter withPriority = new TicketFilter(null, Priority.HIGH, null, null,
+                null, null, term);
+        TicketFilter withLabels = new TicketFilter(null, null, null, null,
+                null, Set.of(a.getId(), b.getId()), term);
+        assertThat(tickets.findAll(TicketSpecifications.build(withStatus), PageRequest.of(0, 10))
+                .getContent()).extracting(Ticket::getId).containsExactlyInAnyOrder(first.getId(), second.getId());
+        assertThat(tickets.findAll(TicketSpecifications.build(withPriority), PageRequest.of(0, 10))
+                .getTotalElements()).isEqualTo(3);
+        assertThat(tickets.findAll(TicketSpecifications.build(withLabels), PageRequest.of(0, 10))
+                .getContent()).extracting(Ticket::getId)
+                .containsExactlyInAnyOrder(first.getId(), second.getId(), wrongStatus.getId());
+
+        Long categoryId = first.getRequestType().getSubcategory().getCategory().getId();
+        TicketFilter combined = new TicketFilter(categoryId, Priority.HIGH, neighborhood.getId(),
+                first.getResponsibleAreaId(), TicketStatus.IN_PROGRESS,
+                Set.of(a.getId(), b.getId()), term);
+        var firstPage = tickets.findAll(TicketSpecifications.build(combined),
+                PageRequest.of(0, 1, Sort.by("createdAt")));
+        var secondPage = tickets.findAll(TicketSpecifications.build(combined),
+                PageRequest.of(1, 1, Sort.by("createdAt")));
+        assertThat(firstPage.getTotalElements()).isEqualTo(2);
+        assertThat(firstPage.getTotalPages()).isEqualTo(2);
+        assertThat(secondPage.getTotalElements()).isEqualTo(2);
+        assertThat(secondPage.getTotalPages()).isEqualTo(2);
+        assertThat(firstPage.getContent()).hasSize(1);
+        assertThat(secondPage.getContent()).hasSize(1);
+        assertThat(List.of(firstPage.getContent().getFirst().getId(), secondPage.getContent().getFirst().getId()))
+                .containsExactlyInAnyOrder(first.getId(), second.getId());
+    }
+
+    private org.springframework.data.domain.Page<Ticket> search(String term) {
+        return tickets.findAll(TicketSpecifications.build(new TicketFilter(
+                null, null, null, null, null, null, term)), PageRequest.of(0, 10));
     }
 
     @Test

@@ -22,10 +22,20 @@ public record TicketFilter(
         UUID neighborhoodId,
         String responsibleAreaId,
         TicketStatus status,
-        Set<UUID> labelIds
+        Set<UUID> labelIds,
+        String search
 ) {
+    public TicketFilter {
+        search = search == null || search.isBlank() ? null : search.trim();
+    }
+
+    public TicketFilter(Long categoryId, Priority priority, UUID neighborhoodId,
+                        String responsibleAreaId, TicketStatus status, Set<UUID> labelIds) {
+        this(categoryId, priority, neighborhoodId, responsibleAreaId, status, labelIds, null);
+    }
+
     public TicketFilter(Long categoryId, Priority priority, UUID neighborhoodId,
                         String responsibleAreaId, TicketStatus status) {
-        this(categoryId, priority, neighborhoodId, responsibleAreaId, status, null);
+        this(categoryId, priority, neighborhoodId, responsibleAreaId, status, null, null);
     }
 }

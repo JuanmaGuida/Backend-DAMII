@@ -590,7 +590,7 @@ class OpenApiContractTest {
     }
 
     @Test
-    void staffTicketListDocumentsOptionalAnyLabelIdsFilterOnlyOnTheSupportedEndpoint() {
+    void staffTicketListDocumentsOptionalAnyLabelIdsAndSearchOnlyOnTheSupportedEndpoint() {
         Map<String, Object> staffList = operation("GET /api/tickets");
         java.util.List<?> parameters = (java.util.List<?>) staffList.get("parameters");
         Map<String, Object> labelIds = parameters.stream()
@@ -605,9 +605,21 @@ class OpenApiContractTest {
         assertEquals("array", map(labelIds, "schema").get("type"));
         assertEquals("uuid", map(labelIds, "schema", "items").get("format"));
 
+        Map<String, Object> search = parameters.stream()
+                .map(value -> map(value))
+                .filter(parameter -> "search".equals(parameter.get("name")))
+                .findFirst()
+                .orElseThrow();
+        assertEquals("query", search.get("in"));
+        assertEquals(Boolean.FALSE, search.get("required"));
+        assertEquals("string", map(search, "schema").get("type"));
+        assertTrue(search.get("description").toString().contains("publicId"));
+
         java.util.List<?> meParameters = (java.util.List<?>) operation("GET /api/me/tickets").get("parameters");
         assertFalse(meParameters.stream().map(value -> map(value))
                 .anyMatch(parameter -> "labelIds".equals(parameter.get("name"))));
+        assertFalse(meParameters.stream().map(value -> map(value))
+                .anyMatch(parameter -> "search".equals(parameter.get("name"))));
     }
 
     @Test

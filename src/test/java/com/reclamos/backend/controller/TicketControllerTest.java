@@ -172,6 +172,34 @@ class TicketControllerTest {
     }
 
     @Test
+    void listPassesTrimmedSearchWithExistingFiltersAndKeepsStaffSecurity() throws Exception {
+        UUID labelId = UUID.randomUUID();
+        when(ticketService.listTickets(any(TicketFilter.class), any(Pageable.class)))
+                .thenReturn(Page.empty());
+
+        mockMvc.perform(get("/api/tickets").with(authentication(AGENT_AUTHENTICATION))
+                        .param("search", "  LuMiNaRiA  ")
+                        .param("labelIds", labelId.toString())
+                        .param("status", "IN_PROGRESS")
+                        .param("priority", "HIGH"))
+                .andExpect(status().isOk());
+
+        verify(ticketService).listTickets(argThat(filter ->
+                        "LuMiNaRiA".equals(filter.search())
+                                && filter.labelIds().equals(java.util.Set.of(labelId))
+                                && filter.status() == TicketStatus.IN_PROGRESS
+                                && filter.priority() == com.reclamos.backend.entity.Priority.HIGH),
+                any(Pageable.class));
+
+        mockMvc.perform(get("/api/tickets").with(authentication(CITIZEN_AUTHENTICATION))
+                        .param("search", "luminaria"))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/tickets").with(authentication(AREA_RESPONSIBLE_AUTHENTICATION))
+                        .param("search", "luminaria"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     void listPassesCommaSeparatedLabelIdsTogetherWithExistingFiltersAndPaging() throws Exception {
         UUID firstLabel = UUID.randomUUID();
         UUID secondLabel = UUID.randomUUID();
