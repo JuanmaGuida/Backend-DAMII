@@ -10,6 +10,7 @@ import org.springframework.data.jpa.domain.Specification;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Filtros combinables para la bandeja de tickets (Story 3.1).
@@ -59,6 +60,17 @@ public final class TicketSpecifications {
                         cb.equal(assignment.get("ticket"), root),
                         assignment.get("label").get("id").in(filter.labelIds()));
                 predicates.add(cb.exists(labels));
+            }
+
+            if (filter.search() != null) {
+                String pattern = "%" + filter.search().toLowerCase(Locale.ROOT)
+                        .replace("\\", "\\\\")
+                        .replace("%", "\\%")
+                        .replace("_", "\\_") + "%";
+                predicates.add(cb.or(
+                        cb.like(cb.lower(root.get("publicId")), pattern, '\\'),
+                        cb.like(cb.lower(root.get("id").cast(String.class)), pattern, '\\'),
+                        cb.like(cb.lower(root.get("summary")), pattern, '\\')));
             }
 
             return cb.and(predicates.toArray(new Predicate[0]));

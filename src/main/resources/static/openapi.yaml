@@ -931,6 +931,12 @@ paths:
             items:
               type: string
               format: uuid
+        - name: search
+          in: query
+          required: false
+          description: Búsqueda parcial case-insensitive por publicId, id del ticket o summary. Se combina con los demás filtros.
+          schema:
+            type: string
         - name: page
           in: query
           required: false
