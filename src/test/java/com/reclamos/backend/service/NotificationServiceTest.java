@@ -49,6 +49,38 @@ class NotificationServiceTest {
         verifyNoInteractions(repository, users, events);
     }
 
+    @Test
+    void assignedAgentIsResolvedByRelationAndUsesItsSharedIdentity() {
+        Ticket ticket = ticket(false);
+        ModuleUser agent = new ModuleUser();
+        agent.setCitizenId(UUID.randomUUID());
+        agent.setActive(true);
+        agent.setPreferredNotificationChannel("PHONE");
+        ticket.setAssignedAgent(agent);
+        when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        NotificationLog result = service.queueAssignedAgent(
+                ticket, NotificationType.INFORMATION_PROVIDED, ticket.getCitizenId()).orElseThrow();
+
+        assertEquals(agent.getCitizenId(), result.getCitizenId());
+        assertEquals("PHONE", result.getChannel());
+        assertEquals(NotificationType.INFORMATION_PROVIDED, result.getType());
+    }
+
+    @Test
+    void doesNotNotifyAssignedAgentAboutTheirOwnAction() {
+        Ticket ticket = ticket(false);
+        ModuleUser agent = new ModuleUser();
+        agent.setCitizenId(UUID.randomUUID());
+        agent.setActive(true);
+        ticket.setAssignedAgent(agent);
+
+        assertTrue(service.queueAssignedAgent(ticket, NotificationType.PUBLIC_MESSAGE_RECEIVED,
+                agent.getCitizenId()).isEmpty());
+        verifyNoInteractions(repository, users, events);
+    }
+
+
     private Ticket ticket(boolean anonymous) {
         Ticket ticket = new Ticket();
         ticket.setId(UUID.randomUUID());

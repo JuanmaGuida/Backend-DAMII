@@ -189,6 +189,8 @@ public class InformationRequestService {
         ticketOutboxService.informationProvided(ticket, responseMessage, storedAttachments,
                 ActorType.CITIZEN, actorId,
                 !MODULE_ID.equalsIgnoreCase(informationRequest.getRequestedByModuleId()), answeredAt);
+        notificationService.queueAssignedAgent(ticket, NotificationType.INFORMATION_PROVIDED,
+                identity == null ? null : identity.citizenId());
         return response(informationRequest, storedAttachments);
     }
 

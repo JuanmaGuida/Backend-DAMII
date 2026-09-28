@@ -466,6 +466,13 @@ public class TicketService {
             ticketOutboxService.cancelled(ticket, request.getReasonCode(), request.getPublicMessage(), true, now);
         }
 
+        UUID actorCitizenId = actorId == null ? null : UUID.fromString(actorId);
+        if (actorType != ActorType.CITIZEN) {
+            notificationService.queueCitizen(ticket, NotificationType.CANCELLED);
+        }
+        notificationService.queueAssignedAgent(ticket, NotificationType.CANCELLED, actorCitizenId);
+
+
         return toResponse(ticket, locationRepository.findByTicket_Id(ticket.getId()).orElse(null));
     }
 

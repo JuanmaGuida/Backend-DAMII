@@ -1,19 +1,12 @@
 package com.reclamos.backend.service;
 
-import com.reclamos.backend.entity.ActivityType;
-import com.reclamos.backend.entity.ActorType;
-import com.reclamos.backend.entity.CancellationReasonCode;
-import com.reclamos.backend.entity.InformationRequest;
-import com.reclamos.backend.entity.InformationRequestStatus;
-import com.reclamos.backend.entity.Ticket;
-import com.reclamos.backend.entity.TicketActivity;
-import com.reclamos.backend.entity.TicketCancellation;
-import com.reclamos.backend.entity.TicketStatus;
+import com.reclamos.backend.entity.*;
 import com.reclamos.backend.repository.InformationRequestRepository;
 import com.reclamos.backend.repository.TicketActivityRepository;
 import com.reclamos.backend.repository.TicketCancellationRepository;
 import com.reclamos.backend.repository.TicketRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -36,6 +29,12 @@ public class InformationRequestExpirationService {
     private final TicketActivityRepository activityRepository;
     private final TicketSlaService ticketSlaService;
     private final TicketOutboxService ticketOutboxService;
+    private NotificationService notificationService;
+
+    @Autowired
+    void setNotificationService(NotificationService notificationService) {
+        this.notificationService = notificationService;
+    }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void expireIfDue(UUID requestId, UUID ticketId, Instant now) {
@@ -90,5 +89,9 @@ public class InformationRequestExpirationService {
         activity.setOccurredAt(now);
         activityRepository.save(activity);
         ticketOutboxService.cancelled(ticket, CancellationReasonCode.INFO_TIMEOUT, PUBLIC_MESSAGE, true, now);
+        if (notificationService != null) {
+            notificationService.queueCitizen(ticket, NotificationType.CANCELLED);
+            notificationService.queueAssignedAgent(ticket, NotificationType.CANCELLED, null);
+        }
     }
 }

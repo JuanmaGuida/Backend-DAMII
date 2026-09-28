@@ -35,6 +35,7 @@ public class TicketResolutionService {
     private final Duration confirmationDuration;
     private final TicketSlaService ticketSlaService;
     private final TicketOutboxService ticketOutboxService;
+    private NotificationService notificationService;
     private DuplicateTicketService duplicateTicketService;
 
     @Autowired
@@ -60,6 +61,11 @@ public class TicketResolutionService {
     @Autowired
     void setDuplicateTicketService(DuplicateTicketService duplicateTicketService) {
         this.duplicateTicketService = duplicateTicketService;
+    }
+
+    @Autowired
+    void setNotificationService(NotificationService notificationService) {
+        this.notificationService = notificationService;
     }
 
     @Transactional
@@ -133,6 +139,11 @@ public class TicketResolutionService {
         // que ser el propio de M2.
         ticketOutboxService.resolved(ticket, application.type(), application.publicMessage(),
                 clock.instant());
+        if (notificationService != null) {
+            notificationService.queueCitizen(ticket, NotificationType.RESOLVED);
+            notificationService.queueAssignedAgent(ticket, NotificationType.RESOLVED,
+                    parseUuid(application.actorId()));
+        }
 
         return resolution;
     }
@@ -162,6 +173,7 @@ public class TicketResolutionService {
         saveCitizenActivity(ticket, ActivityType.CLOSED, TicketStatus.CLOSED, actorId,
                 "CITIZEN_CONFIRMED", "El ciudadano confirmó la resolución", now);
         ticketOutboxService.closed(ticket, "CITIZEN_CONFIRMED", now);
+        notifyClosed(ticket);
         if (duplicateTicketService != null) {
             duplicateTicketService.propagateClosed(ticket, ActorType.CITIZEN, actorId, "CITIZEN_CONFIRMED", now);
         }
@@ -196,8 +208,29 @@ public class TicketResolutionService {
         saveCitizenActivity(ticket, ActivityType.REOPENED, TicketStatus.IN_PROGRESS, actorId,
                 null, request.getReason(), now);
         ticketOutboxService.reopened(ticket, request.getReason(), now);
+        if (notificationService != null) {
+            notificationService.queueAssignedAgent(ticket, NotificationType.REOPENED, parseUuid(actorId));
+        }
         return actionResponse(ticket);
     }
+
+    private void notifyClosed(Ticket ticket) {
+        if (notificationService != null) {
+            notificationService.queueCitizen(ticket, NotificationType.CLOSED);
+            // CLOSED is a final result and is intentionally delivered to both parties.
+            notificationService.queueAssignedAgent(ticket, NotificationType.CLOSED, null);
+        }
+    }
+
+    private UUID parseUuid(String value) {
+        if (value == null) return null;
+        try {
+            return UUID.fromString(value);
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
+    }
+
 
     private void requireAgent(AuthenticatedIdentity identity) {
         if (identity == null || (identity.role() != ModuleRole.AGENT && identity.role() != ModuleRole.ADMIN)) {

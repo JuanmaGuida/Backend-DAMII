@@ -20,16 +20,42 @@ public class NotificationService {
     private final ApplicationEventPublisher events;
 
     public Optional<NotificationLog> queue(Ticket ticket, NotificationType type) {
-        Optional<String> channel = resolveChannel(ticket);
+        return queueCitizen(ticket, type);
+    }
+
+    public Optional<NotificationLog> queueCitizen(Ticket ticket, NotificationType type) {
+        Optional<String> channel = resolveCitizenChannel(ticket);
+        if (channel.isEmpty()) {
+            return Optional.empty();
+        }
+
+        return persist(ticket, ticket.getCitizenId(), type, channel.get());
+    }
+
+    public Optional<NotificationLog> queueAssignedAgent(Ticket ticket, NotificationType type,
+                                                        java.util.UUID actorCitizenId) {
+        ModuleUser agent = ticket.getAssignedAgent();
+        if (agent == null || !agent.isActive() || agent.getCitizenId().equals(actorCitizenId)) {
+            return Optional.empty();
+        }
+        String channel = agent.getPreferredNotificationChannel();
+        if (channel == null || channel.isBlank()) {
+            channel = DEFAULT_IDENTIFIED_CHANNEL;
+        }
+        return persist(ticket, agent.getCitizenId(), type, channel);
+    }
+
+    private Optional<NotificationLog> persist(Ticket ticket, java.util.UUID recipientId,
+                                              NotificationType type, String channel) {
         if (channel.isEmpty()) {
             return Optional.empty();
         }
 
         NotificationLog notification = new NotificationLog();
         notification.setTicket(ticket);
-        notification.setCitizenId(ticket.getCitizenId());
+        notification.setCitizenId(recipientId);
         notification.setType(type);
-        notification.setChannel(channel.get());
+        notification.setChannel(channel);
         notification.setStatus(NotificationStatus.PENDING);
         notification.setAttemptCount(0);
         notification = notificationLogs.save(notification);
@@ -37,7 +63,7 @@ public class NotificationService {
         return Optional.of(notification);
     }
 
-    private Optional<String> resolveChannel(Ticket ticket) {
+    private Optional<String> resolveCitizenChannel(Ticket ticket) {
         if (ticket.isAnonymous()) {
             return ticket.getAnonymousContactChannel() == AnonymousContactChannel.EMAIL
                     && ticket.getAnonymousContactValue() != null
