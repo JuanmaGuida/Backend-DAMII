@@ -31,6 +31,7 @@ import com.reclamos.backend.repository.TicketMessageRepository;
 import com.reclamos.backend.repository.TicketRepository;
 import com.reclamos.backend.repository.TicketCancellationRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -86,8 +87,14 @@ public class TicketStatusUpdateService {
     private final InformationRequestService informationRequestService;
     private final TicketCancellationRepository cancellationRepository;
     private final TicketOutboxService ticketOutboxService;
+    private NotificationService notificationService;
     private final Clock clock;
 
+    @Autowired
+    void setNotificationService(NotificationService notificationService) {
+        this.notificationService = notificationService;
+        ticketResolutionService.setNotificationService(notificationService);
+    }
     @Transactional
     public TicketResponse applyUpdate(UUID ticketId, UpdateTicketStatusEnvelope envelope) {
         validateEnvelope(ticketId, envelope);
@@ -224,6 +231,18 @@ public class TicketStatusUpdateService {
             default -> throw new InvalidTicketRequestException("updateType no soportado: " + request.updateType());
         }
 
+        if (notificationService != null && request.updateType() == UpdateTicketStatusType.REJECTED) {
+            notificationService.queueCitizen(ticket, com.reclamos.backend.entity.NotificationType.CANCELLED);
+            notificationService.queueAssignedAgent(ticket, com.reclamos.backend.entity.NotificationType.CANCELLED,
+                    parseUuid(request.updatedBy().id()));
+        } else if (notificationService != null && (request.updateType() == UpdateTicketStatusType.STARTED
+                || request.updateType() == UpdateTicketStatusType.RETURNED)) {
+            notificationService.queueCitizen(ticket, com.reclamos.backend.entity.NotificationType.STATUS_CHANGED);
+            notificationService.queueAssignedAgent(ticket, com.reclamos.backend.entity.NotificationType.STATUS_CHANGED,
+                    parseUuid(request.updatedBy().id()));
+        }
+
+
         if (request.updateType() == UpdateTicketStatusType.RESOLVED) {
             ticketResolutionService.applyValidatedResolution(ticket,
                     new TicketResolutionService.ResolutionApplication(
@@ -309,6 +328,10 @@ public class TicketStatusUpdateService {
 
         TicketLocation location = locationRepository.findByTicket_Id(ticketId).orElse(null);
         return toResponse(ticket, location);
+    }
+
+    private UUID parseUuid(String value) {
+        try { return UUID.fromString(value); } catch (RuntimeException ignored) { return null; }
     }
 
     /**

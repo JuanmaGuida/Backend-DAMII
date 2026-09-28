@@ -153,7 +153,8 @@ class InformationRequestServiceTest {
         verify(ticketSlaService).resumeActiveResolutionCycle(ticket, NOW);
         verify(outbox).informationProvided(ticket, "Respuesta", List.of(), ActorType.CITIZEN,
                 actor.citizenId().toString(), false, NOW);
-        verifyNoInteractions(notifications);
+        verify(notifications).queueAssignedAgent(ticket, NotificationType.INFORMATION_PROVIDED, actor.citizenId());
+        verify(notifications, never()).queueCitizen(ticket, NotificationType.INFORMATION_PROVIDED);
     }
 
     @Test
@@ -238,6 +239,8 @@ class InformationRequestServiceTest {
         verify(ticketSlaService).resumeActiveResolutionCycle(ticket, NOW);
         verify(outbox).informationProvided(ticket, "Respuesta", List.of(), ActorType.CITIZEN,
                 null, true, NOW);
+        verify(notifications).queueAssignedAgent(ticket, NotificationType.INFORMATION_PROVIDED, null);
+        verify(notifications, never()).queueCitizen(ticket, NotificationType.INFORMATION_PROVIDED);
     }
 
     @Test

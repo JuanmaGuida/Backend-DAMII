@@ -1,10 +1,6 @@
 package com.reclamos.backend.service;
 
-import com.reclamos.backend.entity.ActivityType;
-import com.reclamos.backend.entity.ActorType;
-import com.reclamos.backend.entity.Ticket;
-import com.reclamos.backend.entity.TicketActivity;
-import com.reclamos.backend.entity.TicketStatus;
+import com.reclamos.backend.entity.*;
 import com.reclamos.backend.repository.TicketActivityRepository;
 import com.reclamos.backend.repository.TicketRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,6 +21,12 @@ public class ResolutionConfirmationTimeoutService {
     private final TicketActivityRepository activityRepository;
     private final DuplicateTicketService duplicateTicketService;
     private final TicketOutboxService ticketOutboxService;
+    private NotificationService notificationService;
+
+    @Autowired
+    void setNotificationService(NotificationService notificationService) {
+        this.notificationService = notificationService;
+    }
 
     @Autowired
     public ResolutionConfirmationTimeoutService(TicketRepository ticketRepository,
@@ -77,6 +79,10 @@ public class ResolutionConfirmationTimeoutService {
         }
         if (duplicateTicketService != null) {
             duplicateTicketService.propagateClosed(ticket, ActorType.SYSTEM, null, TIMEOUT_REASON, now);
+        }
+        if (notificationService != null) {
+            notificationService.queueCitizen(ticket, NotificationType.CLOSED);
+            notificationService.queueAssignedAgent(ticket, NotificationType.CLOSED, null);
         }
     }
 }

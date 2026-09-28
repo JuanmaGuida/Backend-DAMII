@@ -17,9 +17,9 @@ class LoggingNotificationSenderTest {
         UUID ticketId = UUID.randomUUID();
 
         new LoggingNotificationSender().send(new NotificationDelivery(
-                42L, ticketId, NotificationType.INFORMATION_REQUIRED, "EMAIL"));
+                42L, ticketId, "T-2026-000042", NotificationType.INFORMATION_REQUIRED, "EMAIL"));
 
-        assertThat(output).contains("Notification simulated", "notificationId=42",
+        assertThat(output).contains("Notification simulated", "notificationId=42", "publicId=T-2026-000042",
                         "ticketId=" + ticketId, "type=INFORMATION_REQUIRED", "status=SENT")
                 .doesNotContain("trackingAccessCode", "trackingCodeHash", "anonymousContactValue",
                         "password", "internalMessage", "messageForCitizen");

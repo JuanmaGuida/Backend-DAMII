@@ -6,6 +6,7 @@ import com.reclamos.backend.repository.TicketActivityRepository;
 import com.reclamos.backend.repository.TicketRepository;
 import com.reclamos.backend.repository.TicketSlaRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -27,6 +28,12 @@ public class TicketSlaMilestoneService {
     private final TicketActivityRepository activityRepository;
     private final OutboxEventRepository outboxEventRepository;
     private final Clock clock;
+    private NotificationService notificationService;
+
+    @Autowired
+    void setNotificationService(NotificationService notificationService) {
+        this.notificationService = notificationService;
+    }
 
     @Value("${app.events.producer.module-id:M2}")
     private String producerModuleId = MODULE_ID;
@@ -59,6 +66,9 @@ public class TicketSlaMilestoneService {
             saveActivity(ticket, sla, ActivityType.SLA_NEAR_DUE, "SLA_NEAR_DUE",
                     "El ticket alcanzó el umbral preventivo de su SLA de " + kind,
                     sla.getNearDueAt());
+            if (notificationService != null) {
+                notificationService.queueAssignedAgent(ticket, NotificationType.SLA_NEAR_DUE, null);
+            }
         }
 
         if ((sla.getStatus() == SlaStatus.RUNNING || sla.getStatus() == SlaStatus.NEAR_DUE)
@@ -66,6 +76,9 @@ public class TicketSlaMilestoneService {
             sla.setStatus(SlaStatus.BREACHED);
             saveActivity(ticket, sla, ActivityType.SLA_BREACHED, EscalationReasonCode.SLA_BREACHED.name(),
                     "El ticket incumplió su SLA de " + kind, sla.getDueAt());
+            if (notificationService != null) {
+                notificationService.queueAssignedAgent(ticket, NotificationType.SLA_BREACHED, null);
+            }
 
             if (!ticket.isEscalated()) {
                 ticket.setEscalated(true);

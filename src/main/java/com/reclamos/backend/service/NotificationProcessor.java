@@ -32,7 +32,7 @@ public class NotificationProcessor {
         notification.setAttemptCount(notification.getAttemptCount() + 1);
         try {
             sender.send(new NotificationDelivery(notification.getId(), notification.getTicket().getId(),
-                    notification.getType(), notification.getChannel()));
+                    notification.getTicket().getPublicId(), notification.getType(), notification.getChannel()));
             notification.setStatus(NotificationStatus.SENT);
             notification.setSentAt(clock.instant());
             notification.setFailedAt(null);

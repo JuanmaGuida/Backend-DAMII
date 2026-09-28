@@ -3,12 +3,7 @@ package com.reclamos.backend.service;
 import com.reclamos.backend.dto.request.TicketMessageRequest;
 import com.reclamos.backend.dto.request.TicketMessageUpdateRequest;
 import com.reclamos.backend.dto.response.TicketMessageResponse;
-import com.reclamos.backend.entity.ActivityType;
-import com.reclamos.backend.entity.ActorType;
-import com.reclamos.backend.entity.MessageVisibility;
-import com.reclamos.backend.entity.Ticket;
-import com.reclamos.backend.entity.TicketActivity;
-import com.reclamos.backend.entity.TicketMessage;
+import com.reclamos.backend.entity.*;
 import com.reclamos.backend.exception.ResourceNotFoundException;
 import com.reclamos.backend.exception.UnauthorizedTicketOperationException;
 import com.reclamos.backend.identity.AuthenticatedIdentity;
@@ -17,6 +12,7 @@ import com.reclamos.backend.repository.TicketActivityRepository;
 import com.reclamos.backend.repository.TicketMessageRepository;
 import com.reclamos.backend.repository.TicketRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -55,6 +51,12 @@ public class TicketMessageService {
     private final TicketRepository ticketRepository;
     private final TicketActivityRepository activityRepository;
     private final Clock clock;
+    private NotificationService notificationService;
+
+    @Autowired
+    void setNotificationService(NotificationService notificationService) {
+        this.notificationService = notificationService;
+    }
 
     @Transactional
     public TicketMessageResponse create(UUID ticketId, TicketMessageRequest request, AuthenticatedIdentity actor) {
@@ -71,6 +73,7 @@ public class TicketMessageService {
         message = messageRepository.save(message);
 
         recordActivity(ticket, authorType, actor.citizenId().toString(), request.getVisibility(), message.getText());
+        notifyRecipients(ticket, authorType, actor.citizenId(), request.getVisibility());
 
         return toResponse(message);
     }
@@ -103,6 +106,7 @@ public class TicketMessageService {
         message = messageRepository.save(message);
 
         recordActivity(ticket, ActorType.CITIZEN, null, MessageVisibility.PUBLIC, message.getText());
+        notifyRecipients(ticket, ActorType.CITIZEN, null, MessageVisibility.PUBLIC);
 
         return toResponse(message);
     }
@@ -116,6 +120,21 @@ public class TicketMessageService {
                 : messageRepository.findAllByTicket_IdAndVisibilityOrderByCreatedAtAsc(
                         ticketId, MessageVisibility.PUBLIC);
         return messages.stream().map(this::toResponse).toList();
+    }
+
+    private void notifyRecipients(Ticket ticket, ActorType authorType, UUID authorId,
+                                  MessageVisibility visibility) {
+        if (notificationService == null) return;
+        if (authorType == ActorType.CITIZEN) {
+            notificationService.queueAssignedAgent(ticket, NotificationType.PUBLIC_MESSAGE_RECEIVED, authorId);
+            return;
+        }
+        if (visibility == MessageVisibility.PUBLIC) {
+            notificationService.queueCitizen(ticket, NotificationType.PUBLIC_MESSAGE_RECEIVED);
+            notificationService.queueAssignedAgent(ticket, NotificationType.PUBLIC_MESSAGE_RECEIVED, authorId);
+        } else {
+            notificationService.queueAssignedAgent(ticket, NotificationType.INTERNAL_MESSAGE_RECEIVED, authorId);
+        }
     }
 
     /**
