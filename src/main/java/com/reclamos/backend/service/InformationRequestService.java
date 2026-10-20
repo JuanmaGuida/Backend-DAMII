@@ -171,6 +171,10 @@ public class InformationRequestService {
                                                      AuthenticatedIdentity identity,
                                                      List<AttachmentService.ValidatedAttachment> validatedAttachments) {
         if (ticket.getCurrentStatus() != TicketStatus.PENDING_INFORMATION) {
+            if (ticket.getCurrentStatus() == TicketStatus.IN_REVIEW
+                    && informationRequestRepository.existsByTicketIdAndStatus(ticket.getId(), InformationRequestStatus.EXPIRED)) {
+                throw new InformationRequestExpiredException();
+            }
             throw new InformationRequestConflictException(
                     "El ticket ya no admite respuestas a solicitudes de información");
         }

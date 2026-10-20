@@ -97,7 +97,7 @@ public class TicketStatusUpdateService {
         this.notificationService = notificationService;
         ticketResolutionService.setNotificationService(notificationService);
     }
-    @Transactional
+    @Transactional(noRollbackFor = com.reclamos.backend.exception.CancellationScopeReviewRequiredException.class)
     public TicketResponse applyUpdate(UUID ticketId, UpdateTicketStatusEnvelope envelope) {
         validateEnvelope(ticketId, envelope);
         // The DEV input contract has no correlationId. Preserve its absence while
@@ -240,6 +240,12 @@ public class TicketStatusUpdateService {
                 activityType = ActivityType.CANCELLED;
                 reasonCode = cancellation.reasonCode();
                 cancellationReason = mapCancellationReason(cancellation.reasonCode());
+                if (ticketRepository.existsByMainTicket_IdAndCurrentStatus(ticketId, TicketStatus.DUPLICATE)) {
+                    CancellationConflictAudit.record(activityRepository,ticket,"EXTERNAL_REJECTED",cancellationReason,
+                            envelope.eventId(),null,ticketRepository.findActiveDuplicateIds(ticketId),previousStatus,clock.instant(),
+                            request.publicMessage(),request.internalMessage());
+                    throw new com.reclamos.backend.exception.CancellationScopeReviewRequiredException();
+                }
             }
             default -> throw new InvalidTicketRequestException("updateType no soportado: " + request.updateType());
         }

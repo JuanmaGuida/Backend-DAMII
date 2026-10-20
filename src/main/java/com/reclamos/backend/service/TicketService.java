@@ -361,6 +361,11 @@ public class TicketService {
 
         ActorType actorType = isOwnTicket ? ActorType.CITIZEN
                 : (actor.role() == ModuleRole.ADMIN ? ActorType.ADMIN : ActorType.AGENT);
+        if (!isOwnTicket && ADMIN_CANCELLABLE_STATUSES.contains(ticket.getCurrentStatus())
+                && ticketRepository.existsByMainTicket_IdAndCurrentStatus(ticketId, TicketStatus.DUPLICATE)) {
+            cancelWithScope(ticket, request, actor);
+            return toResponse(ticket, locationRepository.findByTicket_Id(ticketId).orElse(null));
+        }
         return cancelTicket(ticket, request, actorType, actor.citizenId().toString(), isOwnTicket, true);
     }
 
@@ -387,12 +392,23 @@ public class TicketService {
                             + " (estados permitidos: REGISTERED, IN_REVIEW o PENDING_INFORMATION)");
         }
 
-        Instant now = clock.instant();
-        reclassificationDataService.terminate(ticket, "Cancelación administrativa del ticket", now);
+        if (ticketRepository.existsByMainTicket_IdAndCurrentStatus(ticket.getId(), TicketStatus.DUPLICATE)) {
+            throw new TicketStateConflictException("El principal tiene duplicados activos: requiere una solicitud de cancelación y revisión administrativa");
+        }
+        if (request.getCancellationScope() != null) {
+            throw new InvalidTicketRequestException("Sin duplicados activos cancellationScope debe ser null");
+        }
+        return executeCancellation(ticket, request, actorType, actorId, publishCancellation, clock.instant());
+    }
+
+    private TicketResponse executeCancellation(Ticket ticket, CancelTicketRequest request, ActorType actorType,
+                                                String actorId, boolean publishCancellation, Instant now) {
+        reclassificationDataService.terminate(ticket, "Cancelación del ticket", now);
 
         TicketCancellation cancellation = new TicketCancellation();
         cancellation.setTicket(ticket);
         cancellation.setReasonCode(request.getReasonCode());
+        cancellation.setCancellationScope(request.getCancellationScope());
         cancellation.setPublicMessage(request.getPublicMessage());
         cancellation.setInternalMessage(request.getInternalMessage());
         cancellation.setCancelledByType(actorType);
@@ -402,7 +418,7 @@ public class TicketService {
         cancellationRepository.save(cancellation);
 
         TicketStatus previousStatus = ticket.getCurrentStatus();
-        if (previousStatus == TicketStatus.PENDING_INFORMATION) {
+        if (previousStatus == TicketStatus.PENDING_INFORMATION || previousStatus == TicketStatus.DUPLICATE) {
             informationRequestService.cancelPendingBecauseTicketTerminated(ticket);
         }
         ticketSlaService.terminateActiveCycles(ticket, now);
@@ -427,6 +443,80 @@ public class TicketService {
 
 
         return toResponse(ticket, locationRepository.findByTicket_Id(ticket.getId()).orElse(null));
+    }
+
+    /** Caller owns the main row lock for the entire transaction. */
+    void cancelWithScope(Ticket main, CancelTicketRequest input, AuthenticatedIdentity actor) {
+        applyScopedCancellation(main,input,actor,false);
+    }
+
+    /** Only an audited, revalidated external rejection review may cancel active external management. */
+    void cancelAfterConflict(Ticket main, CancelTicketRequest input, AuthenticatedIdentity actor, boolean external) {
+        applyScopedCancellation(main,input,actor,external);
+    }
+
+    private void applyScopedCancellation(Ticket main, CancelTicketRequest input, AuthenticatedIdentity actor, boolean external) {
+        requireTriageAuthority(main, actor);
+        boolean permitted=ADMIN_CANCELLABLE_STATUSES.contains(main.getCurrentStatus())
+                || external && (main.getCurrentStatus()==TicketStatus.ROUTED || main.getCurrentStatus()==TicketStatus.IN_PROGRESS);
+        if (!permitted || main.getMainTicket() != null)
+            throw new TicketStateConflictException("El estado del principal no admite esta cancelación administrativa");
+        if (input.getCancellationScope() == null || input.getDecisionReason() == null
+                || input.getDecisionReason().isBlank() || input.getDecisionReason().length() > 4000)
+            throw new InvalidTicketRequestException("Un principal con duplicados exige cancellationScope y decisionReason");
+        List<Ticket> children = ticketRepository.lockCancellationDuplicates(main.getId());
+        if (children.isEmpty()) throw new TicketStateConflictException("El principal ya no tiene duplicados activos");
+        for (Ticket child : children) {
+            requireTriageAuthority(child, actor);
+            if (reclassificationProposals.findOpen(child.getId()).isPresent())
+                throw new TicketStateConflictException("Un duplicado tiene una propuesta abierta incompatible");
+        }
+        Instant now = clock.instant();
+        ActorType type = actor.role() == ModuleRole.ADMIN ? ActorType.ADMIN : ActorType.AGENT;
+        String actorId = actor.citizenId().toString();
+        boolean notifyExternal = !main.isAnonymous() || main.getClassificationFinalizedAt() != null
+                && !SELF_MANAGED_AREA_ID.equalsIgnoreCase(main.getResponsibleAreaId());
+        // Linking in older flows could retain a pending request on a DUPLICATE.
+        // None may survive either termination or the change of principal.
+        for (Ticket child : children) informationRequestService.cancelPendingBecauseTicketTerminated(child);
+        executeCancellation(main, input, type, actorId, notifyExternal, now);
+        if (input.getCancellationScope() == CancellationScope.GLOBAL) {
+            for (Ticket child : children) {
+                // The scope belongs to the principal decision, not an independent child decision.
+                CancelTicketRequest inherited = new CancelTicketRequest();
+                inherited.setReasonCode(input.getReasonCode()); inherited.setPublicMessage(input.getPublicMessage());
+                inherited.setInternalMessage("Cancelación GLOBAL del principal " + main.getId());
+                executeCancellation(child, inherited, type, actorId, !child.isAnonymous(), now);
+            }
+        } else {
+            Ticket promoted = children.stream().min(java.util.Comparator.comparing(Ticket::getCreatedAt)
+                    .thenComparing(t -> t.getId().toString())).orElseThrow();
+            promoted.setMainTicket(null); promoted.setCurrentStatus(TicketStatus.IN_REVIEW);
+            promoted.setStatusChangedAt(now);
+            // Classification stays locked by its duplicate-link history. Preserve the
+            // real routing timestamp: setting it here would invent external management.
+            ticketRepository.save(promoted);
+            recordActivity(promoted, ActivityType.STATE_CHANGED, TicketStatus.DUPLICATE, TicketStatus.IN_REVIEW,
+                    actor, null, null, "Promovido por cancelación del principal " + main.getId(), now);
+            ticketSlaService.startPromotedResolutionCycle(promoted, now);
+            ticketOutboxService.statusChanged(promoted, null, now);
+            for (Ticket child : children) {
+                if (child.getId().equals(promoted.getId())) continue;
+                child.setMainTicket(promoted); ticketRepository.save(child);
+                recordActivity(child, ActivityType.DUPLICATE_LINKED, TicketStatus.DUPLICATE, TicketStatus.DUPLICATE,
+                        actor, null, null, "Vinculado al nuevo principal " + promoted.getId(), now);
+                if (!child.isAnonymous()) ticketOutboxService.duplicateLinked(child, now);
+            }
+        }
+        // Keep the scope rationale in the immutable activity log, including direct staff decisions.
+        TicketActivity decision = new TicketActivity(); decision.setTicket(main);
+        decision.setSequence(activityRepository.countByTicketId(main.getId()) + 1);
+        decision.setActionType(ActivityType.STATE_CHANGED); decision.setPreviousStatus(TicketStatus.CANCELLED);
+        decision.setNewStatus(TicketStatus.CANCELLED); decision.setActorType(type); decision.setActorId(actorId);
+        decision.setSourceModuleId(SELF_MANAGED_AREA_ID); decision.setOccurredAt(now);
+        decision.setMessage(input.getDecisionReason().strip());
+        decision.setMetadata(Map.of("cancellationScope", input.getCancellationScope().name()));
+        activityRepository.save(decision);
     }
 
     private void requireCancelAuthority(AuthenticatedIdentity actor, boolean isOwnTicket) {

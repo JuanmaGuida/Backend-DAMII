@@ -52,6 +52,20 @@ public class InformationRequestExpirationService {
             return;
         }
 
+        if (ticketRepository.existsByMainTicket_IdAndCurrentStatus(ticketId, TicketStatus.DUPLICATE)) {
+            request.setStatus(InformationRequestStatus.EXPIRED);
+            informationRequestRepository.save(request);
+            reclassificationDataService.terminate(ticket, "INFO_TIMEOUT: venció la solicitud estructurada", now);
+            ticketSlaService.resumeActiveResolutionCycle(ticket, now);
+            ticket.setCurrentStatus(TicketStatus.IN_REVIEW);
+            ticket.setStatusChangedAt(now.truncatedTo(java.time.temporal.ChronoUnit.MICROS));
+            ticketRepository.save(ticket);
+            CancellationConflictAudit.record(activityRepository,ticket,"INFO_TIMEOUT",CancellationReasonCode.INFO_TIMEOUT,
+                    null,request.getId(),ticketRepository.findActiveDuplicateIds(ticketId),TicketStatus.PENDING_INFORMATION,now,null,null);
+            ticketOutboxService.statusChanged(ticket,"Venció el plazo de información; el incidente requiere revisión administrativa.",now);
+            if(notificationService != null) notificationService.queueAssignedAgent(ticket,NotificationType.STATUS_CHANGED,null);
+            return;
+        }
         request.setStatus(InformationRequestStatus.EXPIRED);
         informationRequestRepository.save(request);
         reclassificationDataService.terminate(ticket, "INFO_TIMEOUT: venció la solicitud estructurada", now);
