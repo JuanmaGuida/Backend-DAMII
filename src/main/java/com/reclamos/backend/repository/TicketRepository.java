@@ -18,6 +18,14 @@ import java.util.UUID;
 
 public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecificationExecutor<Ticket> {
 
+    @Query("select t.id from Ticket t where t.mainTicket is null and t.currentStatus in :statuses " +
+            "and t.id > :after and t.id <= :upper order by t.id")
+    List<UUID> findPriorityCandidates(@Param("statuses") java.util.Collection<com.reclamos.backend.entity.TicketStatus> statuses,
+            @Param("after") UUID after, @Param("upper") UUID upper, Pageable pageable);
+
+    @Query("select t.id from Ticket t order by t.id desc")
+    List<UUID> findPriorityScanUpperBound(Pageable pageable);
+
     boolean existsByTrackingCodeHash(String trackingCodeHash);
 
     boolean existsByRequestType_Id(Long requestTypeId);

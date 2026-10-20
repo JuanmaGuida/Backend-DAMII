@@ -106,7 +106,7 @@ class TicketAffectedCountPostgresIntegrationTest {
         assertThat(db.queryForObject("SELECT neighborhood_id FROM ticket_locations WHERE ticket_id=?", UUID.class, id))
                 .isEqualTo(neighborhoodId);
         assertThat(ticket(id)).containsEntry("request_type_id", selectedType).containsEntry("is_anonymous", anonymous)
-                .containsEntry("current_priority", "LOW").containsEntry("current_status", "REGISTERED")
+                .containsEntry("current_priority", expected >= 500 ? "MEDIUM" : "LOW").containsEntry("current_status", "REGISTERED")
                 .containsEntry("is_escalated", false);
         assertThat(db.queryForObject("SELECT count(*) FROM ticket_activities WHERE ticket_id=? AND action_type='TICKET_CREATED'",
                 Integer.class, id)).isEqualTo(1);
@@ -154,7 +154,7 @@ class TicketAffectedCountPostgresIntegrationTest {
 
         assertThat(count(id)).isEqualTo(6956);
         assertThat(response.getEstimatedAffectedCount()).isEqualTo(6956);
-        assertThat(ticket(id)).containsEntry("request_type_id", confirmedType).containsEntry("current_priority", "LOW")
+        assertThat(ticket(id)).containsEntry("request_type_id", confirmedType).containsEntry("current_priority", "MEDIUM")
                 .containsEntry("current_status", "IN_REVIEW");
         var currentCycles = sla(id);
         assertThat(currentCycles).extracting(cycle -> cycle.get("id"))

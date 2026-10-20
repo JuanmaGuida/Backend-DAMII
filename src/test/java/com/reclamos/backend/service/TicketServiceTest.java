@@ -142,6 +142,17 @@ class TicketServiceTest {
 
     @BeforeEach
     void setUp() {
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "priorityCalculationService",
+                new PriorityCalculationService(new com.reclamos.backend.config.PriorityProperties(),
+                        new SlaCalculationService(mock(SlaPolicyRepository.class))));
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "milestoneService",
+                new TicketSlaMilestoneService(tickets, mock(TicketSlaRepository.class), activities,
+                        mock(OutboxEventRepository.class), Clock.fixed(NOW, java.time.ZoneOffset.UTC)));
+        lenient().when(risks.calculateRisk(any(Ticket.class))).thenAnswer(invocation -> {
+            Ticket t = invocation.getArgument(0);
+            Risk base = t.getRequestType().getBaseRisk();
+            return new RiskAssessment(base.ordinal() * 25, base);
+        });
         lenient().when(clock.instant()).thenReturn(NOW);
         lenient().when(publicIds.generate(NOW))
                 .thenReturn("TK-2026-000123");
@@ -228,7 +239,7 @@ class TicketServiceTest {
         service.create(request(location(null, null, null, neighborhood.getId())), identity(), null);
 
         verify(tickets).save(argThat(ticket -> ticket.getEstimatedAffectedCount() == 3478
-                && ticket.getCurrentPriority() == Priority.LOW));
+                && ticket.getCurrentPriority() == Priority.MEDIUM));
         verify(locations).save(argThat(location -> location.getNeighborhood() == neighborhood
                 && location.getTicket().getEstimatedAffectedCount() == 3478));
     }
@@ -601,7 +612,7 @@ class TicketServiceTest {
                 "evidence", "photo.jpg", "image/jpeg", new byte[]{1});
 
         when(risks.calculateRisk(any(RequestType.class), any(ResolvedForm.class)))
-                .thenReturn(new RiskAssessment(0, Risk.CRITICAL));
+                .thenReturn(new RiskAssessment(75, Risk.CRITICAL));
 
         service.create(request(), identity(), new MockMultipartFile[]{evidence});
 
@@ -988,9 +999,9 @@ class TicketServiceTest {
         service.correctClassification(ticketId, 20L, actor);
 
         assertThat(ticket.getCurrentPriority()).isEqualTo(Priority.LOW);
-        assertThat(ticket.isEscalated()).isTrue();
-        assertThat(ticket.getEscalationReasonCode()).isEqualTo(EscalationReasonCode.CRITICAL_PRIORITY);
-        assertThat(ticket.getEscalatedAt()).isEqualTo(originalEscalatedAt);
+        assertThat(ticket.isEscalated()).isFalse();
+        assertThat(ticket.getEscalationReasonCode()).isNull();
+        assertThat(ticket.getEscalatedAt()).isNull();
     }
 
     @Test
