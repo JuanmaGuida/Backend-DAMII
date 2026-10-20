@@ -40,6 +40,14 @@ class TicketClosedContractTest {
         var data = new LinkedHashMap<>((Map<String, Object>) captor.getValue().getPayload().get("data"));
         assertThat(data.get("details")).isEqualTo(Map.of("closure", Map.of("reasonCode", reasonCode)));
         EventDataContractAssertions.assertValid(data);
+        EventEnvelopeContractAssertions.assertValid(captor.getValue().getPayload());
+        EventEnvelopeContractAssertions.assertFullEventValid(captor.getValue().getPayload());
+        var wrongSource = new LinkedHashMap<>(captor.getValue().getPayload());
+        wrongSource.put("sourceModule", "M2");
+        EventEnvelopeContractAssertions.assertFullEventInvalid(wrongSource);
+        var wrongVersion = new LinkedHashMap<>(captor.getValue().getPayload());
+        wrongVersion.put("eventVersion", "2.0");
+        EventEnvelopeContractAssertions.assertFullEventInvalid(wrongVersion);
         data.put("details", Map.of("closure", Map.of("reason", reasonCode)));
         EventDataContractAssertions.assertInvalid(data);
         data.put("details", Map.of("closure", Map.of("reasonCode", "UNKNOWN")));

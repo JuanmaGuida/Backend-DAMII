@@ -46,6 +46,11 @@ class TicketOutboxServiceTest {
     @BeforeEach
     void setUp() {
         reset(repository, attachmentReferenceService);
+        org.mockito.Mockito.when(repository.save(any())).thenAnswer(invocation -> {
+            OutboxEvent event = invocation.getArgument(0);
+            EventEnvelopeContractAssertions.assertValid(event.getPayload());
+            return event;
+        });
     }
 
     @Test
@@ -65,8 +70,10 @@ class TicketOutboxServiceTest {
         verify(repository, times(2)).save(captor.capture());
         assertThat(captor.getAllValues()).allSatisfy(event -> {
             assertThat(event.getEventType()).isEqualTo("ticketCreated");
+            EventEnvelopeContractAssertions.assertFullEventValid(event.getPayload());
             assertThat(event.getUpdateType()).isNull();
-            assertThat(event.getPayload().get("subject")).isEqualTo("tickets/" + event.getTicket().getId());
+            assertThat(event.getPayload().get("eventId")).isEqualTo(event.getEventId().toString());
+            assertThat(event.getPayload().get("occurredAt")).isEqualTo(NOW.toString());
             @SuppressWarnings("unchecked")
             Map<String, Object> data = (Map<String, Object>) event.getPayload().get("data");
             assertThat(data).containsEntry("publicId", event.getTicket().getPublicId())
@@ -116,6 +123,8 @@ class TicketOutboxServiceTest {
             @SuppressWarnings("unchecked")
             Map<String, Object> routing = (Map<String, Object>) details.get("routing");
             assertThat(routing).containsEntry("resolutionDueAt", RESOLUTION_DUE.toString());
+            // H10 is intentionally pending: envelope compliance does not imply valid ROUTED data.
+            EventEnvelopeContractAssertions.assertFullEventInvalid(event.getPayload());
         });
     }
 

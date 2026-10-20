@@ -243,7 +243,12 @@ class ResolutionSlaMilestoneServiceTest {
         assertEquals(TicketUpdatedType.ESCALATION_CHANGED, event.getUpdateType());
 
         Map<String, Object> payload = event.getPayload();
-        assertEquals("tickets/" + expectedTicket.getId(), payload.get("subject"));
+        EventEnvelopeContractAssertions.assertValid(payload);
+        EventEnvelopeContractAssertions.assertFullEventValid(payload);
+        assertEquals(event.getEventId().toString(), payload.get("eventId"));
+        assertEquals(PROCESSED.toString(), payload.get("occurredAt"));
+        assertNotEquals(expectedTicket.getId().toString(), payload.get("correlationId"));
+        assertNull(payload.get("causationId"));
         @SuppressWarnings("unchecked") Map<String, Object> data = (Map<String, Object>) payload.get("data");
         assertEquals(expectedTicket.getId(), data.get("ticketId"));
         assertEquals(expectedTicket.getPublicId(), data.get("publicId"));

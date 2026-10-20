@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://municipalidad-uade.example/m2/events/v1.76/envelope.schema.json",
+  "title": "Envelope común del Core (FAQ Core #1 y #15)",
+  "description": "Sobre oficial del Core para cualquier evento. NO SE ACEPTAN CAMPOS EXTRA: todo lo propio de cada módulo va en data, que el Core no interpreta. El Core agrega receivedAt por su cuenta; los productores no lo envían.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "eventId",
+    "eventType",
+    "occurredAt",
+    "sourceModule",
+    "data"
+  ],
+  "properties": {
+    "eventId": {
+      "$ref": "common.schema.json#/$defs/uuidV4",
+      "description": "Identificador del hecho: productor reutiliza eventId al reenviar el mismo hecho; consumidor deduplica. No presumir deduplicación del Core sin verificar."
+    },
+    "eventType": {
+      "type": "string",
+      "maxLength": 120,
+      "pattern": "^[a-z][A-Za-z0-9]*$",
+      "description": "Inglés y camelCase."
+    },
+    "eventVersion": {
+      "type": "string",
+      "maxLength": 20,
+      "default": "1.0",
+      "description": "Versión del contrato. Opcional; si se omite el Core asume \"1.0\"."
+    },
+    "occurredAt": {
+      "$ref": "common.schema.json#/$defs/dateTime",
+      "description": "Momento en que ocurrió en el módulo productor, ISO-8601 con offset obligatorio (Z o ±hh:mm). El Core registra aparte la recepción como receivedAt."
+    },
+    "sourceModule": {
+      "$ref": "common.schema.json#/$defs/moduleSlug"
+    },
+    "correlationId": {
+      "anyOf": [
+        {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Hilo del trámite. Si el evento sale de haber consumido otro, se copia el correlationId del consumido; si nace de una acción directa, se genera uno nuevo."
+    },
+    "causationId": {
+      "anyOf": [
+        {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "eventId del evento que disparó este, cuando corresponda."
+    },
+    "data": {
+      "type": "object",
+      "description": "Payload del módulo; libre para el Core."
+    }
+  }
+}

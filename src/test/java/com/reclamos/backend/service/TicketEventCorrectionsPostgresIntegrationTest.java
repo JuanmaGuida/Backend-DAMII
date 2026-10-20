@@ -11,6 +11,7 @@ import com.reclamos.backend.identity.AuthenticatedIdentity;
 import com.reclamos.backend.identity.ModuleRole;
 import com.reclamos.backend.repository.RequestTypeRepository;
 import com.reclamos.backend.repository.TicketRepository;
+import com.reclamos.backend.repository.OutboxEventRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -48,6 +49,9 @@ class TicketEventCorrectionsPostgresIntegrationTest {
     @Autowired private TicketSlaService sla;
     @Autowired private TransactionTemplate transactions;
     @Autowired private JdbcTemplate db;
+    @Autowired private TicketOutboxService outbox;
+    @Autowired private OutboxEventRepository outboxEvents;
+    @Autowired private org.springframework.transaction.PlatformTransactionManager transactionManager;
     private final List<UUID> ids = new ArrayList<>();
     private final List<UUID> eventIds = new ArrayList<>();
     private final List<UUID> citizenIds = new ArrayList<>();
@@ -219,14 +223,125 @@ class TicketEventCorrectionsPostgresIntegrationTest {
     }
 
     @Test
-    void slaEscalationDiscoveredDuringExternalResolutionStillPublishesItsOwnFact() {
+    void slaEscalationDiscoveredDuringExternalResolutionStillPublishesItsOwnFact() throws Exception {
         Ticket ticket = create(TicketStatus.ROUTED, false, "M6");
         Instant now = Instant.now();
         db.update("UPDATE ticket_sla SET started_at=?,near_due_at=?,due_at=? WHERE ticket_id=?",
                 java.sql.Timestamp.from(now.minusSeconds(300)), java.sql.Timestamp.from(now.minusSeconds(200)),
                 java.sql.Timestamp.from(now.minusSeconds(100)), ticket.getId());
-        updates.applyUpdate(ticket.getId(), envelope(ticket, UpdateTicketStatusType.RESOLVED, null));
+        var incoming = envelope(ticket, UpdateTicketStatusType.RESOLVED, null);
+        updates.applyUpdate(ticket.getId(), incoming);
         assertThat(eventTypes(ticket)).containsExactly("ESCALATION_CHANGED");
+        var payload = payloads(ticket).getFirst();
+        EventEnvelopeContractAssertions.assertValid(payload);
+        EventEnvelopeContractAssertions.assertFullEventValid(payload);
+        assertThat(payload).containsEntry("correlationId", null)
+                .containsEntry("causationId", incoming.eventId().toString());
+        var beforeReplay = snapshot(ticket);
+        updates.applyUpdate(ticket.getId(), incoming);
+        assertThat(snapshot(ticket)).isEqualTo(beforeReplay);
+        // A later direct action starts its own process; it must not inherit the external cause.
+        resolutions.confirm(ticket.getId(), owner(ticket));
+        var closed = payloads(ticket).getLast();
+        assertThat(closed.get("causationId")).isNull();
+        assertThat(UUID.fromString((String) closed.get("correlationId"))).isNotEqualTo(ticket.getId());
+    }
+
+    @Test
+    void outboxSnapshotSurvivesPersistenceFailedRetriesAndPublication() throws Exception {
+        Ticket ticket = create(TicketStatus.CLOSED, false, "M6");
+        Instant businessAt = Instant.now().minusSeconds(30);
+        transactions.executeWithoutResult(ignored ->
+                outbox.closed(tickets.findById(ticket.getId()).orElseThrow(), "CITIZEN_CONFIRMED", businessAt));
+        var original = payloads(ticket).getFirst();
+        EventEnvelopeContractAssertions.assertValid(original);
+        EventEnvelopeContractAssertions.assertFullEventValid(original);
+        assertThat(Instant.parse((String) original.get("occurredAt"))).isAfter(businessAt);
+        assertThat(original.get("eventId")).isNotEqualTo(original.get("correlationId"));
+        Long rowId = db.queryForObject("SELECT id FROM outbox_events WHERE ticket_id=?", Long.class, ticket.getId());
+        for (OutboxStatus status : List.of(OutboxStatus.FAILED, OutboxStatus.PENDING, OutboxStatus.PUBLISHED)) {
+            transactions.executeWithoutResult(ignored -> {
+                OutboxEvent row = outboxEvents.findById(rowId).orElseThrow();
+                assertThat(row.getPayload()).isEqualTo(original);
+                assertThat(row.getEventId().toString()).isEqualTo(original.get("eventId"));
+                row.setStatus(status);
+                row.setRetryCount(row.getRetryCount() + 1);
+                if (status == OutboxStatus.PUBLISHED) row.setPublishedAt(Instant.now());
+                outboxEvents.saveAndFlush(row);
+            });
+            assertThat(payloads(ticket)).containsExactly(original);
+        }
+    }
+
+    @Test
+    void directBatchSharesCorrelationAndRequiresNewTransactionIsIsolated() throws Exception {
+        Ticket first = create(TicketStatus.CLOSED, false, "M6");
+        Ticket second = create(TicketStatus.CLOSED, false, "M6");
+        Ticket independent = create(TicketStatus.CLOSED, false, "M6");
+        var requiresNew = new TransactionTemplate(transactionManager);
+        requiresNew.setPropagationBehavior(org.springframework.transaction.TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        transactions.executeWithoutResult(ignored -> {
+            outbox.closed(tickets.findById(first.getId()).orElseThrow(), "CITIZEN_CONFIRMED", Instant.now());
+            requiresNew.executeWithoutResult(nested ->
+                    outbox.closed(tickets.findById(independent.getId()).orElseThrow(), "CITIZEN_CONFIRMED", Instant.now()));
+            outbox.closed(tickets.findById(second.getId()).orElseThrow(), "CITIZEN_CONFIRMED", Instant.now());
+        });
+        var a = payloads(first).getFirst();
+        var b = payloads(second).getFirst();
+        var c = payloads(independent).getFirst();
+        assertThat(a.get("correlationId")).isEqualTo(b.get("correlationId")).isNotEqualTo(c.get("correlationId"));
+        for (var payload : List.of(a, b, c)) {
+            EventEnvelopeContractAssertions.assertValid(payload);
+            assertThat(payload.get("causationId")).isNull();
+        }
+    }
+
+    @Test
+    void outgoingTracePropagatesKnownIncomingCorrelationWithoutChangingDevInputContract() throws Exception {
+        Ticket ticket = create(TicketStatus.CLOSED, false, "M6");
+        UUID correlation = UUID.randomUUID();
+        UUID cause = UUID.randomUUID();
+        transactions.executeWithoutResult(ignored -> {
+            try (var scope = OutgoingEventEnvelope.incoming(correlation, cause)) {
+                outbox.closed(tickets.findById(ticket.getId()).orElseThrow(), "CITIZEN_CONFIRMED", Instant.now());
+            }
+        });
+        var payload = payloads(ticket).getFirst();
+        EventEnvelopeContractAssertions.assertValid(payload);
+        assertThat(payload).containsEntry("correlationId", correlation.toString()).containsEntry("causationId", cause.toString());
+    }
+
+    @Test
+    void rollbackKeepsBusinessAndOutboxAtomicAndDoesNotLeakTrace() throws Exception {
+        Ticket ticket = create(TicketStatus.CLOSED, false, "M6");
+        UUID rolledBackCorrelation = UUID.randomUUID();
+        assertThatThrownBy(() -> transactions.executeWithoutResult(ignored -> {
+            try (var scope = OutgoingEventEnvelope.incoming(rolledBackCorrelation, UUID.randomUUID())) {
+                Ticket managed = tickets.findById(ticket.getId()).orElseThrow();
+                managed.setSummary("must roll back");
+                outbox.closed(managed, "CITIZEN_CONFIRMED", Instant.now());
+                outboxEvents.flush();
+                throw new IllegalStateException("forced rollback");
+            }
+        })).isInstanceOf(IllegalStateException.class);
+        assertThat(count("outbox_events", ticket)).isZero();
+        assertThat(db.queryForObject("SELECT summary FROM tickets WHERE id=?", String.class, ticket.getId()))
+                .isEqualTo(ticket.getSummary());
+        transactions.executeWithoutResult(ignored ->
+                outbox.closed(tickets.findById(ticket.getId()).orElseThrow(), "CITIZEN_CONFIRMED", Instant.now()));
+        var payload = payloads(ticket).getFirst();
+        assertThat(payload.get("causationId")).isNull();
+        assertThat(payload.get("correlationId")).isNotEqualTo(rolledBackCorrelation.toString());
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> payloads(Ticket ticket) throws Exception {
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (String json : db.queryForList("SELECT payload::text FROM outbox_events WHERE ticket_id=? ORDER BY id",
+                String.class, ticket.getId())) {
+            result.add(new ObjectMapper().readValue(json, Map.class));
+        }
+        return result;
     }
 
     private List<String> eventTypes(Ticket ticket) {

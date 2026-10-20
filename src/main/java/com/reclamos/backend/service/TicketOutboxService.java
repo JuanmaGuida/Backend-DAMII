@@ -12,7 +12,6 @@ import com.reclamos.backend.entity.TicketLocation;
 import com.reclamos.backend.entity.TicketUpdatedType;
 import com.reclamos.backend.repository.OutboxEventRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,12 +31,6 @@ public class TicketOutboxService {
     private final OutboxEventRepository outboxEventRepository;
     private final Clock clock;
     private final AttachmentReferenceService attachmentReferenceService;
-
-    @Value("${app.events.producer.module-id:M2}")
-    private String producerModuleId = MODULE_ID;
-
-    @Value("${app.events.producer.service:help-center-api}")
-    private String producerService = "help-center-api";
 
     @Transactional(propagation = Propagation.MANDATORY)
     public void ticketCreated(Ticket ticket, TicketLocation location, List<Attachment> attachments,
@@ -220,18 +213,7 @@ public class TicketOutboxService {
                       Map<String, Object> data) {
         UUID eventId = UUID.randomUUID();
         Instant occurredAt = clock.instant();
-        Map<String, Object> producer = new LinkedHashMap<>();
-        producer.put("moduleId", producerModuleId);
-        producer.put("service", producerService);
-
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("specVersion", "1.0");
-        payload.put("eventId", eventId.toString());
-        payload.put("eventType", eventType);
-        payload.put("occurredAt", occurredAt.toString());
-        payload.put("producer", producer);
-        payload.put("subject", "tickets/" + ticket.getId());
-        payload.put("data", data);
+        Map<String, Object> payload = OutgoingEventEnvelope.create(eventId, eventType, occurredAt, data);
 
         OutboxEvent event = new OutboxEvent();
         event.setEventId(eventId);
