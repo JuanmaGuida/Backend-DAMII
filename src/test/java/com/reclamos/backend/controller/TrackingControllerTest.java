@@ -121,7 +121,7 @@ class TrackingControllerTest {
     void accessWithPasswordRequiresAnonymousCredentialsAndKeepsTheSameReadOnlyResponse() throws Exception {
         when(anonymousTicketAccessService.authenticate(CODE, "correct-password"))
                 .thenReturn(new AnonymousTicketAccessService.AnonymousTicketAccess(UUID.randomUUID()));
-        when(trackingService.findByTrackingCode(CODE)).thenReturn(response());
+        when(trackingService.findAnonymousByAccess(org.mockito.ArgumentMatchers.any())).thenReturn(response());
 
         mockMvc.perform(post("/api/tracking/access")
                         .contentType(MediaType.APPLICATION_JSON)

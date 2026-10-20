@@ -19,7 +19,8 @@ class InformationRequestProjectionServiceTest {
             mock(InformationRequestAttachmentRepository.class);
     private final AttachmentReferenceService attachmentReferenceService = mock(AttachmentReferenceService.class);
     private final InformationRequestProjectionService service =
-            new InformationRequestProjectionService(requests, attachments, attachmentReferenceService);
+            new InformationRequestProjectionService(requests, attachments, attachmentReferenceService,
+                    mock(com.reclamos.backend.repository.TicketReclassificationProposalRepository.class), mock(ReclassificationDataService.class));
 
     @Test
     void pendingProjectionExposesOnlyPublicRequestContextToCitizenAndKeepsStaffContext() {

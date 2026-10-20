@@ -85,6 +85,8 @@ public class SecurityConfiguration {
                         .requestMatchers(HttpMethod.DELETE, "/api/staff/tickets/*/labels/*").hasAnyRole("AGENT", "ADMIN")
                         .requestMatchers(HttpMethod.POST, "/api/staff/tickets/*/labels").hasAnyRole("AGENT", "ADMIN")
                         .requestMatchers(HttpMethod.DELETE, "/api/staff/tickets/*/labels/*").hasAnyRole("AGENT", "ADMIN")
+                        .requestMatchers("/api/staff/tickets/*/reclassification-proposals/**",
+                                "/api/staff/tickets/*/reclassification-proposals").hasAnyRole("AGENT", "ADMIN")
                         .requestMatchers(HttpMethod.GET, "/api/staff/tickets/*/duplicate-candidates")
                         .hasAnyRole("AGENT", "ADMIN")
                         // GET /me/tickets (Entidades V1.49): listado propio del ciudadano.

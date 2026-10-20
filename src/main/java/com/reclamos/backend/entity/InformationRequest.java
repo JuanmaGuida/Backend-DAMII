@@ -19,6 +19,10 @@ public class InformationRequest {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 30)
+    private InformationRequestPurpose purpose = InformationRequestPurpose.GENERAL;
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "ticket_id", nullable = false,
             foreignKey = @ForeignKey(name = "fk_information_request_ticket"))

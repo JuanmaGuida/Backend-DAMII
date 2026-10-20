@@ -39,6 +39,7 @@ import static org.assertj.core.api.Assertions.*;
 @ActiveProfiles("dev")
 class TicketAffectedCountPostgresIntegrationTest {
     @Autowired private TicketService service;
+    @Autowired private TicketReclassificationService reclassification;
     @Autowired private JdbcTemplate db;
     @Autowired private TransactionTemplate transactions;
     @Autowired private EntityManager entityManager;
@@ -65,6 +66,7 @@ class TicketAffectedCountPostgresIntegrationTest {
     @AfterEach
     void cleanUp() {
         for (UUID id : ticketIds) {
+            db.update("DELETE FROM ticket_reclassification_proposals WHERE ticket_id=?",id);
             for (String table : List.of("notification_logs", "outbox_events", "ticket_activities", "ticket_sla",
                     "ticket_locations")) {
                 db.update("DELETE FROM " + table + " WHERE ticket_id=?", id);
@@ -125,7 +127,8 @@ class TicketAffectedCountPostgresIntegrationTest {
             UUID id = create(anonymous, data);
             assertThat(count(id)).isZero();
             service.startReview(id, agent());
-            assertThat(service.correctClassification(id, target, agent()).getEstimatedAffectedCount()).isZero();
+            reclassify(id, target, agent());
+            assertThat(service.getStaffDetail(id, agent()).getEstimatedAffectedCount()).isZero();
             assertThat(count(id)).isZero();
         }
     }
@@ -149,13 +152,13 @@ class TicketAffectedCountPostgresIntegrationTest {
         var originalOther = ticket(other);
         Long confirmedType = type("0.5000");
 
-        var response = service.correctClassification(id, confirmedType,
-                anonymous ? agent() : identity(UUID.randomUUID(), ModuleRole.ADMIN));
+        reclassify(id, confirmedType, anonymous ? agent() : identity(UUID.randomUUID(), ModuleRole.ADMIN));
+        var response = service.getStaffDetail(id, agent());
 
         assertThat(count(id)).isEqualTo(6956);
         assertThat(response.getEstimatedAffectedCount()).isEqualTo(6956);
         assertThat(ticket(id)).containsEntry("request_type_id", confirmedType).containsEntry("current_priority", "MEDIUM")
-                .containsEntry("current_status", "IN_REVIEW");
+                .containsEntry("current_status", "ROUTED");
         var currentCycles = sla(id);
         assertThat(currentCycles).extracting(cycle -> cycle.get("id"))
                 .containsExactlyElementsOf(originalCycles.stream().map(cycle -> cycle.get("id")).toList());
@@ -222,12 +225,18 @@ class TicketAffectedCountPostgresIntegrationTest {
         var before = snapshot(id);
 
         assertThatThrownBy(() -> transactions.executeWithoutResult(status -> {
-            service.correctClassification(id, target, agent());
+            reclassify(id, target, agent());
             entityManager.flush();
             assertThat(count(id)).isEqualTo(13912);
             throw new IllegalStateException("H07 simulated late failure");
         })).isInstanceOf(IllegalStateException.class).hasMessage("H07 simulated late failure");
         assertThat(snapshot(id)).isEqualTo(before);
+    }
+
+    private void reclassify(UUID id, Long target, AuthenticatedIdentity actor) {
+        var p = reclassification.propose(id,
+                new com.reclamos.backend.dto.request.ProposeReclassificationRequest(target, null, null), actor);
+        reclassification.confirm(id, p.id(), actor);
     }
 
     private Long type(String factor) {
@@ -274,7 +283,8 @@ class TicketAffectedCountPostgresIntegrationTest {
         return List.of(ticket(id), sla(id),
                 db.queryForList("SELECT * FROM ticket_locations WHERE ticket_id=?", id),
                 db.queryForList("SELECT * FROM ticket_activities WHERE ticket_id=? ORDER BY sequence", id),
-                db.queryForList("SELECT * FROM outbox_events WHERE ticket_id=? ORDER BY created_at,id", id));
+                db.queryForList("SELECT * FROM outbox_events WHERE ticket_id=? ORDER BY created_at,id", id),
+                db.queryForList("SELECT * FROM ticket_reclassification_proposals WHERE ticket_id=? ORDER BY id", id));
     }
 
     private List<Long> tableCounts() {

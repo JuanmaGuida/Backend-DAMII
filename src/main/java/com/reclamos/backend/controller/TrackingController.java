@@ -42,8 +42,9 @@ public class TrackingController {
             produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<TrackingTicketResponse> access(@Valid @RequestBody TrackingAccessRequest request) {
         if (request.getAnonymousAccessPassword() != null) {
-            anonymousTicketAccessService.authenticate(
+            var access = anonymousTicketAccessService.authenticate(
                     request.getTrackingCode(), request.getAnonymousAccessPassword());
+            return noStore(trackingService.findAnonymousByAccess(access.ticketId()));
         }
         return noStore(trackingService.findByTrackingCode(request.getTrackingCode()));
     }

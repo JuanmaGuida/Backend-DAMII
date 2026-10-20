@@ -76,6 +76,8 @@ import static org.mockito.Mockito.when;
 class TicketServiceTest {
     private static final Instant NOW = Instant.parse("2026-09-04T12:00:00Z");
 
+    @Mock private TicketReclassificationProposalRepository reclassificationProposals;
+    @Mock private ReclassificationDataService reclassificationDataService;
     @Mock
     private RequestTypeRepository requestTypes;
     @Mock
@@ -879,83 +881,24 @@ class TicketServiceTest {
     }
 
     // ==================================================================
+    // Effective reclassification assertions moved to TicketReclassificationPostgresIntegrationTest:
+    // the legacy operation must now reject changes without persisting an incomplete classification.
+    @Test
+    void legacyClassificationRejectsChangedTypeWithoutEffects() {
+        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.LOW);
+        var answers = new HashMap<>(ticket.getFormData());
+        var original = ticket.getRequestType();
+        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+        assertThatThrownBy(() -> service.correctClassification(ticketId, 999L, actor))
+                .isInstanceOf(TicketStateConflictException.class).hasMessageContaining("reclassification-proposals");
+        assertThat(ticket.getRequestType()).isSameAs(original);
+        assertThat(ticket.getFormData()).isEqualTo(answers);
+        verify(tickets, never()).save(any());
+        verifyNoInteractions(ticketOutboxService);
+    }
+
     // ---- correctClassification (Sprint 2) ----
     // ==================================================================
-
-    @Test
-    void correctClassificationRecalculatesAreaAffectedCountFormTemplateAndPriorityFromNewRequestType() {
-        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.LOW);
-        Instant slaStart = NOW.minus(Duration.ofHours(1));
-        ticket.setCreatedAt(slaStart);
-        String originalPublicId = ticket.getPublicId();
-        // formData del RequestType viejo no debe sobrevivir a la reclasificación
-        // — ver assertion de formData al final del test.
-        ticket.setFormData(new HashMap<>(Map.of("waterHeight", 35)));
-        Neighborhood neighborhood = new Neighborhood();
-        neighborhood.setId(UUID.randomUUID());
-        neighborhood.setName("Palermo");
-        neighborhood.setPopulation(200_000);
-        TicketLocation location = new TicketLocation();
-        location.setNeighborhood(neighborhood);
-
-        // minimumPriority HIGH con baseRisk LOW: la prioridad final tiene que
-        // quedar en HIGH por el piso de minimumPriority, no por la
-        // currentPriority anterior del ticket (que acá es LOW, más baja).
-        RequestType newRequestType = requestTypeSprint2(20L, "FLOODING", "obras-hidraulicas",
-                Priority.HIGH, Risk.LOW, new BigDecimal("0.1000"));
-        FormTemplate newFormTemplate = new FormTemplate();
-        newFormTemplate.setId(99L);
-
-        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
-        when(requestTypes.findById(20L)).thenReturn(Optional.of(newRequestType));
-        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.of(location));
-        when(activities.countByTicketId(ticketId)).thenReturn(0);
-        when(forms.resolveActiveTemplate(newRequestType)).thenReturn(newFormTemplate);
-        TicketSla resolutionSla = new TicketSla();
-        Instant dueAt = NOW.plus(Duration.ofHours(24));
-        resolutionSla.setDueAt(dueAt);
-        when(ticketSlaService.recalculateInitialResolutionCycle(ticket, NOW))
-                .thenReturn(Optional.of(resolutionSla));
-
-        TicketResponse response = service.correctClassification(ticketId, 20L, actor);
-
-        assertThat(ticket.getResponsibleAreaId()).isEqualTo("obras-hidraulicas");
-        assertThat(ticket.getPublicId()).isEqualTo(originalPublicId);
-        assertThat(ticket.getEstimatedAffectedCount()).isEqualTo(20_000);
-        assertThat(ticket.getCurrentPriority()).isEqualTo(Priority.HIGH);
-        assertThat(ticket.getFormTemplateId()).isEqualTo(99L);
-        assertThat(response.getRequestTypeCode()).isEqualTo("FLOODING");
-        assertThat(ticket.getFormData()).isEmpty();
-        ArgumentCaptor<TicketActivity> activityCaptor = ArgumentCaptor.forClass(TicketActivity.class);
-        verify(activities).save(activityCaptor.capture());
-        assertThat(activityCaptor.getValue().getActorType()).isEqualTo(ActorType.AGENT);
-        assertThat(activityCaptor.getValue().getActorId()).isEqualTo(actor.citizenId().toString());
-        verify(ticketSlaService).recalculateInitialResolutionCycle(ticket, NOW);
-        verify(ticketSlaService, never()).startFirstResponseCycle(any(), any());
-        verify(ticketSlaService, never()).completeFirstResponseCycle(any(), any());
-        verify(ticketOutboxService).contentUpdated(ticket, dueAt, NOW);
-    }
-
-    @Test
-    void correctClassificationRecordsAdminAsActorTypeWhenActorIsAdmin() {
-        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.LOW);
-        AuthenticatedIdentity admin = new AuthenticatedIdentity(
-                "admin-1", UUID.randomUUID(), "Admin Uno", null, ModuleRole.ADMIN);
-        RequestType newRequestType = requestTypeSprint2(20L, "FLOODING", "obras-hidraulicas",
-                Priority.MEDIUM, new BigDecimal("0.1000"));
-
-        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
-        when(requestTypes.findById(20L)).thenReturn(Optional.of(newRequestType));
-        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
-        when(activities.countByTicketId(ticketId)).thenReturn(0);
-
-        service.correctClassification(ticketId, 20L, admin);
-
-        ArgumentCaptor<TicketActivity> activityCaptor = ArgumentCaptor.forClass(TicketActivity.class);
-        verify(activities).save(activityCaptor.capture());
-        assertThat(activityCaptor.getValue().getActorType()).isEqualTo(ActorType.ADMIN);
-        assertThat(activityCaptor.getValue().getActorId()).isEqualTo(admin.citizenId().toString());
-    }
 
     @Test
     void sameClassificationDoesNotWriteOrPublishContentUpdated() {
@@ -963,7 +906,6 @@ class TicketServiceTest {
         ticket.setEstimatedAffectedCount(3478);
         RequestType current = ticket.getRequestType();
         when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
-        when(requestTypes.findById(current.getId())).thenReturn(Optional.of(current));
         when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
 
         service.correctClassification(ticketId, current.getId(), actor);
@@ -973,97 +915,6 @@ class TicketServiceTest {
         verify(activities, never()).save(any());
         verify(ticketOutboxService, never()).contentUpdated(any(), any(), any());
         verify(ticketSlaService, never()).recalculateInitialResolutionCycle(any(), any());
-    }
-
-    /**
-     * Guía funcional §3 ("REGLA DE EVOLUCIÓN"): el piso de "nunca baja" sólo
-     * aplica a la recalculación periódica automática (por edad/SLA); una
-     * corrección de RequestType durante la primera IN_REVIEW todavía forma
-     * parte de la clasificación inicial y puede bajar la prioridad.
-     */
-    @Test
-    void correctClassificationCanLowerPriorityWhenNewRequestTypeHasLowerMinimumAndBaseRisk() {
-        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.CRITICAL);
-        Instant originalEscalatedAt = NOW.minusSeconds(1800);
-        ticket.setEscalated(true);
-        ticket.setEscalationReasonCode(EscalationReasonCode.CRITICAL_PRIORITY);
-        ticket.setEscalatedAt(originalEscalatedAt);
-        RequestType newRequestType = requestTypeSprint2(20L, "FLOODING", "obras-hidraulicas",
-                Priority.LOW, Risk.LOW, new BigDecimal("0.1000"));
-
-        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
-        when(requestTypes.findById(20L)).thenReturn(Optional.of(newRequestType));
-        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
-        when(activities.countByTicketId(ticketId)).thenReturn(0);
-
-        service.correctClassification(ticketId, 20L, actor);
-
-        assertThat(ticket.getCurrentPriority()).isEqualTo(Priority.LOW);
-        assertThat(ticket.isEscalated()).isFalse();
-        assertThat(ticket.getEscalationReasonCode()).isNull();
-        assertThat(ticket.getEscalatedAt()).isNull();
-    }
-
-    @Test
-    void correctClassificationActivatesCriticalEscalationOnceWithoutChangingStatus() {
-        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.LOW);
-        RequestType newRequestType = requestTypeSprint2(20L, "CRITICAL_TYPE", "M6",
-                Priority.CRITICAL, Risk.CRITICAL, new BigDecimal("0.1000"));
-        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
-        when(requestTypes.findById(20L)).thenReturn(Optional.of(newRequestType));
-        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
-        when(activities.countByTicketId(ticketId)).thenReturn(3, 4);
-
-        TicketResponse response = service.correctClassification(ticketId, 20L, actor);
-
-        assertThat(response.getCurrentStatus()).isEqualTo(TicketStatus.IN_REVIEW);
-        assertThat(ticket.isEscalated()).isTrue();
-        assertThat(ticket.getEscalationReasonCode()).isEqualTo(EscalationReasonCode.CRITICAL_PRIORITY);
-        assertThat(ticket.getEscalatedAt()).isEqualTo(NOW);
-        ArgumentCaptor<TicketActivity> captor = ArgumentCaptor.forClass(TicketActivity.class);
-        verify(activities, times(2)).save(captor.capture());
-        assertThat(captor.getAllValues()).extracting(TicketActivity::getActionType)
-                .containsExactly(ActivityType.REQUEST_TYPE_CHANGED, ActivityType.ESCALATED);
-        assertThat(captor.getAllValues().get(1).getSequence()).isEqualTo(5);
-        assertThat(captor.getAllValues().get(1).getActorType()).isEqualTo(ActorType.SYSTEM);
-        assertThat(captor.getAllValues().get(1).getActorId()).isNull();
-    }
-
-    @Test
-    void correctClassificationDoesNotRestartExistingCriticalEscalation() {
-        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.CRITICAL);
-        Instant originalEscalatedAt = NOW.minusSeconds(3600);
-        ticket.setEscalated(true);
-        ticket.setEscalationReasonCode(EscalationReasonCode.CRITICAL_PRIORITY);
-        ticket.setEscalatedAt(originalEscalatedAt);
-        RequestType newRequestType = requestTypeSprint2(20L, "CRITICAL_TYPE", "M6",
-                Priority.CRITICAL, Risk.CRITICAL, new BigDecimal("0.1000"));
-        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
-        when(requestTypes.findById(20L)).thenReturn(Optional.of(newRequestType));
-        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
-
-        service.correctClassification(ticketId, 20L, actor);
-
-        assertThat(ticket.getEscalatedAt()).isEqualTo(originalEscalatedAt);
-        assertThat(ticket.getEscalationReasonCode()).isEqualTo(EscalationReasonCode.CRITICAL_PRIORITY);
-        verify(activities).save(argThat(activity -> activity.getActionType() == ActivityType.REQUEST_TYPE_CHANGED));
-        verify(activities, never()).save(argThat(activity -> activity.getActionType() == ActivityType.ESCALATED));
-    }
-
-    @Test
-    void correctClassificationWithoutLocationEstimatesZeroAffectedCount() {
-        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.LOW);
-        RequestType newRequestType = requestTypeSprint2(20L, "FLOODING", "obras-hidraulicas",
-                Priority.MEDIUM, new BigDecimal("0.1000"));
-
-        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
-        when(requestTypes.findById(20L)).thenReturn(Optional.of(newRequestType));
-        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
-        when(activities.countByTicketId(ticketId)).thenReturn(0);
-
-        service.correctClassification(ticketId, 20L, actor);
-
-        assertThat(ticket.getEstimatedAffectedCount()).isZero();
     }
 
     @Test
@@ -1110,70 +961,6 @@ class TicketServiceTest {
 
         assertThatThrownBy(() -> service.correctClassification(ticketId, 20L, actor))
                 .isInstanceOf(TicketStateConflictException.class);
-    }
-
-    @Test
-    void correctClassificationRejectsInactiveOrMissingRequestType() {
-        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.LOW);
-
-        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
-        when(requestTypes.findById(99L)).thenReturn(Optional.empty());
-
-        assertThatThrownBy(() -> service.correctClassification(ticketId, 99L, actor))
-                .isInstanceOf(ResourceNotFoundException.class);
-    }
-
-    /**
-     * QA FAIL (Sprint 2): la corrección de clasificación no publicaba
-     * ticketUpdated/CONTENT_UPDATED al reclasificar un ticket identificado
-     * (Eventos V1.69 §7.2/§7.7).
-     */
-    @Test
-    void correctClassificationPublishesContentUpdatedEventForIdentifiedTicket() {
-        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.LOW);
-        String originalPublicId = ticket.getPublicId();
-        // QA: data.updatedAt no puede salir de ticket.getUpdatedAt() — es
-        // @UpdateTimestamp (Hibernate) y todavía tiene el valor viejo en este
-        // punto de la transacción (recién se refresca en el flush). Se fija
-        // un valor viejo a propósito para que el test falle si se vuelve a
-        // leer ese campo en vez de usar "now".
-        ticket.setUpdatedAt(Instant.parse("2020-01-01T00:00:00Z"));
-        RequestType newRequestType = requestTypeSprint2(20L, "FLOODING", "obras-hidraulicas",
-                Priority.MEDIUM, new BigDecimal("0.1000"));
-
-        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
-        when(requestTypes.findById(20L)).thenReturn(Optional.of(newRequestType));
-        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
-        when(activities.countByTicketId(ticketId)).thenReturn(0);
-
-        service.correctClassification(ticketId, 20L, actor);
-
-        assertThat(ticket.getPublicId()).isEqualTo(originalPublicId);
-        verify(ticketOutboxService, times(1)).contentUpdated(ticket, null, NOW);
-    }
-
-    /**
-     * Eventos V1.69 §2.1 ("Anónimo · REGISTERED/IN_REVIEW/DUPLICATE" -&gt; sin
-     * ticketUpdated): un ticket anónimo nunca tiene consumidor M1, así que la
-     * reclasificación no debe publicar nada, a diferencia de routeToArea
-     * (ver routeToAreaSkipsOutboxWhenAreaIsSelfManaged, que es un gate
-     * distinto: ahí lo que importa es el área, no el anonimato).
-     */
-    @Test
-    void correctClassificationSkipsOutboxEventForAnonymousTicket() {
-        Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.LOW);
-        ticket.setAnonymous(true);
-        RequestType newRequestType = requestTypeSprint2(20L, "FLOODING", "obras-hidraulicas",
-                Priority.MEDIUM, new BigDecimal("0.1000"));
-
-        when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
-        when(requestTypes.findById(20L)).thenReturn(Optional.of(newRequestType));
-        when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
-        when(activities.countByTicketId(ticketId)).thenReturn(0);
-
-        service.correctClassification(ticketId, 20L, actor);
-
-        verify(ticketOutboxService, times(1)).contentUpdated(ticket, null, NOW);
     }
 
     // ==================================================================

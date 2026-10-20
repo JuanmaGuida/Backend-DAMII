@@ -23,6 +23,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 class InformationRequestExpirationServiceTest {
+    private final ReclassificationDataService reclassification = mock(ReclassificationDataService.class);
     private static final Instant NOW = Instant.parse("2026-09-10T12:00:00Z");
     private final TicketRepository tickets = mock(TicketRepository.class);
     private final InformationRequestRepository requests = mock(InformationRequestRepository.class);
@@ -31,13 +32,13 @@ class InformationRequestExpirationServiceTest {
     private final TicketSlaService ticketSlaService = mock(TicketSlaService.class);
     private final TicketOutboxService outbox = mock(TicketOutboxService.class);
     private final InformationRequestExpirationService service = new InformationRequestExpirationService(
-            tickets, requests, cancellations, activities, ticketSlaService, outbox);
+            tickets, requests, cancellations, activities, ticketSlaService, outbox, reclassification);
     private Ticket ticket;
     private InformationRequest request;
 
     @BeforeEach
     void setUp() {
-        reset(tickets, requests, cancellations, activities, ticketSlaService, outbox);
+        reset(tickets, requests, cancellations, activities, ticketSlaService, outbox, reclassification);
         ticket = new Ticket();
         ticket.setId(UUID.randomUUID());
         ticket.setCurrentStatus(TicketStatus.PENDING_INFORMATION);
@@ -94,6 +95,6 @@ class InformationRequestExpirationServiceTest {
         assertEquals(TicketStatus.PENDING_INFORMATION, ticket.getCurrentStatus());
         verify(requests, never()).save(any());
         verify(tickets, never()).save(any());
-        verifyNoInteractions(cancellations, activities, ticketSlaService, outbox);
+        verifyNoInteractions(cancellations, activities, ticketSlaService, outbox, reclassification);
     }
 }

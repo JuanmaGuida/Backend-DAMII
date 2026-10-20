@@ -26,6 +26,7 @@ import static org.assertj.core.api.Assertions.*;
 @ActiveProfiles("dev")
 class TicketPriorityPostgresIntegrationTest {
     @Autowired TicketService creation;
+    @Autowired TicketReclassificationService reclassification;
     @Autowired TicketPriorityService priorities;
     @Autowired TicketSlaMilestoneService milestones;
     @Autowired TicketSlaService lifecycle;
@@ -47,6 +48,7 @@ class TicketPriorityPostgresIntegrationTest {
     }
     @AfterEach void cleanup() {
         for(UUID id:ids) {
+            db.update("DELETE FROM ticket_reclassification_proposals WHERE ticket_id=?",id);
             db.update("UPDATE tickets SET main_ticket_id=NULL WHERE id=?",id);
             for(String table:List.of("notification_logs","outbox_events","ticket_activities","ticket_sla","ticket_locations"))
                 db.update("DELETE FROM "+table+" WHERE ticket_id=?",id);
@@ -167,7 +169,10 @@ class TicketPriorityPostgresIntegrationTest {
     @Test void initialReclassificationRemovesCriticalAndDefersPublicationUntilRouting() {
         UUID id=create(false,type("LOW","CRITICAL","0"));
         creation.startReview(id,identity(agent,ModuleRole.AGENT));
-        creation.correctClassification(id,type("LOW","LOW","0"),identity(agent,ModuleRole.AGENT));
+        var proposal = reclassification.propose(id,
+                new com.reclamos.backend.dto.request.ProposeReclassificationRequest(type("LOW","LOW","0"), null, null),
+                identity(agent,ModuleRole.AGENT));
+        reclassification.confirm(id, proposal.id(), identity(agent,ModuleRole.AGENT));
         assertThat(ticket(id)).containsEntry("current_priority","LOW").containsEntry("is_escalated",false)
                 .containsEntry("escalation_reason_code",null).containsEntry("escalated_at",null);
         assertThat(activities(id,"ESCALATED")).isEqualTo(1); assertThat(events(id,"ESCALATION_CHANGED")).isZero();

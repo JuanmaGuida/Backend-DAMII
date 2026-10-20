@@ -75,11 +75,15 @@ public class TicketOutboxService {
 
     @Transactional(propagation = Propagation.MANDATORY)
     public void routed(Ticket ticket, TicketLocation location, Instant resolutionDueAt, Instant updatedAt) {
-        if (isSelfManaged(ticket)) {
-            return;
-        }
+        routed(ticket, location, resolutionDueAt, updatedAt, false);
+    }
 
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void routed(Ticket ticket, TicketLocation location, Instant resolutionDueAt, Instant updatedAt,
+                       boolean reassignment) {
+        if (isSelfManaged(ticket)) return;
         Map<String, Object> routing = routingSnapshot(ticket, location, resolutionDueAt);
+        routing.put("reassignment", reassignment);
         // ROUTED starts management: PUBLIC evidence accumulated on this ticket is relevant.
         // Incremental events continue to use only the attachments supplied by their caller.
         List<Attachment> attachments = attachmentRepository
@@ -89,7 +93,7 @@ public class TicketOutboxService {
                 eventAttachments(attachments), updatedAt);
     }
 
-    /** Snapshot of the confirmed ticket, reusable when exceptional reassignment is implemented. */
+    /** Shared snapshot for initial routing and confirmed exceptional reassignment. */
     private Map<String, Object> routingSnapshot(Ticket ticket, TicketLocation location, Instant resolutionDueAt) {
         RequestType requestType = ticket.getRequestType();
         Map<String, Object> routing = new LinkedHashMap<>();
@@ -103,7 +107,7 @@ public class TicketOutboxService {
         routing.put("location", eventLocation(location));
         routing.put("resolutionDueAt", instant(resolutionDueAt));
         routing.put("escalation", eventEscalation(ticket));
-        // The current routing operation is initial; a future approved reassignment must set true.
+        // The caller overrides this flag only for a confirmed exceptional proposal.
         routing.put("reassignment", false);
         return routing;
     }
@@ -139,6 +143,22 @@ public class TicketOutboxService {
         request.put("requiredBy", instant(requiredBy));
         saveUpdated(ticket, TicketUpdatedType.INFORMATION_REQUIRED, messageForCitizen,
                 Map.of("informationRequest", request), List.of(), updatedAt);
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void reclassificationInformationRequired(Ticket ticket, String message, Instant dueAt, Instant now) {
+        if (ticket.isAnonymous()) return;
+        saveUpdated(ticket, TicketUpdatedType.INFORMATION_REQUIRED, message,
+                Map.of("informationRequest", Map.of("messageForCitizen", message,
+                        "requiredBy", dueAt.toString(), "purpose", "RECLASSIFICATION")), List.of(), now);
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void reclassificationInformationProvided(Ticket ticket, Instant now) {
+        if (ticket.isAnonymous()) return;
+        String message = "El ciudadano completó la información para revisión de la clasificación.";
+        saveUpdated(ticket, TicketUpdatedType.INFORMATION_PROVIDED, message,
+                Map.of("informationResponse", Map.of("message", message, "purpose", "RECLASSIFICATION")), List.of(), now);
     }
 
     @Transactional(propagation = Propagation.MANDATORY)

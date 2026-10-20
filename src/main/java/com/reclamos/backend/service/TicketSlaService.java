@@ -130,6 +130,15 @@ public class TicketSlaService {
         return Optional.of(cycle);
     }
 
+    public Optional<TicketSla> startReclassifiedResolutionCycle(Ticket ticket, Instant confirmedAt) {
+        terminateActiveCycle(ticket, SlaType.RESOLUTION, confirmedAt);
+        slaRepository.flush(); // Release the partial unique active-cycle index before inserting its successor.
+        Optional<SlaCalculationService.SlaSchedule> schedule = calculationService.calculateResolutionSchedule(
+                confirmedAt, ticket.getCurrentPriority(), ticket.getTicketType());
+        int next = slaRepository.findMaxCycleNumber(ticket.getId(), SlaType.RESOLUTION).orElse(0) + 1;
+        return schedule.map(value -> createCycle(ticket, SlaType.RESOLUTION, next, confirmedAt, value));
+    }
+
     public Optional<TicketSla> findLatestResolutionCycle(Ticket ticket) {
         return findLatestCycle(ticket, SlaType.RESOLUTION);
     }

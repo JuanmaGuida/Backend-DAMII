@@ -36,7 +36,7 @@ class DuplicateTicketServiceTest {
     @BeforeEach
     void setUp() {
         service = new DuplicateTicketService(tickets, activities, sla, outbox, ticketService,
-                Clock.fixed(now, ZoneOffset.UTC));
+                Clock.fixed(now, ZoneOffset.UTC), mock(com.reclamos.backend.repository.TicketReclassificationProposalRepository.class));
         agent = new AuthenticatedIdentity("agent", UUID.randomUUID(), "Agent", "M2", ModuleRole.AGENT);
         when(activities.countByTicketId(any())).thenReturn(1);
     }

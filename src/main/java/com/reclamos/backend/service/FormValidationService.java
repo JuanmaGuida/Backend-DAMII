@@ -34,7 +34,7 @@ public class FormValidationService {
     /**
      * Only answers belonging to the ticket's confirmed template version may enter ROUTED.
      * Do not resolve the currently active version or serialize field/config/risk metadata.
-     * Empty answers remain valid after an initial classification correction.
+     * Final confirmation validates required answers before this snapshot is published.
      */
     public Map<String, Object> snapshotAnswers(Ticket ticket) {
         Map<String, Object> answers = ticket.getFormData();
@@ -83,51 +83,50 @@ public class FormValidationService {
             }
             return new ResolvedForm(null, List.of(), data);
         }
-        List<FormField> fields = formFieldRepository
-                .findAllByFormTemplate_IdOrderByDisplayOrderAsc(template.getId());
+        return validateTemplate(template, data, true);
+    }
+
+    public ResolvedForm resolveVersion(RequestType type, Long templateId, Map<String, Object> data, boolean complete) {
+        // Partial inspection remains available if an administrator disables the proposed type.
+        // Creation checks activity under its type lock; answers/confirmation require complete validation.
+        if (type == null || complete && !type.isActive()) {
+            throw new FormValidationException("El Request Type seleccionado está inactivo");
+        }
+        FormTemplate template = templateId == null ? null : formTemplateRepository.findById(templateId)
+                .filter(t -> t.getRequestType().getId().equals(type.getId()))
+                .orElseThrow(() -> new FormValidationException("La versión de formulario no corresponde al tipo"));
+        if (template == null) {
+            if (data != null && !data.isEmpty()) throw new FormValidationException("El tipo no posee formulario");
+            return new ResolvedForm(null, List.of(), Map.of());
+        }
+        return validateTemplate(template, data == null ? Map.of() : data, complete);
+    }
+
+    private ResolvedForm validateTemplate(FormTemplate template, Map<String, Object> data, boolean complete) {
+        List<FormField> fields = formFieldRepository.findAllByFormTemplate_IdOrderByDisplayOrderAsc(template.getId());
         Set<String> allowedCodes = fields.stream().map(FormField::getCode).collect(Collectors.toSet());
-
-        data.keySet().stream().filter(code -> !allowedCodes.contains(code)).findFirst()
-                .ifPresent(code -> {
-                    throw new FormValidationException(
-                            "El campo '" + code + "' no pertenece al formulario seleccionado");
-                });
-
+        for (String code : data.keySet()) {
+            if (!allowedCodes.contains(code)) throw new FormValidationException(
+                    "El campo '" + code + "' no pertenece al formulario seleccionado");
+        }
         for (FormField field : fields) {
-            boolean present = data.containsKey(field.getCode());
-            if (!present) {
-                if (field.isRequired()) {
-                    throw new FormValidationException(
-                            "El campo '" + field.getCode() + "' es obligatorio");
-                }
+            if (!data.containsKey(field.getCode())) {
+                if (complete && field.isRequired()) throw new FormValidationException(
+                        "El campo '" + field.getCode() + "' es obligatorio");
                 continue;
             }
             Object value = data.get(field.getCode());
             if (value == null) {
-                if (!field.isAllowUnknown()) {
-                    throw new FormValidationException(
-                            "El campo '" + field.getCode() + "' no admite un valor desconocido");
-                }
-                continue;
+                if (!field.isAllowUnknown()) throw new FormValidationException(
+                        "El campo '" + field.getCode() + "' no admite un valor desconocido");
+            } else {
+                validateValue(field, value);
             }
-            validateValue(field, value);
         }
         return new ResolvedForm(template, fields, data);
     }
 
-    /**
-     * Entidades V1.49 §4/§6: TicketService.correctClassification necesita
-     * resolver la FormTemplate activa del nuevo RequestType para actualizar
-     * Ticket.formTemplateId, pero sin validar formData contra ella — en esa
-     * operación formData se resetea a {} (las respuestas viejas no
-     * corresponden necesariamente a los campos del nuevo RequestType), así
-     * que no corresponde correrlo por resolveAndValidate (fallaría por
-     * cualquier campo requerido del nuevo formulario). Devuelve null cuando
-     * el RequestType no tiene formulario configurado, igual que la rama
-     * correspondiente de resolveAndValidate, en vez de lanzar una excepción:
-     * un RequestType sin formulario es una configuración válida (formData
-     * vacío), no un error.
-     */
+    /** Pins the active target version at proposal creation; subsequent validation uses that exact id. */
     public FormTemplate resolveActiveTemplate(RequestType requestType) {
         if (requestType == null || requestType.getId() == null) {
             throw new FormValidationException("El Request Type es obligatorio");
@@ -144,9 +143,26 @@ public class FormValidationService {
         switch (field.getType()) {
             case TEXT, TEXTAREA -> requireType(field, value instanceof String);
             case BOOLEAN -> requireType(field, value instanceof Boolean);
-            case NUMBER -> requireType(field, value instanceof Number);
+            case NUMBER -> validateNumber(field, value);
             case SELECT -> validateSelect(field, value);
             case DATE -> validateDate(field, value);
+        }
+    }
+
+    private void validateNumber(FormField field, Object value) {
+        requireType(field, value instanceof Number);
+        java.math.BigDecimal number;
+        try { number = new java.math.BigDecimal(value.toString()); }
+        catch (NumberFormatException e) { throw new FormValidationException("El número debe ser finito"); }
+        Map<String, Object> config = field.getConfig() == null ? Map.of() : field.getConfig();
+        for (String bound : List.of("min", "max")) {
+            Object configured = config.get(bound);
+            if (configured instanceof Number limit) {
+                int comparison = number.compareTo(new java.math.BigDecimal(limit.toString()));
+                if (bound.equals("min") && comparison < 0 || bound.equals("max") && comparison > 0) {
+                    throw new FormValidationException("El campo '" + field.getCode() + "' está fuera de rango");
+                }
+            }
         }
     }
 

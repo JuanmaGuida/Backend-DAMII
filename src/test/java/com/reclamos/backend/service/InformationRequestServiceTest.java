@@ -21,6 +21,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 class InformationRequestServiceTest {
+    private final ReclassificationDataService reclassification = mock(ReclassificationDataService.class);
     private static final Instant NOW = Instant.parse("2026-01-10T12:00:00Z");
     private final TicketRepository tickets = mock(TicketRepository.class);
     private final InformationRequestRepository requests = mock(InformationRequestRepository.class);
@@ -40,11 +41,11 @@ class InformationRequestServiceTest {
     @BeforeEach
     void setUp() {
         reset(tickets, requests, activities, expirationService, ticketSlaService, outbox,
-                attachmentService, attachmentReferenceService, requestAttachments, notifications);
+                attachmentService, attachmentReferenceService, requestAttachments, notifications, reclassification);
         service = new InformationRequestService(tickets, requests, activities,
                 new InformationRequestDeadlineService(Clock.fixed(NOW, ZoneOffset.UTC), Duration.ofHours(72)),
                 expirationService, ticketSlaService, outbox, attachmentService,
-                attachmentReferenceService, requestAttachments, notifications);
+                attachmentReferenceService, requestAttachments, notifications, reclassification);
         lenient().when(attachmentService.validate(any())).thenReturn(List.of());
         lenient().when(attachmentService.storeForTicket(any(), any(), anyList(), any())).thenReturn(List.of());
         lenient().when(attachmentReferenceService.downloadUrl(any()))

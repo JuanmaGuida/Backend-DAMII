@@ -29,6 +29,7 @@ public class InformationRequestExpirationService {
     private final TicketActivityRepository activityRepository;
     private final TicketSlaService ticketSlaService;
     private final TicketOutboxService ticketOutboxService;
+    private final ReclassificationDataService reclassificationDataService;
     private NotificationService notificationService;
 
     @Autowired
@@ -53,6 +54,7 @@ public class InformationRequestExpirationService {
 
         request.setStatus(InformationRequestStatus.EXPIRED);
         informationRequestRepository.save(request);
+        reclassificationDataService.terminate(ticket, "INFO_TIMEOUT: venció la solicitud estructurada", now);
         cancelForTimeout(ticket, now);
     }
 

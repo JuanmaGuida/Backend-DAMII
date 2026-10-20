@@ -27,6 +27,11 @@ class OpenApiContractTest {
     private static final Set<String> HTTP_METHODS = Set.of(
             "get", "post", "put", "patch", "delete", "options", "head", "trace");
     private static final Set<String> EXPECTED_OPERATIONS = Set.of(
+            "POST /api/staff/tickets/{ticketId}/reclassification-proposals",
+            "GET /api/staff/tickets/{ticketId}/reclassification-proposals",
+            "GET /api/staff/tickets/{ticketId}/reclassification-proposals/{proposalId}",
+            "POST /api/staff/tickets/{ticketId}/reclassification-proposals/{proposalId}/confirm",
+            "POST /api/staff/tickets/{ticketId}/reclassification-proposals/{proposalId}/abandon",
             "POST /api/auth/login",
             "GET /api/auth/me",
             "GET /api/catalog/categories",
@@ -99,6 +104,11 @@ class OpenApiContractTest {
             "POST /api/tracking/actions/messages"
     );
     private static final Set<String> PROTECTED_OPERATIONS = Set.of(
+            "POST /api/staff/tickets/{ticketId}/reclassification-proposals",
+            "GET /api/staff/tickets/{ticketId}/reclassification-proposals",
+            "GET /api/staff/tickets/{ticketId}/reclassification-proposals/{proposalId}",
+            "POST /api/staff/tickets/{ticketId}/reclassification-proposals/{proposalId}/confirm",
+            "POST /api/staff/tickets/{ticketId}/reclassification-proposals/{proposalId}/abandon",
             "GET /api/auth/me",
             "GET /api/admin/catalog/categories",
             "POST /api/admin/catalog/categories",
@@ -210,7 +220,7 @@ class OpenApiContractTest {
     void versionedFileIsAValidOpenApi3DocumentWithExactlyTheCurrentBusinessOperations() {
         assertTrue(string(spec.get("openapi")).startsWith("3."));
         assertEquals("3.0.3", parsedOpenApi.getOpenapi());
-        assertEquals(62, parsedOpenApi.getPaths().size());
+        assertEquals(66, parsedOpenApi.getPaths().size());
         assertNotNull(map(spec, "info").get("title"));
         assertNotNull(map(spec, "components").get("schemas"));
         assertEquals(EXPECTED_OPERATIONS, documentedOperations());
@@ -345,7 +355,10 @@ class OpenApiContractTest {
 
         String serialized = spec.toString();
         assertFalse(serialized.contains("riskScore"));
-        assertFalse(serialized.contains("formTemplateId"));
+        assertTrue(map(schemas, "ReclassificationProposalResponse", "properties").containsKey("formTemplateId"));
+        for (String citizenSchema : java.util.List.of("TrackingTicketResponse", "TicketDetailResponse", "PendingInformationRequestResponse")) {
+            assertFalse(map(schemas, citizenSchema, "properties").containsKey("formTemplateId"));
+        }
         assertFalse(serialized.contains("storageKey"));
         assertFalse(serialized.contains("trackingCodeHash"));
         assertFalse(serialized.contains("trackingAccessCode"));
