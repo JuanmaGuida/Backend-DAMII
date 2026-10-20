@@ -3,6 +3,7 @@ package com.reclamos.backend.service;
 import com.reclamos.backend.entity.Attachment;
 import com.reclamos.backend.entity.ActorType;
 import com.reclamos.backend.entity.CancellationReasonCode;
+import com.reclamos.backend.entity.MessageVisibility;
 import com.reclamos.backend.entity.OutboxEvent;
 import com.reclamos.backend.entity.OutboxStatus;
 import com.reclamos.backend.entity.RequestType;
@@ -10,6 +11,7 @@ import com.reclamos.backend.entity.ResolutionType;
 import com.reclamos.backend.entity.Ticket;
 import com.reclamos.backend.entity.TicketLocation;
 import com.reclamos.backend.entity.TicketUpdatedType;
+import com.reclamos.backend.repository.AttachmentRepository;
 import com.reclamos.backend.repository.OutboxEventRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -31,6 +33,8 @@ public class TicketOutboxService {
     private final OutboxEventRepository outboxEventRepository;
     private final Clock clock;
     private final AttachmentReferenceService attachmentReferenceService;
+    private final AttachmentRepository attachmentRepository;
+    private final FormValidationService formValidationService;
 
     @Transactional(propagation = Propagation.MANDATORY)
     public void ticketCreated(Ticket ticket, TicketLocation location, List<Attachment> attachments,
@@ -76,18 +80,33 @@ public class TicketOutboxService {
             return;
         }
 
+        Map<String, Object> routing = routingSnapshot(ticket, location, resolutionDueAt);
+        // ROUTED starts management: PUBLIC evidence accumulated on this ticket is relevant.
+        // Incremental events continue to use only the attachments supplied by their caller.
+        List<Attachment> attachments = attachmentRepository
+                .findAllByTicket_IdAndVisibilityOrderByCreatedAtAsc(ticket.getId(), MessageVisibility.PUBLIC);
+        saveUpdated(ticket, TicketUpdatedType.ROUTED,
+                "El ticket fue derivado al área responsable.", Map.of("routing", routing),
+                eventAttachments(attachments), updatedAt);
+    }
+
+    /** Snapshot of the confirmed ticket, reusable when exceptional reassignment is implemented. */
+    private Map<String, Object> routingSnapshot(Ticket ticket, TicketLocation location, Instant resolutionDueAt) {
         RequestType requestType = ticket.getRequestType();
         Map<String, Object> routing = new LinkedHashMap<>();
         routing.put("requestType", requestType.getName());
+        routing.put("category", requestType.getSubcategory().getCategory().getName());
+        routing.put("subcategory", requestType.getSubcategory().getName());
         routing.put("ticketType", ticket.getTicketType().name());
         routing.put("summary", ticket.getSummary());
         routing.put("description", ticket.getDescription());
-        routing.put("formData", ticket.getFormData());
+        routing.put("formData", formValidationService.snapshotAnswers(ticket));
         routing.put("location", eventLocation(location));
         routing.put("resolutionDueAt", instant(resolutionDueAt));
         routing.put("escalation", eventEscalation(ticket));
-        saveUpdated(ticket, TicketUpdatedType.ROUTED,
-                "El ticket fue derivado al área responsable.", Map.of("routing", routing), List.of(), updatedAt);
+        // The current routing operation is initial; a future approved reassignment must set true.
+        routing.put("reassignment", false);
+        return routing;
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
@@ -247,14 +266,16 @@ public class TicketOutboxService {
         if (attachments == null || attachments.isEmpty()) {
             return List.of();
         }
-        return attachments.stream().map(attachment -> {
-            Map<String, Object> result = new LinkedHashMap<>();
-            result.put("fileName", attachment.getFileName());
-            result.put("contentType", attachment.getContentType());
-            result.put("url", attachmentReferenceService.downloadUrl(attachment));
-            result.put("sizeBytes", attachment.getSizeBytes());
-            return result;
-        }).toList();
+        return attachments.stream()
+                .filter(attachment -> attachment.getVisibility() == MessageVisibility.PUBLIC)
+                .map(attachment -> {
+                    Map<String, Object> result = new LinkedHashMap<>();
+                    result.put("fileName", attachment.getFileName());
+                    result.put("contentType", attachment.getContentType());
+                    result.put("url", attachmentReferenceService.downloadUrl(attachment));
+                    result.put("sizeBytes", attachment.getSizeBytes());
+                    return result;
+                }).toList();
     }
 
     private Map<String, Object> eventEscalation(Ticket ticket) {

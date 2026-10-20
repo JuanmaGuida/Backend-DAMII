@@ -2,6 +2,7 @@ package com.reclamos.backend.service;
 
 import com.reclamos.backend.entity.*;
 import com.reclamos.backend.repository.OutboxEventRepository;
+import com.reclamos.backend.repository.AttachmentRepository;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
@@ -20,11 +21,12 @@ class TicketClosedContractTest {
     @ParameterizedTest
     @ValueSource(strings = {"CITIZEN_CONFIRMED", "CONFIRMATION_TIMEOUT", "ADMINISTRATIVE_CLOSE"})
     @SuppressWarnings("unchecked")
-    void closedDataConformsToUnmodifiedV176SchemaAndRejectsOldKeyOrUnknownCode(String reasonCode) {
+    void closedDataConformsToUnmodifiedV177SchemaAndRejectsOldKeyOrUnknownCode(String reasonCode) {
         var repository = mock(OutboxEventRepository.class);
         var now = Instant.parse("2026-10-20T12:00:00Z");
         var service = new TicketOutboxService(repository, Clock.fixed(now, ZoneOffset.UTC),
-                mock(AttachmentReferenceService.class));
+                mock(AttachmentReferenceService.class),
+                mock(AttachmentRepository.class), mock(FormValidationService.class));
         var ticket = new Ticket();
         ticket.setId(UUID.randomUUID());
         ticket.setPublicId("TK-2026-000123");
