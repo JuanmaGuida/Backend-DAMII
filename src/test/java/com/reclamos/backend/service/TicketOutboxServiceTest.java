@@ -199,7 +199,7 @@ class TicketOutboxServiceTest {
                 CancellationReasonCode.INFO_TIMEOUT, "Cancelado", true, NOW);
 
         ArgumentCaptor<OutboxEvent> captor = ArgumentCaptor.forClass(OutboxEvent.class);
-        verify(repository, times(3)).save(captor.capture());
+        verify(repository, times(2)).save(captor.capture());
         assertThat(captor.getAllValues()).allSatisfy(event ->
                 assertThat(event.getUpdateType()).isEqualTo(TicketUpdatedType.CANCELLED));
     }

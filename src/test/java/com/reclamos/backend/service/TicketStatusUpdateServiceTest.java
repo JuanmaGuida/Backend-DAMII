@@ -110,10 +110,7 @@ class TicketStatusUpdateServiceTest {
     private final UpdateTicketStatusRequest.Actor externalActor =
             new UpdateTicketStatusRequest.Actor("EXTERNAL_USER", "USR-M6-77");
 
-    // DDA2-180: reloj propio de M2, deliberadamente distinto de los
-    // updateOccurredAt que usan los tests (varios son Instant.now() o
-    // literales de otro día) para que una regresión — volver a publicar
-    // data.updatedAt con el timestamp del productor externo — se note.
+    // Reloj propio de M2 para Inbox y plazos, separado del momento del hecho externo.
     private static final Instant FIXED_NOW = Instant.parse("2026-09-08T12:00:00Z");
 
     @BeforeEach
@@ -130,7 +127,7 @@ class TicketStatusUpdateServiceTest {
                 attachmentService, attachmentReferenceService, informationRequestAttachmentRepository, mock(NotificationService.class));
         service = new TicketStatusUpdateService(ticketRepository, activityRepository, locationRepository,
                 messageRepository, inboxEventRepository, resolutionService, ticketSlaService,
-                informationRequestService, cancellationRepository, outbox,
+                informationRequestService, cancellationRepository,
                 Clock.fixed(FIXED_NOW, ZoneOffset.UTC));
         // Default para los tests que no ejercitan dedupe en sí: "eventId nunca visto".
         // Los tests de dedupe pisan este stub explícitamente.
@@ -198,9 +195,8 @@ class TicketStatusUpdateServiceTest {
         assertThat(captor.getValue().getOccurredAt()).isEqualTo(realOccurredAt);
 
         verify(inboxEventRepository).save(any());
-        // DDA2-180: data.updatedAt del evento es el reloj de M2 (FIXED_NOW),
-        // no realOccurredAt (que es data.updateOccurredAt del productor).
-        verify(outbox).statusChanged(ticket, "Comenzamos a trabajar en esto.", FIXED_NOW);
+        // NO-ECHO: el hecho externo conserva su trazabilidad local sin republicarse.
+        verifyNoInteractions(outbox);
     }
 
     @Test
@@ -325,7 +321,7 @@ class TicketStatusUpdateServiceTest {
         ArgumentCaptor<TicketActivity> captor = ArgumentCaptor.forClass(TicketActivity.class);
         verify(activityRepository).save(captor.capture());
         assertThat(captor.getValue().getReasonCode()).isEqualTo("REQUEST_TYPE_MISMATCH");
-        verify(outbox).statusChanged(ticket, null, FIXED_NOW);
+        verifyNoInteractions(outbox);
     }
 
     @Test
@@ -381,13 +377,7 @@ class TicketStatusUpdateServiceTest {
                         && "USR-M6-77".equals(activity.getActorId())
                         && envelope.eventId().equals(activity.getExternalEventId())
                         && resolvedAt.equals(activity.getOccurredAt())));
-        // DDA2-180: resolvedAt (09:30) es el momento real del hecho en el
-        // productor y queda bien en SLA/TicketResolution/statusChangedAt/
-        // TicketActivity de arriba; el evento publicado, en cambio, usa el
-        // reloj propio de M2 (FIXED_NOW = 12:00) — son valores distintos a
-        // propósito para que esta prueba no pase por casualidad.
-        verify(outbox).resolved(ticket, ResolutionType.ACTION_COMPLETED,
-                "La luminaria fue reparada.", FIXED_NOW);
+        verifyNoInteractions(outbox);
     }
 
     /**
@@ -488,8 +478,7 @@ class TicketStatusUpdateServiceTest {
         verify(activityRepository, times(1)).save(any());
         verify(ticketRepository, times(1)).save(any());
         verify(inboxEventRepository, times(1)).save(any());
-        verify(outbox, times(1)).resolved(ticket, ResolutionType.REQUEST_FULFILLED,
-                "Solicitud completada.", FIXED_NOW);
+        verifyNoInteractions(outbox);
     }
 
     @Test
@@ -561,22 +550,12 @@ class TicketStatusUpdateServiceTest {
         assertThat(cancellation.getCancelledById()).isEqualTo("USR-M6-77");
         assertThat(cancellation.getCancelledAt()).isEqualTo(data.updateOccurredAt());
         verify(ticketSlaService).terminateActiveCycles(ticket, data.updateOccurredAt());
-        verify(outbox).cancelled(ticket, CancellationReasonCode.OUT_OF_SCOPE,
-                "No corresponde a esta gestión.", false, FIXED_NOW);
+        verifyNoInteractions(outbox);
         verify(resolutionRepository, never()).save(any());
     }
 
-    /**
-     * DDA2-180: reproduce el escenario exacto que reportó QA — un productor
-     * externo manda updateOccurredAt adelantado ~32s a propósito, para
-     * comprobar si M2 lo copiaba como si fuera su propio timestamp de
-     * persistencia (Eventos V1.69 §7.1/§11: data.updatedAt tiene que ser
-     * "cuándo M2 persistió el cambio", no el hecho del productor). El
-     * timestamp del productor sigue siendo la fuente de verdad para el
-     * dominio interno — SLA, cancelledAt — eso no cambia.
-     */
     @Test
-    void outboxUpdatedAtIsM2sOwnClockNotTheExternallySuppliedUpdateOccurredAt() {
+    void externalRejectionPreservesProducerTimestampLocallyWithoutEcho() {
         Ticket ticket = ticket(TicketStatus.ROUTED);
         when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
         when(activityRepository.countByTicketId(ticketId)).thenReturn(0);
@@ -591,8 +570,7 @@ class TicketStatusUpdateServiceTest {
 
         service.applyUpdate(ticketId, envelope(data));
 
-        verify(outbox).cancelled(ticket, CancellationReasonCode.OUT_OF_SCOPE,
-                "No corresponde a esta gestión.", false, FIXED_NOW);
+        verifyNoInteractions(outbox);
         verify(ticketSlaService).terminateActiveCycles(ticket, skewedUpdateOccurredAt);
         ArgumentCaptor<TicketCancellation> captor = ArgumentCaptor.forClass(TicketCancellation.class);
         verify(cancellationRepository).save(captor.capture());
@@ -618,8 +596,7 @@ class TicketStatusUpdateServiceTest {
         verify(ticketSlaService).terminateActiveCycles(ticket, data.updateOccurredAt());
         verify(cancellationRepository).save(argThat(cancellation ->
                 cancellation.getReasonCode() == CancellationReasonCode.REJECTED_BY_AREA));
-        verify(outbox).cancelled(ticket, CancellationReasonCode.REJECTED_BY_AREA,
-                "No es posible continuar.", false, FIXED_NOW);
+        verifyNoInteractions(outbox);
     }
 
     @Test
@@ -794,7 +771,7 @@ class TicketStatusUpdateServiceTest {
         verify(activityRepository, times(1)).save(any());
         verify(ticketRepository, times(1)).save(any());
         verify(inboxEventRepository, times(1)).save(any());
-        verify(outbox, times(1)).statusChanged(ticket, "Comenzamos a trabajar en esto.", FIXED_NOW);
+        verifyNoInteractions(outbox);
     }
 
     @Test

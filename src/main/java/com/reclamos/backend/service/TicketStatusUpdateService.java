@@ -38,6 +38,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -55,8 +56,8 @@ import java.util.UUID;
  * <p>
  * La resolución delega sus efectos de dominio en {@link TicketResolutionService}
  * para que el simulador y un futuro consumer real compartan exactamente el
- * mismo caso de uso. Las variantes de salida incluidas en el cierre de
- * integración se escriben en el Outbox dentro de esta misma transacción.
+ * mismo caso de uso. Los hechos externos no se replican como ticketUpdated
+ * (Eventos v1.76 §10, NO-ECHO); se conservan todos sus efectos locales.
  * <p>
  * NO IMPLEMENTADO A PROPÓSITO: si el envelope es válido pero el payload de
  * negocio no lo es para ese updateType (ej. falta details.returnInfo), la
@@ -76,6 +77,8 @@ public class TicketStatusUpdateService {
     private static final String SUPPORTED_SPEC_VERSION = "1.0";
     private static final String SUPPORTED_EVENT_TYPE = "updateTicketStatus";
     private static final String LOCAL_MODULE_ID = "M2";
+    private static final Set<String> RETURN_REASON_CODES = Set.of(
+            "INVALID_INFORMATION", "REQUEST_TYPE_MISMATCH", "INSUFFICIENT_CONTEXT", "OTHER");
 
     private final TicketRepository ticketRepository;
     private final TicketActivityRepository activityRepository;
@@ -86,7 +89,6 @@ public class TicketStatusUpdateService {
     private final TicketSlaService ticketSlaService;
     private final InformationRequestService informationRequestService;
     private final TicketCancellationRepository cancellationRepository;
-    private final TicketOutboxService ticketOutboxService;
     private NotificationService notificationService;
     private final Clock clock;
 
@@ -181,6 +183,10 @@ public class TicketStatusUpdateService {
                         ? null : request.details().returnInfo();
                 if (returnInfo == null || isBlank(returnInfo.reasonCode())) {
                     throw new InvalidTicketRequestException("RETURNED requiere details.returnInfo.reasonCode");
+                }
+                if (!RETURN_REASON_CODES.contains(returnInfo.reasonCode())) {
+                    throw new InvalidTicketRequestException(
+                            "details.returnInfo.reasonCode no soportado: " + returnInfo.reasonCode());
                 }
                 if (isBlank(request.publicMessage()) && isBlank(request.internalMessage())) {
                     throw new InvalidTicketRequestException(
@@ -295,29 +301,6 @@ public class TicketStatusUpdateService {
                     sourceModuleId, reasonCode,
                     !isBlank(request.internalMessage()) ? request.internalMessage() : request.publicMessage(),
                     envelope.eventId(), request.updateOccurredAt());
-        }
-
-        // DDA2-180: data.updatedAt de ticketUpdated tiene que ser "cuándo M2
-        // persistió el cambio" (Eventos V1.69 §7.1/§11), no
-        // request.updateOccurredAt() — ese es data.updateOccurredAt del
-        // request entrante (Eventos §8.1: "momento real del hecho/actualización
-        // operativa en el PRODUCTOR"), un campo del productor externo, no de
-        // M2. Antes se reusaba acá, lo que permitía que un módulo externo
-        // dictara el valor publicado como timestamp de persistencia de M2
-        // (ver diagnóstico QA). request.updateOccurredAt() se sigue usando
-        // para el resto del dominio (statusChangedAt, cancelledAt,
-        // TicketActivity.occurredAt, terminateActiveCycles) — ahí sí es
-        // correcto, es "cuándo pasó el hecho", no el timestamp del evento.
-        Instant persistedAt = clock.instant();
-        switch (request.updateType()) {
-            case STARTED, RETURNED -> ticketOutboxService.statusChanged(
-                    ticket, request.publicMessage(), persistedAt);
-            case REJECTED -> ticketOutboxService.cancelled(
-                    ticket, cancellationReason, request.publicMessage(), false, persistedAt);
-            default -> {
-                // Los productores PROGRESS e INFORMATION_REQUIRED no forman parte de este bloque.
-                // RESOLVED se publica dentro de TicketResolutionService.
-            }
         }
 
         // InboxEvent se inserta en la MISMA transacción que el resto: si esto
