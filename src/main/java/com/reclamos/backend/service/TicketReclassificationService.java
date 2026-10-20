@@ -165,7 +165,13 @@ public class TicketReclassificationService {
     /** The persisted, accepted external fact grants the exception, never IN_REVIEW alone. */
     UUID authorization(Ticket ticket) {
         if (ticket.getCurrentStatus() != TicketStatus.IN_REVIEW) throw conflict("La propuesta requiere IN_REVIEW");
-        if (ticket.getClassificationFinalizedAt() == null) return null;
+        if (ticket.getClassificationFinalizedAt() == null) {
+            if (activities.findAllByTicket_IdOrderBySequenceAsc(ticket.getId()).stream()
+                    .anyMatch(a -> a.getActionType() == ActivityType.DUPLICATE_LINKED)) {
+                throw conflict("La clasificación inicial quedó bloqueada por la vinculación como duplicado");
+            }
+            return null;
+        }
         List<TicketActivity> history = activities.findAllByTicket_IdOrderBySequenceAsc(ticket.getId());
         for (int i = history.size() - 1; i >= 0; i--) {
             TicketActivity a = history.get(i);

@@ -75,6 +75,13 @@ public class SecurityConfiguration {
                         .requestMatchers(HttpMethod.GET, "/api/auth/me").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/attachments/*/content").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/indicators/**").hasAnyRole("AGENT", "ADMIN")
+                        .requestMatchers("/api/staff/tickets/*/cancellation-requests", "/api/staff/tickets/*/cancellation-requests/**",
+                                "/api/staff/tickets/*/cancellation-conflicts", "/api/staff/tickets/*/cancellation-conflicts/**")
+                        .hasAnyRole("AGENT", "ADMIN")
+                        .requestMatchers(HttpMethod.GET, "/api/tickets/*/cancellation-requests").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/api/tickets/*/cancellation-requests").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/api/tracking/actions/cancellation-requests",
+                                "/api/tracking/actions/cancellation-requests/history").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/staff/labels/*/tickets").hasAnyRole("AGENT", "ADMIN")
                         .requestMatchers(HttpMethod.GET, "/api/staff/labels", "/api/staff/labels/*")
                         .hasAnyRole("AGENT", "ADMIN")

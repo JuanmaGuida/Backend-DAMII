@@ -1703,6 +1703,7 @@ paths:
         administrativa de cancelación. Un ticket ya derivado
         (ROUTED/IN_PROGRESS) se cancela por el flujo de integración
         (updateTicketStatus/REJECTED), no por este endpoint.
+        Con duplicados activos, el owner recibe 409 y debe crear una cancellation-request. AGENT/ADMIN exige cancellationScope y decisionReason explícitos. Sin duplicados se conserva la cancelación ordinaria y scope null.
       operationId: cancelTicket
       security:
         - bearerAuth: [ ]
@@ -2002,7 +2003,7 @@ paths:
     post:
       tags: [Tracking]
       summary: Cancelar un ticket anónimo propio
-      description: Valida tracking y contraseña desde el body y aplica la cancelación ciudadana existente sólo en REGISTERED.
+      description: Valida código y contraseña en body. Cancelación directa sólo REGISTERED sin duplicados activos; 409 si requiere solicitud de revisión. No devuelve una solicitud como cancelación completada.
       operationId: cancelAnonymousTicket
       security: []
       requestBody:
@@ -2522,6 +2523,351 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiError'
+  /api/tickets/{ticketId}/cancellation-requests:
+    post:
+      tags: [ Tickets ]
+      operationId: createCancellationRequest
+      summary: Solicitar revisión de cancelación
+      description: "Owner M1. Sólo principal REGISTERED con duplicados activos. reasonCode y reason obligatorios. No cambia estado, clasificación, SLA, responsable ni vínculos. 409 si existe PENDING; consultar historial."
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: ticketId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCancellationRequest'
+      responses:
+        '201':
+          description: Solicitud registrada sin cancelar el ticket.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CancellationRequestResponse'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/InvalidToken'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/TicketStateConflict'
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+    get:
+      tags: [ Tickets ]
+      operationId: ownCancellationRequests
+      summary: Consultar historial propio de solicitudes
+      description: "Owner autenticado M1. Devuelve estado, motivo propio y scope; reviewedBy y decisionReason internos se omiten. Sin snapshots ni credenciales."
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: ticketId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Estado o decisión de la solicitud.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CancellationRequestResponse'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/InvalidToken'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/TicketStateConflict'
+  /api/tracking/actions/cancellation-requests:
+    post:
+      tags: [ Tickets ]
+      operationId: createAnonymousCancellationRequest
+      summary: Solicitar cancelación de anónimo acreditado
+      description: "Código y contraseña en body. Sólo principal anónimo REGISTERED con duplicados activos; no cancela. Acreditación auditada sin almacenar secretos. 409 si PENDING existente."
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnonymousCancellationRequest'
+      responses:
+        '201':
+          description: Solicitud registrada sin cancelar el ticket.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CancellationRequestResponse'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          description: INVALID_ANONYMOUS_TICKET_CREDENTIALS. Código y contraseña obligatorios.
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/TicketStateConflict'
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+  /api/tracking/actions/cancellation-requests/history:
+    post:
+      tags: [ Tickets ]
+      operationId: anonymousCancellationRequestHistory
+      summary: Consultar solicitudes como propietario anónimo
+      description: "Requiere trackingCode y anonymousAccessPassword. Cache-Control no-store. No amplía tracking read-only."
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnonymousTicketCredentialsRequest'
+      responses:
+        '200':
+          description: Estado o decisión de la solicitud.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CancellationRequestResponse'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          description: INVALID_ANONYMOUS_TICKET_CREDENTIALS. Código y contraseña obligatorios.
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/TicketStateConflict'
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+  /api/staff/tickets/{ticketId}/cancellation-requests:
+    get:
+      tags: [ Tickets ]
+      operationId: staffCancellationRequests
+      summary: Listar solicitudes del ticket para revisión
+      description: "AGENT/ADMIN. Permite consultar tickets propios en modo read-only."
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: ticketId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Estado o decisión de la solicitud.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CancellationRequestResponse'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/InvalidToken'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/TicketStateConflict'
+  /api/staff/tickets/{ticketId}/cancellation-requests/{requestId}:
+    get:
+      tags: [ Tickets ]
+      operationId: getCancellationRequest
+      summary: Consultar una solicitud
+      description: "AGENT/ADMIN. 404 si la solicitud no pertenece al ticket."
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: ticketId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: requestId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Estado o decisión de la solicitud.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CancellationRequestResponse'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/InvalidToken'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/TicketStateConflict'
+  /api/staff/tickets/{ticketId}/cancellation-requests/{requestId}/approve:
+    post:
+      tags: [ Tickets ]
+      operationId: approveCancellationRequest
+      summary: Aprobar cancelación con alcance explícito
+      description: "AGENT/ADMIN sobre todos los tickets modificados ajenos. Exige cancellationScope y decisionReason. GLOBAL cancela familia activa; PRINCIPAL_ONLY promueve el más antiguo a IN_REVIEW y religa el resto. Revalida snapshot bajo lock; 409 si desactualizada o concurrente. Repetir misma decisión es idempotente."
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: ticketId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: requestId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApproveCancellationRequest'
+      responses:
+        '200':
+          description: Estado o decisión de la solicitud.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CancellationRequestResponse'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/InvalidToken'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/TicketStateConflict'
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+  /api/staff/tickets/{ticketId}/cancellation-requests/{requestId}/reject:
+    post:
+      tags: [ Tickets ]
+      operationId: rejectCancellationRequest
+      summary: Rechazar solicitud con justificación
+      description: "AGENT/ADMIN sobre ticket ajeno. Exige decisionReason y cancellationScope null. Repetir mismo rechazo es idempotente. 409 si ya decidida con otro resultado."
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: ticketId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: requestId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RejectCancellationRequest'
+      responses:
+        '200':
+          description: Estado o decisión de la solicitud.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CancellationRequestResponse'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/InvalidToken'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/TicketStateConflict'
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+  /api/staff/tickets/{ticketId}/cancellation-conflicts:
+    get:
+      tags: [ Tickets ]
+      operationId: listCancellationConflicts
+      summary: Consultar conflictos de cancelación
+      description: "AGENT/ADMIN. Conflictos INFO_TIMEOUT o EXTERNAL_REJECTED; incluye estado y mensajes internos sólo para staff."
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: ticketId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Estado o decisión de la solicitud.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CancellationConflictResponse'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/InvalidToken'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/TicketStateConflict'
+  /api/staff/tickets/{ticketId}/cancellation-conflicts/{conflictId}/resolve:
+    post:
+      tags: [ Tickets ]
+      operationId: resolveCancellationConflict
+      summary: Resolver conflicto administrativo
+      description: "AGENT/ADMIN sobre todos los tickets modificados ajenos. APPROVED exige scope y motivo; REJECTED exige motivo y scope null. Detecta cambios del estado o duplicados con 409. Idempotente por conflicto y decisión. Sólo esta revisión auditada puede cancelar ROUTED/IN_PROGRESS tras REJECTED externo."
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: ticketId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: conflictId
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResolveCancellationConflictRequest'
+      responses:
+        '200':
+          description: Estado o decisión de la solicitud.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CancellationConflictResponse'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/InvalidToken'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/TicketStateConflict'
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
 components:
   securitySchemes:
     bearerAuth:
@@ -3941,12 +4287,104 @@ components:
           type: string
           minLength: 1
       additionalProperties: false
+    ResolveCancellationConflictRequest:
+      type: object
+      required: [ decision, decisionReason ]
+      properties:
+        decision: { type: string, enum: [ APPROVED, REJECTED ] }
+        cancellationScope:
+          allOf: [{ $ref: '#/components/schemas/CancellationScope' }]
+          nullable: true
+          description: Obligatorio si APPROVED; null si REJECTED.
+        decisionReason: { type: string, minLength: 1, maxLength: 4000 }
+        publicMessage: { type: string, nullable: true, maxLength: 4000 }
+      additionalProperties: false
+    CancellationConflictResponse:
+      type: object
+      required: [ id, ticketId, origin, reasonCode, occurredAt, status ]
+      properties:
+        id: { type: integer, format: int64 }
+        ticketId: { type: string, format: uuid }
+        origin: { type: string, enum: [ INFO_TIMEOUT, EXTERNAL_REJECTED ] }
+        reasonCode: { $ref: '#/components/schemas/CancellationReasonCode' }
+        externalEventId: { type: string, format: uuid, nullable: true }
+        occurredAt: { type: string, format: date-time }
+        status: { $ref: '#/components/schemas/CancellationRequestStatus' }
+        cancellationScope:
+          allOf: [{ $ref: '#/components/schemas/CancellationScope' }]
+          nullable: true
+        decisionReason: { type: string, nullable: true }
+        publicMessage: { type: string, nullable: true }
+        internalMessage: { type: string, nullable: true, description: Sólo staff. Nunca sale en eventos. }
+      additionalProperties: false
+    CancellationScope:
+      type: string
+      enum: [ GLOBAL, PRINCIPAL_ONLY ]
+      description: Decisión explícita del staff; nunca inferida del reasonCode.
+    CancellationRequestStatus:
+      type: string
+      enum: [ PENDING, APPROVED, REJECTED ]
+    CreateCancellationRequest:
+      type: object
+      required: [ reasonCode, reason ]
+      properties:
+        reasonCode: { $ref: '#/components/schemas/CancellationReasonCode' }
+        reason: { type: string, minLength: 1, maxLength: 4000 }
+      additionalProperties: false
+    AnonymousCancellationRequest:
+      type: object
+      required: [ trackingCode, anonymousAccessPassword, payload ]
+      properties:
+        trackingCode: { type: string, writeOnly: true }
+        anonymousAccessPassword: { type: string, writeOnly: true }
+        payload: { $ref: '#/components/schemas/CreateCancellationRequest' }
+      additionalProperties: false
+    ApproveCancellationRequest:
+      type: object
+      required: [ cancellationScope, decisionReason ]
+      properties:
+        cancellationScope: { $ref: '#/components/schemas/CancellationScope' }
+        decisionReason: { type: string, minLength: 1, maxLength: 4000 }
+        publicMessage: { type: string, nullable: true, maxLength: 4000 }
+      additionalProperties: false
+    RejectCancellationRequest:
+      type: object
+      required: [ decisionReason ]
+      properties:
+        decisionReason: { type: string, minLength: 1, maxLength: 4000 }
+        cancellationScope: { type: string, nullable: true, enum: [null] }
+        publicMessage: { type: string, nullable: true, maxLength: 4000 }
+      additionalProperties: false
+    CancellationRequestResponse:
+      type: object
+      required: [ id, ticketId, requesterKind, reason, reasonCode, status, requestedAt ]
+      properties:
+        id: { type: string, format: uuid }
+        ticketId: { type: string, format: uuid }
+        requestedByCitizenId: { type: string, format: uuid, nullable: true }
+        requesterKind: { type: string, enum: [ IDENTIFIED, ANONYMOUS ] }
+        reason: { type: string }
+        reasonCode: { $ref: '#/components/schemas/CancellationReasonCode' }
+        status: { $ref: '#/components/schemas/CancellationRequestStatus' }
+        requestedAt: { type: string, format: date-time }
+        reviewedAt: { type: string, format: date-time, nullable: true }
+        reviewedBy: { type: string, format: uuid, nullable: true }
+        cancellationScope:
+          allOf: [{ $ref: '#/components/schemas/CancellationScope' }]
+          nullable: true
+        decisionReason: { type: string, nullable: true }
+      additionalProperties: false
     CancelTicketRequest:
       type: object
       required: [ reasonCode ]
       properties:
         reasonCode:
           $ref: '#/components/schemas/CancellationReasonCode'
+        cancellationScope:
+          allOf: [{ $ref: '#/components/schemas/CancellationScope' }]
+          nullable: true
+          description: Obligatorio para cancelación administrativa de principal con duplicados; null en ordinarias.
+        decisionReason: { type: string, nullable: true, maxLength: 4000 }
         publicMessage:
           type: string
           nullable: true

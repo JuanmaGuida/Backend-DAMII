@@ -42,6 +42,13 @@ class TicketSlaServiceTest {
                 .thenReturn(Optional.of(new SlaCalculationService.SlaSchedule(policy, NEAR, DUE)));
     }
 
+    @Test void promotionWithoutResolutionPolicyIsRejectedInsteadOfStartingUnmeasuredManagement() {
+        when(calculations.calculateResolutionSchedule(any(), any(), any())).thenReturn(Optional.empty());
+        assertThrows(TicketStateConflictException.class, () -> service.startPromotedResolutionCycle(ticket, START));
+        verify(slas, never()).save(any());
+        verify(milestones, never()).reconcileEscalation(any(), any(), anyBoolean());
+    }
+
     @Test void creationStartsResolutionCycleOneAsTheOnlyPersistentDeadlineSource() {
         TicketSla sla = service.startInitialResolutionCycle(ticket, START).orElseThrow();
 

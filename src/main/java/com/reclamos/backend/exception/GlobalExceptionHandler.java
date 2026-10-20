@@ -23,6 +23,11 @@ import org.springframework.web.multipart.support.MissingServletRequestPartExcept
  */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+    @ExceptionHandler(org.springframework.dao.PessimisticLockingFailureException.class)
+    public ResponseEntity<ApiErrorResponse> handleConcurrentLifecycle(RuntimeException exception) {
+        return response(HttpStatus.CONFLICT, "TICKET_STATE_CONFLICT",
+                "El conjunto de tickets está siendo modificado; vuelva a consultar y reintente");
+    }
     @ExceptionHandler(FormValidationException.class)
     public ResponseEntity<ApiErrorResponse> handleValidation(FormValidationException exception) {
         return response(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", exception.getMessage());

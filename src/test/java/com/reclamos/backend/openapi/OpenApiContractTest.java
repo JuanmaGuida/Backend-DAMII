@@ -27,6 +27,16 @@ class OpenApiContractTest {
     private static final Set<String> HTTP_METHODS = Set.of(
             "get", "post", "put", "patch", "delete", "options", "head", "trace");
     private static final Set<String> EXPECTED_OPERATIONS = Set.of(
+            "GET /api/staff/tickets/{ticketId}/cancellation-conflicts",
+            "POST /api/staff/tickets/{ticketId}/cancellation-conflicts/{conflictId}/resolve",
+            "POST /api/tickets/{ticketId}/cancellation-requests",
+            "GET /api/tickets/{ticketId}/cancellation-requests",
+            "GET /api/staff/tickets/{ticketId}/cancellation-requests",
+            "GET /api/staff/tickets/{ticketId}/cancellation-requests/{requestId}",
+            "POST /api/staff/tickets/{ticketId}/cancellation-requests/{requestId}/approve",
+            "POST /api/staff/tickets/{ticketId}/cancellation-requests/{requestId}/reject",
+            "POST /api/tracking/actions/cancellation-requests",
+            "POST /api/tracking/actions/cancellation-requests/history",
             "POST /api/staff/tickets/{ticketId}/reclassification-proposals",
             "GET /api/staff/tickets/{ticketId}/reclassification-proposals",
             "GET /api/staff/tickets/{ticketId}/reclassification-proposals/{proposalId}",
@@ -104,6 +114,14 @@ class OpenApiContractTest {
             "POST /api/tracking/actions/messages"
     );
     private static final Set<String> PROTECTED_OPERATIONS = Set.of(
+            "GET /api/staff/tickets/{ticketId}/cancellation-conflicts",
+            "POST /api/staff/tickets/{ticketId}/cancellation-conflicts/{conflictId}/resolve",
+            "POST /api/tickets/{ticketId}/cancellation-requests",
+            "GET /api/tickets/{ticketId}/cancellation-requests",
+            "GET /api/staff/tickets/{ticketId}/cancellation-requests",
+            "GET /api/staff/tickets/{ticketId}/cancellation-requests/{requestId}",
+            "POST /api/staff/tickets/{ticketId}/cancellation-requests/{requestId}/approve",
+            "POST /api/staff/tickets/{ticketId}/cancellation-requests/{requestId}/reject",
             "POST /api/staff/tickets/{ticketId}/reclassification-proposals",
             "GET /api/staff/tickets/{ticketId}/reclassification-proposals",
             "GET /api/staff/tickets/{ticketId}/reclassification-proposals/{proposalId}",
@@ -220,7 +238,7 @@ class OpenApiContractTest {
     void versionedFileIsAValidOpenApi3DocumentWithExactlyTheCurrentBusinessOperations() {
         assertTrue(string(spec.get("openapi")).startsWith("3."));
         assertEquals("3.0.3", parsedOpenApi.getOpenapi());
-        assertEquals(66, parsedOpenApi.getPaths().size());
+        assertEquals(75, parsedOpenApi.getPaths().size());
         assertNotNull(map(spec, "info").get("title"));
         assertNotNull(map(spec, "components").get("schemas"));
         assertEquals(EXPECTED_OPERATIONS, documentedOperations());

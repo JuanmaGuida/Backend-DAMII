@@ -32,6 +32,19 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
 
     boolean existsByMainTicket_Id(UUID mainTicketId);
 
+    boolean existsByMainTicket_IdAndCurrentStatus(UUID mainTicketId,
+            com.reclamos.backend.entity.TicketStatus status);
+
+    @Query("select t.id from Ticket t where t.mainTicket.id = :id and t.currentStatus = " +
+            "com.reclamos.backend.entity.TicketStatus.DUPLICATE order by t.id")
+    List<UUID> findActiveDuplicateIds(@Param("id") UUID id);
+
+    // The main is already locked. NOWAIT avoids waiting for a link transaction
+    // that holds a child first and is itself waiting for the main.
+    @Query(value = "select * from tickets where main_ticket_id = :id and current_status = 'DUPLICATE' " +
+            "order by id for update nowait", nativeQuery = true)
+    List<Ticket> lockCancellationDuplicates(@Param("id") UUID id);
+
     @EntityGraph(attributePaths = {"requestType.subcategory.category"})
     @Query("select t from Ticket t where t.id = :id")
     Optional<Ticket> findWithClassificationById(@Param("id") UUID id);

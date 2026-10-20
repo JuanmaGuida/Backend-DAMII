@@ -26,6 +26,10 @@ public class TicketCancellation {
     @Column(name = "reason_code", nullable = false, length = 50)
     private CancellationReasonCode reasonCode;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "cancellation_scope", length = 20)
+    private CancellationScope cancellationScope;
+
     @Column(name = "public_message", columnDefinition = "TEXT")
     private String publicMessage;
     @Column(name = "internal_message", columnDefinition = "TEXT")

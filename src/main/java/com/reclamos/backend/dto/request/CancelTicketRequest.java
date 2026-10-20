@@ -24,4 +24,7 @@ public class CancelTicketRequest {
     private CancellationReasonCode reasonCode;
     private String publicMessage;
     private String internalMessage;
+    private com.reclamos.backend.entity.CancellationScope cancellationScope;
+    @jakarta.validation.constraints.Size(max = 4000)
+    private String decisionReason;
 }

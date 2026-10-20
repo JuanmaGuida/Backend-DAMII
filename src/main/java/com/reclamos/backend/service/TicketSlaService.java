@@ -139,6 +139,15 @@ public class TicketSlaService {
         return schedule.map(value -> createCycle(ticket, SlaType.RESOLUTION, next, confirmedAt, value));
     }
 
+    public Optional<TicketSla> startPromotedResolutionCycle(Ticket ticket, Instant promotedAt) {
+        Optional<TicketSla> cycle = startReclassifiedResolutionCycle(ticket, promotedAt);
+        if (cycle.isEmpty()) {
+            throw new TicketStateConflictException("No existe una política RESOLUTION para promover el duplicado");
+        }
+        milestoneService.reconcileEscalation(ticket, promotedAt, !ticket.isAnonymous());
+        return cycle;
+    }
+
     public Optional<TicketSla> findLatestResolutionCycle(Ticket ticket) {
         return findLatestCycle(ticket, SlaType.RESOLUTION);
     }
