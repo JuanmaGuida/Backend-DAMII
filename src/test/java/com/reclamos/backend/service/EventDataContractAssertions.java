@@ -15,9 +15,9 @@ final class EventDataContractAssertions {
     private static final JsonSchema SCHEMA = JsonSchemaFactory.getInstance(
             SpecVersion.VersionFlag.V202012,
             builder -> builder.schemaMappers(mappers -> mappers.mapPrefix(
-                    "https://municipalidad-uade.example/m2/events/v1.76/", "classpath:events/v1.76/")))
+                    "https://municipalidad-uade.example/m2/events/v1.77/", "classpath:events/v1.77/")))
             .getSchema(SchemaLocation.of(
-                    "https://municipalidad-uade.example/m2/events/v1.76/ticketUpdated.data.schema.json"),
+                    "https://municipalidad-uade.example/m2/events/v1.77/ticketUpdated.data.schema.json"),
                     SchemaValidatorsConfig.builder().formatAssertionsEnabled(true).build());
 
     static void assertValid(Object data) {

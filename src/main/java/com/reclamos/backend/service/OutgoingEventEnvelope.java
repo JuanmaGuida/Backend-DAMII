@@ -8,7 +8,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 
-/** Core/Eventos v1.76 producer envelope. The stored Outbox payload is the delivery snapshot. */
+/** Core/Eventos v1.77 producer envelope. The stored Outbox payload is the delivery snapshot. */
 final class OutgoingEventEnvelope {
     static Map<String, Object> create(UUID eventId, String eventType, Instant occurredAt,
                                       Map<String, Object> data) {

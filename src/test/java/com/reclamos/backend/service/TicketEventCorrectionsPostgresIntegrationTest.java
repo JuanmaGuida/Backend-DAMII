@@ -12,6 +12,8 @@ import com.reclamos.backend.identity.ModuleRole;
 import com.reclamos.backend.repository.RequestTypeRepository;
 import com.reclamos.backend.repository.TicketRepository;
 import com.reclamos.backend.repository.OutboxEventRepository;
+import com.reclamos.backend.repository.AttachmentRepository;
+import com.reclamos.backend.repository.FormTemplateRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -41,6 +43,9 @@ import static org.assertj.core.api.Assertions.*;
 @ActiveProfiles("dev")
 class TicketEventCorrectionsPostgresIntegrationTest {
     @Autowired private TicketStatusUpdateService updates;
+    @Autowired private TicketService ticketService;
+    @Autowired private AttachmentRepository attachments;
+    @Autowired private FormTemplateRepository templates;
     @Autowired private TicketResolutionService resolutions;
     @Autowired private ResolutionConfirmationTimeoutService timeouts;
     @Autowired private InformationRequestService information;
@@ -61,7 +66,8 @@ class TicketEventCorrectionsPostgresIntegrationTest {
         for (UUID id : eventIds) db.update("DELETE FROM inbox_events WHERE event_id=?", id);
         for (UUID id : ids) {
             for (String table : List.of("notification_logs", "outbox_events", "ticket_messages",
-                    "ticket_activities", "ticket_resolutions", "information_requests", "ticket_cancellations", "ticket_sla")) {
+                    "ticket_activities", "ticket_resolutions", "information_requests", "ticket_cancellations", "ticket_sla",
+                    "attachments", "ticket_locations")) {
                 db.update("DELETE FROM " + table + " WHERE ticket_id=?", id);
             }
             db.update("UPDATE tickets SET main_ticket_id=NULL WHERE id=?", id);
@@ -73,6 +79,162 @@ class TicketEventCorrectionsPostgresIntegrationTest {
     static Stream<Arguments> externalVariants() {
         return Arrays.stream(UpdateTicketStatusType.values()).flatMap(type ->
                 Stream.of(false, true).map(anonymous -> Arguments.of(type, anonymous)));
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    @SuppressWarnings("unchecked")
+    void routedCommitsCompleteV177SnapshotWithConfirmedClassificationAndPublicEvidence(boolean anonymous) throws Exception {
+        Ticket ticket = routingFixture(anonymous);
+        Long publicFile = evidence(ticket, MessageVisibility.PUBLIC, "evidence.pdf");
+        evidence(ticket, MessageVisibility.INTERNAL, "private-note.pdf");
+        Ticket other = routingFixture(true);
+        evidence(other, MessageVisibility.PUBLIC, "other-ticket.pdf");
+        UUID neighborhood = db.queryForObject("SELECT id FROM neighborhood ORDER BY id LIMIT 1", UUID.class);
+        db.update("INSERT INTO ticket_locations (ticket_id,address_line,street,street_number,neighborhood_id,reference,"
+                        + "latitude,longitude,created_at,updated_at) VALUES (?, 'Lima 123','Lima','123',?,'Esquina',"
+                        + "-34.6,-58.4,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)", ticket.getId(), neighborhood);
+        String due = transactions.execute(ignored -> {
+            Ticket managed = tickets.findById(ticket.getId()).orElseThrow();
+            sla.startInitialResolutionCycle(managed, managed.getCreatedAt());
+            return sla.findLatestResolutionCycle(managed).orElseThrow().getDueAt().toString();
+        });
+
+        var result = ticketService.routeToArea(ticket.getId(), triageAgent());
+
+        var payload = payloads(ticket).getFirst();
+        EventEnvelopeContractAssertions.assertValid(payload);
+        EventEnvelopeContractAssertions.assertFullEventValid(payload);
+        var data = (Map<String, Object>) payload.get("data");
+        var routing = (Map<String, Object>) ((Map<String, Object>) data.get("details")).get("routing");
+        assertThat(eventTypes(ticket)).containsExactly("ROUTED");
+        assertThat(data).containsEntry("currentStatus", "ROUTED").containsEntry("isAnonymous", anonymous)
+                .containsEntry("citizenId", anonymous ? null : ticket.getCitizenId().toString())
+                .containsEntry("responsibleAreaId", result.getResponsibleAreaId())
+                .containsEntry("currentPriority", "HIGH");
+        assertThat(routing).containsEntry("requestType", "Informar una luminaria apagada")
+                .containsEntry("category", "Alumbrado y equipamiento urbano")
+                .containsEntry("subcategory", "Alumbrado público").containsEntry("ticketType", "COMPLAINT")
+                .containsEntry("resolutionDueAt", due).containsEntry("reassignment", false)
+                .containsEntry("formData", Map.of("cantidadLuminarias", "UNA", "zonaSinIluminacion", false, "cablesVisibles", false));
+        assertThat((Map<String, Object>) routing.get("location")).containsOnlyKeys(
+                        "addressLine", "street", "streetNumber", "neighborhoodId", "reference")
+                .containsEntry("neighborhoodId", neighborhood.toString()).containsEntry("addressLine", "Lima 123");
+        assertThat((Map<String, Object>) routing.get("escalation")).containsEntry("active", true)
+                .containsEntry("reasonCode", "MANUAL");
+        assertThat((List<Map<String, Object>>) data.get("attachments")).singleElement().satisfies(file ->
+                assertThat(file).containsOnlyKeys("fileName", "contentType", "url", "sizeBytes")
+                        .containsEntry("fileName", "evidence.pdf").containsEntry("contentType", "application/pdf")
+                        .containsEntry("sizeBytes", 42).containsEntry("url", "http://localhost:8080/api/attachments/" + publicFile + "/content"));
+        assertThat(payload.toString()).doesNotContain("private-note", "other-ticket", "storage/", "trackingCodeHash",
+                "anonymousContact", "test@example", "password", "latitude", "longitude", "formTemplateId",
+                "policyId", "cycleNumber", "pausedAt", "totalPausedSeconds", "previousAnswer", "private-form-key");
+        assertThat(db.queryForObject("SELECT status FROM outbox_events WHERE ticket_id=?", String.class, ticket.getId()))
+                .isEqualTo("PENDING");
+        assertThat(db.queryForObject("SELECT classification_finalized_at IS NOT NULL FROM tickets WHERE id=?",
+                Boolean.class, ticket.getId())).isTrue();
+        assertThat(db.queryForObject("SELECT count(*) FROM ticket_activities WHERE ticket_id=? AND action_type='ROUTED'",
+                Integer.class, ticket.getId())).isEqualTo(1);
+        assertThat(payloads(other)).isEmpty();
+
+        // Outbox is the stable delivery snapshot, even if ticket/file metadata later changes.
+        db.update("UPDATE tickets SET form_data='{}'::jsonb WHERE id=?", ticket.getId());
+        db.update("UPDATE attachments SET file_name='renamed.pdf' WHERE id=?", publicFile);
+        db.update("UPDATE outbox_events SET status='FAILED',retry_count=1 WHERE ticket_id=?", ticket.getId());
+        assertThat(payloads(ticket)).containsExactly(payload);
+        assertThatThrownBy(() -> ticketService.routeToArea(ticket.getId(), triageAgent()))
+                .isInstanceOf(com.reclamos.backend.exception.TicketStateConflictException.class);
+        assertThat(payloads(ticket)).containsExactly(payload);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void routedSupportsNoFilesNoLocationNoSlaAndEmptyConfirmedAnswers() throws Exception {
+        Ticket ticket = routingFixture(false);
+        db.update("UPDATE tickets SET form_data='{}'::jsonb,is_escalated=false,escalation_reason_code=NULL,"
+                + "escalated_at=NULL WHERE id=?", ticket.getId());
+
+        ticketService.routeToArea(ticket.getId(), triageAgent());
+
+        var payload = payloads(ticket).getFirst();
+        EventEnvelopeContractAssertions.assertFullEventValid(payload);
+        var data = (Map<String, Object>) payload.get("data");
+        var routing = (Map<String, Object>) ((Map<String, Object>) data.get("details")).get("routing");
+        assertThat(routing).containsEntry("location", null).containsEntry("resolutionDueAt", null)
+                .containsEntry("formData", Map.of()).containsEntry("reassignment", false);
+        assertThat((Map<String, Object>) routing.get("escalation")).containsEntry("active", false)
+                .containsEntry("reasonCode", null).containsEntry("escalatedAt", null);
+        assertThat((List<?>) data.get("attachments")).isEmpty();
+        assertThat(eventTypes(ticket)).containsExactly("ROUTED");
+    }
+
+    @Test
+    void routedRollsBackStateActivityAndOutboxTogether() {
+        Ticket ticket = routingFixture(true);
+        assertThatThrownBy(() -> transactions.executeWithoutResult(ignored -> {
+            ticketService.routeToArea(ticket.getId(), triageAgent());
+            outboxEvents.flush();
+            assertThat(count("outbox_events", ticket)).isEqualTo(1);
+            throw new IllegalStateException("forced ROUTED rollback");
+        })).isInstanceOf(IllegalStateException.class);
+        assertThat(db.queryForObject("SELECT current_status FROM tickets WHERE id=?", String.class, ticket.getId()))
+                .isEqualTo("IN_REVIEW");
+        assertThat(db.queryForObject("SELECT classification_finalized_at IS NULL FROM tickets WHERE id=?", Boolean.class, ticket.getId()))
+                .isTrue();
+        assertThat(count("outbox_events", ticket)).isZero();
+        assertThat(count("ticket_activities", ticket)).isZero();
+    }
+
+    @Test
+    void invalidConfirmedAnswerRollsBackRoutingBeforePublication() {
+        Ticket ticket = routingFixture(false);
+        db.update("UPDATE tickets SET form_data='{\"cablesVisibles\":{\"token\":\"private\"}}'::jsonb WHERE id=?", ticket.getId());
+        assertThatThrownBy(() -> ticketService.routeToArea(ticket.getId(), triageAgent()))
+                .isInstanceOf(com.reclamos.backend.exception.FormValidationException.class);
+        assertThat(db.queryForObject("SELECT current_status FROM tickets WHERE id=?", String.class, ticket.getId()))
+                .isEqualTo("IN_REVIEW");
+        assertThat(count("outbox_events", ticket)).isZero();
+        assertThat(count("ticket_activities", ticket)).isZero();
+    }
+
+    private AuthenticatedIdentity triageAgent() {
+        return new AuthenticatedIdentity("h10-agent", UUID.randomUUID(), "Agent", null, ModuleRole.AGENT);
+    }
+
+    private Ticket routingFixture(boolean anonymous) {
+        Ticket ticket = create(TicketStatus.IN_REVIEW, anonymous, "M3");
+        return transactions.execute(ignored -> {
+            Ticket managed = tickets.findById(ticket.getId()).orElseThrow();
+            RequestType confirmed = requestTypes.findAll().stream()
+                    .filter(rt -> "INFORMAR_UNA_LUMINARIA_APAGADA".equals(rt.getCode())).findFirst().orElseThrow();
+            managed.setRequestType(confirmed);
+            managed.setTicketType(confirmed.getTicketType());
+            managed.setResponsibleAreaId(confirmed.getResponsibleAreaId());
+            managed.setFormTemplateId(templates.findFirstByRequestType_IdAndActiveTrueOrderByVersionDesc(confirmed.getId())
+                    .orElseThrow().getId());
+            // Persisted unexpected/previous keys must never leave in the snapshot.
+            managed.setFormData(Map.of("cantidadLuminarias", "UNA", "zonaSinIluminacion", false,
+                    "cablesVisibles", false, "previousAnswer", "outdated", "formTemplateId", "private-form-key"));
+            managed.setCurrentPriority(Priority.HIGH);
+            managed.setEscalated(true);
+            managed.setEscalationReasonCode(EscalationReasonCode.MANUAL);
+            managed.setEscalatedAt(Instant.now().minusSeconds(30));
+            return tickets.saveAndFlush(managed);
+        });
+    }
+
+    private Long evidence(Ticket ticket, MessageVisibility visibility, String fileName) {
+        return transactions.execute(ignored -> {
+            Attachment file = new Attachment();
+            file.setTicket(tickets.findById(ticket.getId()).orElseThrow());
+            file.setFileName(fileName);
+            file.setContentType("application/pdf");
+            file.setSizeBytes(42);
+            file.setStorageKey("storage/" + UUID.randomUUID());
+            file.setVisibility(visibility);
+            file.setUploadedByType(ActorType.CITIZEN);
+            return attachments.saveAndFlush(file).getId();
+        });
     }
 
     @ParameterizedTest

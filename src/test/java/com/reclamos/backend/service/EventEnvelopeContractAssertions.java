@@ -10,9 +10,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 /** Original schemas, with format validation enabled; envelope and full data are separate checks. */
 final class EventEnvelopeContractAssertions {
     private static final ObjectMapper JSON = new ObjectMapper();
-    private static final String BASE = "https://municipalidad-uade.example/m2/events/v1.76/";
+    private static final String BASE = "https://municipalidad-uade.example/m2/events/v1.77/";
     private static final JsonSchemaFactory FACTORY = JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V202012,
-            builder -> builder.schemaMappers(mappers -> mappers.mapPrefix(BASE, "classpath:events/v1.76/")));
+            builder -> builder.schemaMappers(mappers -> mappers.mapPrefix(BASE, "classpath:events/v1.77/")));
 
     static JsonSchema schema(String name) {
         return FACTORY.getSchema(SchemaLocation.of(BASE + name),

@@ -3,6 +3,7 @@ package com.reclamos.backend.service;
 import com.reclamos.backend.entity.FormField;
 import com.reclamos.backend.entity.FormTemplate;
 import com.reclamos.backend.entity.RequestType;
+import com.reclamos.backend.entity.Ticket;
 import com.reclamos.backend.exception.FormValidationException;
 import com.reclamos.backend.repository.FormFieldRepository;
 import com.reclamos.backend.repository.FormTemplateRepository;
@@ -13,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -27,6 +29,40 @@ public class FormValidationService {
 
     public void validate(RequestType requestType, Map<String, Object> formData) {
         resolveAndValidate(requestType, formData);
+    }
+
+    /**
+     * Only answers belonging to the ticket's confirmed template version may enter ROUTED.
+     * Do not resolve the currently active version or serialize field/config/risk metadata.
+     * Empty answers remain valid after an initial classification correction.
+     */
+    public Map<String, Object> snapshotAnswers(Ticket ticket) {
+        Map<String, Object> answers = ticket.getFormData();
+        if (answers == null || answers.isEmpty() || ticket.getFormTemplateId() == null) {
+            return Map.of();
+        }
+        if (!formTemplateRepository.existsByIdAndRequestType_Id(
+                ticket.getFormTemplateId(), ticket.getRequestType().getId())) {
+            throw new FormValidationException("El formulario no corresponde a la clasificación confirmada");
+        }
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        for (FormField field : formFieldRepository
+                .findAllByFormTemplate_IdOrderByDisplayOrderAsc(ticket.getFormTemplateId())) {
+            if (!answers.containsKey(field.getCode())) {
+                continue;
+            }
+            Object value = answers.get(field.getCode());
+            if (value == null) {
+                if (!field.isAllowUnknown()) {
+                    throw new FormValidationException("El campo '" + field.getCode()
+                            + "' no admite un valor desconocido");
+                }
+            } else {
+                validateValue(field, value);
+            }
+            snapshot.put(field.getCode(), value);
+        }
+        return snapshot;
     }
 
     public ResolvedForm resolveAndValidate(RequestType requestType, Map<String, Object> formData) {
