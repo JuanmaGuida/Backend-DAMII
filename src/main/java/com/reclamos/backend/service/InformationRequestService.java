@@ -55,6 +55,9 @@ public class InformationRequestService {
                         identity.role() == ModuleRole.ADMIN ? ActorType.ADMIN : ActorType.AGENT,
                         identity.citizenId().toString(), request.getMessageForCitizen(), request.getInternalMessage(),
                         requestedAt, deadlineService.calculateDueAt(requestedAt), null));
+        // Only this entry point originates the request in M2; external facts must not be echoed.
+        ticketOutboxService.informationRequired(ticket, informationRequest.getMessageForCitizen(),
+                informationRequest.getDueAt(), informationRequest.getRequestedAt());
         return response(informationRequest);
     }
 
@@ -187,7 +190,6 @@ public class InformationRequestService {
                 informationRequest.getResumeStatus(), ActorType.CITIZEN, actorId,
                 MODULE_ID, null, responseMessage, answeredAt, null);
         ticketOutboxService.informationProvided(ticket, responseMessage, storedAttachments,
-                ActorType.CITIZEN, actorId,
                 !MODULE_ID.equalsIgnoreCase(informationRequest.getRequestedByModuleId()), answeredAt);
         notificationService.queueAssignedAgent(ticket, NotificationType.INFORMATION_PROVIDED,
                 identity == null ? null : identity.citizenId());

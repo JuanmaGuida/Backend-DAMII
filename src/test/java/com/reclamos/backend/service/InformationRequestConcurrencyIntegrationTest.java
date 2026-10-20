@@ -169,6 +169,35 @@ class InformationRequestConcurrencyIntegrationTest {
     }
 
     @Test
+    void concurrentInternalRequestRetriesPersistOneRequestAndOneOutboxEvent() throws Exception {
+        Ticket ticket = createExternalInformationTicket();
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try (Connection blocker = lockTicket(ticket.getId())) {
+            int blockerPid = backendPid(blocker);
+            CountDownLatch started = new CountDownLatch(2);
+            ThrowingOperation request = () -> informationRequestService.requestInformation(ticket.getId(),
+                    new CreateInformationRequest("Aporte información", "nota interna"), agent());
+            Future<Throwable> first = executor.submit(() -> runAt(clock.instant(), started, request));
+            Future<Throwable> retry = executor.submit(() -> runAt(clock.instant(), started, request));
+            assertTrue(started.await(5, TimeUnit.SECONDS));
+            awaitBlockedBy(blockerPid, 2);
+            blocker.commit();
+            Throwable a = first.get(15, TimeUnit.SECONDS);
+            Throwable b = retry.get(15, TimeUnit.SECONDS);
+            assertTrue((a == null) != (b == null));
+            assertInstanceOf(InformationRequestConflictException.class, a == null ? b : a);
+            assertEquals(1, count("SELECT COUNT(*) FROM information_requests WHERE ticket_id=?", ticket.getId()));
+            assertEquals(1, count("SELECT COUNT(*) FROM outbox_events WHERE ticket_id=? "
+                    + "AND update_type='INFORMATION_REQUIRED'", ticket.getId()));
+            assertEquals(1, count("SELECT COUNT(*) FROM ticket_activities WHERE ticket_id=? "
+                    + "AND action_type='INFORMATION_REQUIRED'", ticket.getId()));
+        } finally {
+            executor.shutdownNow();
+            cleanup(ticket.getId());
+        }
+    }
+
+    @Test
     void concurrentDeliveriesOfSameEventIdApplyInformationRequestOnlyOnce() throws Exception {
         Ticket ticket = createExternalInformationTicket();
         UUID eventId = UUID.randomUUID();

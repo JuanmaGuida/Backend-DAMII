@@ -79,6 +79,7 @@ class InformationRequestServiceTest {
                 && actor.citizenId().toString().equals(value.getActorId())
                 && "M2".equals(value.getSourceModuleId())));
         verify(ticketSlaService).pauseActiveResolutionCycle(ticket, NOW);
+        verify(outbox).informationRequired(ticket, "Adjunte el dato", NOW.plus(Duration.ofHours(72)), NOW);
         verify(notifications).queue(ticket, NotificationType.INFORMATION_REQUIRED);
     }
 
@@ -151,8 +152,7 @@ class InformationRequestServiceTest {
                 && actor.citizenId().toString().equals(value.getActorId())
                 && "M2".equals(value.getSourceModuleId())));
         verify(ticketSlaService).resumeActiveResolutionCycle(ticket, NOW);
-        verify(outbox).informationProvided(ticket, "Respuesta", List.of(), ActorType.CITIZEN,
-                actor.citizenId().toString(), false, NOW);
+        verify(outbox).informationProvided(ticket, "Respuesta", List.of(), false, NOW);
         verify(notifications).queueAssignedAgent(ticket, NotificationType.INFORMATION_PROVIDED, actor.citizenId());
         verify(notifications, never()).queueCitizen(ticket, NotificationType.INFORMATION_PROVIDED);
     }
@@ -237,8 +237,7 @@ class InformationRequestServiceTest {
         verify(activities).save(argThat(activity -> activity.getActorType() == ActorType.CITIZEN
                 && activity.getActorId() == null));
         verify(ticketSlaService).resumeActiveResolutionCycle(ticket, NOW);
-        verify(outbox).informationProvided(ticket, "Respuesta", List.of(), ActorType.CITIZEN,
-                null, true, NOW);
+        verify(outbox).informationProvided(ticket, "Respuesta", List.of(), true, NOW);
         verify(notifications).queueAssignedAgent(ticket, NotificationType.INFORMATION_PROVIDED, null);
         verify(notifications, never()).queueCitizen(ticket, NotificationType.INFORMATION_PROVIDED);
     }
@@ -343,7 +342,7 @@ class InformationRequestServiceTest {
                     && link.getRole() == InformationAttachmentRole.RESPONSE;
         }));
         verify(outbox).informationProvided(eq(ticket), isNull(), eq(List.of(stored)),
-                eq(ActorType.CITIZEN), eq(ticket.getCitizenId().toString()), eq(true), eq(NOW));
+                eq(true), eq(NOW));
     }
 
     @Test
@@ -379,8 +378,7 @@ class InformationRequestServiceTest {
         verify(attachmentService).storeForTicket(ticket, null, List.of(validated), NOW);
         verify(requestAttachments).saveAll(argThat(links -> links.iterator().next().getRole()
                 == InformationAttachmentRole.RESPONSE));
-        verify(outbox).informationProvided(ticket, "detalle", List.of(stored), ActorType.CITIZEN,
-                null, true, NOW);
+        verify(outbox).informationProvided(ticket, "detalle", List.of(stored), true, NOW);
     }
 
     @Test

@@ -4,9 +4,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.reclamos.backend.dto.UpdateTicketStatusEnvelope;
 import com.reclamos.backend.dto.UpdateTicketStatusRequest;
 import com.reclamos.backend.dto.request.AnswerInformationRequest;
+import com.reclamos.backend.dto.request.CreateInformationRequest;
 import com.reclamos.backend.dto.request.ReopenTicketRequest;
 import com.reclamos.backend.entity.*;
 import com.reclamos.backend.exception.InvalidTicketRequestException;
+import com.reclamos.backend.exception.InformationRequestConflictException;
 import com.reclamos.backend.identity.AuthenticatedIdentity;
 import com.reclamos.backend.identity.ModuleRole;
 import com.reclamos.backend.repository.RequestTypeRepository;
@@ -24,6 +26,8 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -56,6 +60,7 @@ class TicketEventCorrectionsPostgresIntegrationTest {
     @Autowired private JdbcTemplate db;
     @Autowired private TicketOutboxService outbox;
     @Autowired private OutboxEventRepository outboxEvents;
+    @Autowired private com.reclamos.backend.storage.FileStorage fileStorage;
     @Autowired private org.springframework.transaction.PlatformTransactionManager transactionManager;
     private final List<UUID> ids = new ArrayList<>();
     private final List<UUID> eventIds = new ArrayList<>();
@@ -65,6 +70,11 @@ class TicketEventCorrectionsPostgresIntegrationTest {
     void cleanUp() {
         for (UUID id : eventIds) db.update("DELETE FROM inbox_events WHERE event_id=?", id);
         for (UUID id : ids) {
+            for (String key : db.queryForList("SELECT a.storage_key FROM attachments a "
+                    + "JOIN information_request_attachments r ON r.attachment_id=a.id WHERE a.ticket_id=?",
+                    String.class, id)) fileStorage.delete(key);
+            db.update("DELETE FROM information_request_attachments WHERE information_request_id IN "
+                    + "(SELECT id FROM information_requests WHERE ticket_id=?)", id);
             for (String table : List.of("notification_logs", "outbox_events", "ticket_messages",
                     "ticket_activities", "ticket_resolutions", "information_requests", "ticket_cancellations", "ticket_sla",
                     "attachments", "ticket_locations")) {
@@ -382,6 +392,169 @@ class TicketEventCorrectionsPostgresIntegrationTest {
         updates.applyUpdate(ticket.getId(), envelope(ticket, UpdateTicketStatusType.INFORMATION_REQUIRED, null));
         information.answerInformation(ticket.getId(), new AnswerInformationRequest("Información del ciudadano"), owner(ticket));
         assertThat(eventTypes(ticket)).containsExactly("INFORMATION_PROVIDED");
+    }
+
+    static Stream<Arguments> internalInformationRequests() {
+        return Stream.of(Arguments.of(TicketStatus.IN_REVIEW, "M2"), Arguments.of(TicketStatus.IN_REVIEW, "M6"),
+                Arguments.of(TicketStatus.IN_PROGRESS, "M2"), Arguments.of(TicketStatus.IN_PROGRESS, "M6"),
+                Arguments.of(TicketStatus.ROUTED, "M6"));
+    }
+
+    @ParameterizedTest
+    @MethodSource("internalInformationRequests")
+    @SuppressWarnings("unchecked")
+    void internalRequestCommitsV177ProjectionWithMessageDeadlineAndPrivateAudit(TicketStatus status, String area) throws Exception {
+        Ticket ticket = create(status, false, area);
+        AuthenticatedIdentity actor = triageAgent();
+        var result = information.requestInformation(ticket.getId(),
+                new CreateInformationRequest("Indique la altura", "private-staff-note"), actor);
+
+        assertThat(eventTypes(ticket)).containsExactly("INFORMATION_REQUIRED");
+        var payload = payloads(ticket).getFirst();
+        EventEnvelopeContractAssertions.assertFullEventValid(payload);
+        var data = (Map<String, Object>) payload.get("data");
+        assertThat(data).containsEntry("currentStatus", "PENDING_INFORMATION")
+                .containsEntry("responsibleAreaId", area).containsEntry("publicMessage", result.getMessageForCitizen())
+                .containsEntry("updatedAt", result.getRequestedAt().toString());
+        var details = (Map<String, Object>) data.get("details");
+        assertThat(details).containsOnlyKeys("informationRequest");
+        assertThat((Map<String, Object>) details.get("informationRequest"))
+                .containsOnlyKeys("messageForCitizen", "requiredBy")
+                .containsEntry("messageForCitizen", "Indique la altura")
+                .containsEntry("requiredBy", result.getDueAt().toString());
+        var request = db.queryForMap("SELECT * FROM information_requests WHERE ticket_id=?", ticket.getId());
+        assertThat(request).containsEntry("resume_status", status.name())
+                .containsEntry("requested_by_module_id", "M2")
+                .containsEntry("requested_by_actor_id", actor.citizenId().toString())
+                .containsEntry("internal_message", "private-staff-note");
+        assertThat(payload.toString()).doesNotContain("private-staff-note", actor.citizenId().toString(),
+                request.get("id").toString(), "informationRequestId", "internalMessage", "formData", "formTemplateId");
+        if (status != TicketStatus.IN_REVIEW) {
+            assertThat(db.queryForObject("SELECT paused_at IS NOT NULL FROM ticket_sla WHERE ticket_id=?",
+                    Boolean.class, ticket.getId())).isTrue();
+        }
+        var beforeRetry = snapshot(ticket);
+        assertThatThrownBy(() -> information.requestInformation(ticket.getId(),
+                new CreateInformationRequest("Indique la altura", "private-staff-note"), actor))
+                .isInstanceOf(InformationRequestConflictException.class);
+        assertThat(snapshot(ticket)).isEqualTo(beforeRetry);
+
+        information.answerInformation(ticket.getId(), new AnswerInformationRequest("Altura 1240"), owner(ticket));
+        assertThat(eventTypes(ticket)).containsExactly("INFORMATION_REQUIRED", "INFORMATION_PROVIDED");
+        EventEnvelopeContractAssertions.assertFullEventValid(payloads(ticket).getLast());
+        assertThat(db.queryForObject("SELECT current_status FROM tickets WHERE id=?", String.class, ticket.getId()))
+                .isEqualTo(status.name());
+    }
+
+    @Test
+    void anonymousSelfManagedInternalRequestAndAnswerRemainLocal() {
+        Ticket ticket = create(TicketStatus.IN_PROGRESS, true, "M2");
+        information.requestInformation(ticket.getId(), new CreateInformationRequest("Aporte el dato", "private-note"), triageAgent());
+        assertThat(count("outbox_events", ticket)).isZero();
+        assertThat(db.queryForObject("SELECT current_status FROM tickets WHERE id=?", String.class, ticket.getId()))
+                .isEqualTo("PENDING_INFORMATION");
+        assertThat(db.queryForObject("SELECT paused_at IS NOT NULL FROM ticket_sla WHERE ticket_id=?",
+                Boolean.class, ticket.getId())).isTrue();
+
+        information.answerAnonymousFromTracking(ticket.getId(), new AnswerInformationRequest("Respuesta anónima"));
+        assertThat(count("outbox_events", ticket)).isZero();
+        assertThat(db.queryForObject("SELECT current_status FROM tickets WHERE id=?", String.class, ticket.getId()))
+                .isEqualTo("IN_PROGRESS");
+        assertThat(db.queryForObject("SELECT paused_at IS NULL FROM ticket_sla WHERE ticket_id=?",
+                Boolean.class, ticket.getId())).isTrue();
+        assertThat(db.queryForMap("SELECT answered_by_type,answered_by_id FROM information_requests WHERE ticket_id=?",
+                ticket.getId())).containsEntry("answered_by_type", "CITIZEN").containsEntry("answered_by_id", null);
+    }
+
+    static Stream<Arguments> informationResponses() {
+        return Stream.of("internal", "external", "anonymous-external").flatMap(origin ->
+                Stream.of("text", "attachments", "both").map(content -> Arguments.of(origin, content)));
+    }
+
+    @ParameterizedTest
+    @MethodSource("informationResponses")
+    @SuppressWarnings("unchecked")
+    void informationProvidedCommitsFullV177EventForTextAttachmentsOrBoth(String origin, String content) throws Exception {
+        boolean anonymous = origin.equals("anonymous-external");
+        boolean external = !origin.equals("internal");
+        Ticket ticket = create(TicketStatus.IN_PROGRESS, anonymous, external ? "M6" : "M2");
+        evidence(ticket, MessageVisibility.INTERNAL, "private-history.pdf");
+        evidence(ticket, MessageVisibility.PUBLIC, "old-public-history.pdf");
+        if (external) {
+            var incoming = envelope(ticket, UpdateTicketStatusType.INFORMATION_REQUIRED, null);
+            updates.applyUpdate(ticket.getId(), incoming);
+            var beforeReplay = snapshot(ticket);
+            updates.applyUpdate(ticket.getId(), incoming);
+            assertThat(snapshot(ticket)).isEqualTo(beforeReplay);
+            assertThat(count("outbox_events", ticket)).isZero();
+        } else {
+            information.requestInformation(ticket.getId(), new CreateInformationRequest("Aporte el dato", "private-note"), triageAgent());
+        }
+        String text = content.equals("attachments") ? null : "  Altura 1240  ";
+        MultipartFile[] files = content.equals("text") ? new MultipartFile[0] : new MultipartFile[]{
+                new MockMultipartFile("attachments", "evidence.pdf", "application/pdf", new byte[]{1, 2, 3})};
+        var result = anonymous
+                ? information.answerAnonymousFromTracking(ticket.getId(), new AnswerInformationRequest(text), files)
+                : information.answerInformation(ticket.getId(), new AnswerInformationRequest(text), owner(ticket), files);
+
+        assertThat(eventTypes(ticket)).containsExactlyElementsOf(external
+                ? List.of("INFORMATION_PROVIDED") : List.of("INFORMATION_REQUIRED", "INFORMATION_PROVIDED"));
+        var payload = payloads(ticket).getLast();
+        EventEnvelopeContractAssertions.assertFullEventValid(payload);
+        var data = (Map<String, Object>) payload.get("data");
+        assertThat(data).containsEntry("currentStatus", "IN_PROGRESS").containsEntry("isAnonymous", anonymous)
+                .containsEntry("citizenId", anonymous ? null : ticket.getCitizenId().toString())
+                .containsEntry("publicMessage", "El ciudadano aportó la información solicitada.")
+                .doesNotContainKeys("updatedBy", "internalMessage", "informationRequestId", "formTemplateId", "formData");
+        var response = (Map<String, Object>) ((Map<String, Object>) data.get("details")).get("informationResponse");
+        assertThat(response).containsOnlyKeys("message").containsEntry("message", text == null ? null : "Altura 1240");
+        var publishedFiles = (List<Map<String, Object>>) data.get("attachments");
+        assertThat(publishedFiles).hasSize(files.length);
+        if (files.length > 0) {
+            assertThat(publishedFiles.getFirst()).containsOnlyKeys("fileName", "contentType", "url", "sizeBytes")
+                    .containsEntry("fileName", "evidence.pdf").containsEntry("sizeBytes", 3);
+            assertThat(publishedFiles.getFirst().get("url")).isEqualTo(result.getAttachments().getFirst().getDownloadUrl());
+            assertThat(db.queryForObject("SELECT count(*) FROM information_request_attachments r JOIN attachments a "
+                    + "ON a.id=r.attachment_id WHERE a.ticket_id=? AND r.role='RESPONSE'", Integer.class, ticket.getId())).isEqualTo(1);
+        }
+        assertThat(payload.toString()).doesNotContain("private-", "old-public-history", "storageKey", "trackingCode", "anonymousContact");
+        var audit = db.queryForMap("SELECT answered_by_type,answered_by_id,status FROM information_requests WHERE ticket_id=?", ticket.getId());
+        assertThat(audit).containsEntry("answered_by_type", "CITIZEN").containsEntry("status", "ANSWERED")
+                .containsEntry("answered_by_id", anonymous ? null : ticket.getCitizenId().toString());
+        assertThat(db.queryForMap("SELECT actor_type,actor_id FROM ticket_activities "
+                        + "WHERE ticket_id=? AND action_type='INFORMATION_PROVIDED'", ticket.getId()))
+                .containsEntry("actor_type", "CITIZEN").containsEntry("actor_id", audit.get("answered_by_id"));
+        assertThat(db.queryForObject("SELECT paused_at IS NULL FROM ticket_sla WHERE ticket_id=?", Boolean.class, ticket.getId())).isTrue();
+        var beforeRetry = snapshot(ticket);
+        assertThatThrownBy(() -> {
+            if (anonymous) information.answerAnonymousFromTracking(ticket.getId(), new AnswerInformationRequest(text), files);
+            else information.answerInformation(ticket.getId(), new AnswerInformationRequest(text), owner(ticket), files);
+        }).isInstanceOf(InformationRequestConflictException.class);
+        assertThat(snapshot(ticket)).isEqualTo(beforeRetry);
+    }
+
+    @Test
+    void informationRequestAndAnswerRollbackIncludeOutboxAndAllowSafeRetry() {
+        Ticket ticket = create(TicketStatus.IN_PROGRESS, false, "M2");
+        var initial = snapshot(ticket);
+        assertThatThrownBy(() -> transactions.executeWithoutResult(ignored -> {
+            information.requestInformation(ticket.getId(), new CreateInformationRequest("Aporte el dato", "private-note"), triageAgent());
+            outboxEvents.flush();
+            assertThat(eventTypes(ticket)).containsExactly("INFORMATION_REQUIRED");
+            throw new IllegalStateException("forced rollback");
+        })).isInstanceOf(IllegalStateException.class);
+        assertThat(snapshot(ticket)).isEqualTo(initial);
+        information.requestInformation(ticket.getId(), new CreateInformationRequest("Aporte el dato", "private-note"), triageAgent());
+        var pending = snapshot(ticket);
+        assertThatThrownBy(() -> transactions.executeWithoutResult(ignored -> {
+            information.answerInformation(ticket.getId(), new AnswerInformationRequest("Respuesta"), owner(ticket));
+            outboxEvents.flush();
+            assertThat(eventTypes(ticket)).containsExactly("INFORMATION_REQUIRED", "INFORMATION_PROVIDED");
+            throw new IllegalStateException("forced rollback");
+        })).isInstanceOf(IllegalStateException.class);
+        assertThat(snapshot(ticket)).isEqualTo(pending);
+        information.answerInformation(ticket.getId(), new AnswerInformationRequest("Respuesta"), owner(ticket));
+        assertThat(eventTypes(ticket)).containsExactly("INFORMATION_REQUIRED", "INFORMATION_PROVIDED");
     }
 
     @Test
