@@ -1,5 +1,7 @@
 package com.reclamos.backend.service;
 
+import com.reclamos.backend.support.AttachmentFixtures;
+
 import com.reclamos.backend.dto.request.AnswerInformationRequest;
 import com.reclamos.backend.dto.request.CreateInformationRequest;
 import com.reclamos.backend.entity.*;
@@ -316,7 +318,7 @@ class InformationRequestServiceTest {
         when(requests.findByTicketIdAndStatusForUpdate(ticket.getId(), InformationRequestStatus.PENDING))
                 .thenReturn(Optional.of(pending));
         var file = new MockMultipartFile("attachments", "proof.png", "image/png", new byte[]{1});
-        var validated = new AttachmentService.ValidatedAttachment(file, "proof.png", "image/png", 1);
+        var validated = AttachmentFixtures.validated("proof.png", "image/png");
         when(attachmentService.validate(any())).thenReturn(List.of(validated));
         Attachment stored = new Attachment();
         stored.setId(10L);
@@ -354,7 +356,7 @@ class InformationRequestServiceTest {
         when(requests.findByTicketIdAndStatusForUpdate(ticket.getId(), InformationRequestStatus.PENDING))
                 .thenReturn(Optional.of(pending));
         var file = new MockMultipartFile("attachments", "proof.pdf", "application/pdf", new byte[]{1});
-        var validated = new AttachmentService.ValidatedAttachment(file, "proof.pdf", "application/pdf", 1);
+        var validated = AttachmentFixtures.validated("proof.pdf", "application/pdf");
         when(attachmentService.validate(any())).thenReturn(List.of(validated));
         Attachment stored = new Attachment();
         stored.setId(11L);

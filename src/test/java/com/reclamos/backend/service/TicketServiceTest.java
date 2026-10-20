@@ -1,5 +1,7 @@
 package com.reclamos.backend.service;
 
+import com.reclamos.backend.support.AttachmentFixtures;
+
 import com.reclamos.backend.dto.TicketFilter;
 import com.reclamos.backend.dto.TicketResponse;
 import com.reclamos.backend.dto.request.CancelTicketRequest;
@@ -190,12 +192,8 @@ class TicketServiceTest {
 
             return Arrays.stream(files)
                     .map(file ->
-                            new AttachmentService.ValidatedAttachment(
-                                    file,
-                                    file.getOriginalFilename(),
-                                    file.getContentType(),
-                                    file.getSize()
-                            ))
+                            AttachmentFixtures.validated(
+                                    file.getOriginalFilename(), file.getContentType()))
                     .toList();
         });
 
@@ -592,7 +590,7 @@ class TicketServiceTest {
 
         verify(attachments).storeForTicket(
                 any(Ticket.class), any(AuthenticatedIdentity.class),
-                argThat(items -> items.size() == 1 && items.getFirst().file() == evidence), any());
+                argThat(items -> items.size() == 1 && items.getFirst().fileName().equals(evidence.getOriginalFilename())), any());
     }
 
     @Test

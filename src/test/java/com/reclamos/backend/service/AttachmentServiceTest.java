@@ -14,6 +14,7 @@ import com.reclamos.backend.identity.ModuleRole;
 import com.reclamos.backend.repository.AttachmentRepository;
 import com.reclamos.backend.storage.FileStorage;
 import com.reclamos.backend.storage.StoredFile;
+import com.reclamos.backend.support.AttachmentFixtures;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -59,7 +60,7 @@ class AttachmentServiceTest {
         assertTrue(service.validate(null).isEmpty());
         assertTrue(service.validate(new MultipartFile[0]).isEmpty());
         for (String contentType : properties.getAllowedContentTypes()) {
-            assertEquals(contentType, service.validate(new MultipartFile[]{file("safe.bin", contentType, 1)})
+            assertEquals(contentType, service.validate(new MultipartFile[]{file("safe.bin", contentType)})
                     .getFirst().contentType());
         }
     }
@@ -71,9 +72,9 @@ class AttachmentServiceTest {
         assertThrows(InvalidAttachmentException.class,
                 () -> service.validate(new MultipartFile[]{null}));
         assertThrows(InvalidAttachmentException.class,
-                () -> service.validate(new MultipartFile[]{file("../../etc/passwd", "image/jpeg", 1)}));
+                () -> service.validate(new MultipartFile[]{file("../../etc/passwd", "image/jpeg")}));
         assertThrows(UnsupportedAttachmentMediaTypeException.class,
-                () -> service.validate(new MultipartFile[]{file("malware.zip", "application/zip", 1)}));
+                () -> service.validate(new MultipartFile[]{file("malware.zip", "application/zip")}));
     }
 
     @Test
@@ -101,12 +102,12 @@ class AttachmentServiceTest {
         AuthenticatedIdentity identity = identity();
         Instant now = Instant.parse("2026-09-06T12:00:00Z");
         when(storage.store(eq(ticket.getId()), any(InputStream.class)))
-                .thenReturn(new StoredFile("tickets/" + ticket.getId() + "/one", 1),
-                        new StoredFile("tickets/" + ticket.getId() + "/two", 1));
+                .thenReturn(new StoredFile("tickets/" + ticket.getId() + "/one", AttachmentFixtures.bytes("image/jpeg").length),
+                        new StoredFile("tickets/" + ticket.getId() + "/two", AttachmentFixtures.bytes("application/pdf").length));
 
         List<Attachment> saved = service.storeForTicket(ticket, identity, service.validate(new MultipartFile[]{
-                file("citizen-one.jpg", "image/jpeg", 1),
-                file("citizen-two.pdf", "application/pdf", 1)
+                file("citizen-one.jpg", "image/jpeg"),
+                file("citizen-two.pdf", "application/pdf")
         }), now);
 
         assertEquals(2, saved.size());
@@ -126,10 +127,10 @@ class AttachmentServiceTest {
         Ticket ticket = ticket();
         Instant now = Instant.parse("2026-09-06T12:00:00Z");
         when(storage.store(eq(ticket.getId()), any(InputStream.class)))
-                .thenReturn(new StoredFile("tickets/" + ticket.getId() + "/anonymous", 1));
+                .thenReturn(new StoredFile("tickets/" + ticket.getId() + "/anonymous", AttachmentFixtures.bytes("image/jpeg").length));
 
         Attachment saved = service.storeForTicket(ticket, null, service.validate(new MultipartFile[]{
-                file("anonymous.jpg", "image/jpeg", 1)
+                file("anonymous.jpg", "image/jpeg")
         }), now).getFirst();
 
         assertEquals(ActorType.CITIZEN, saved.getUploadedByType());
@@ -143,12 +144,12 @@ class AttachmentServiceTest {
         Instant now = Instant.parse("2026-09-20T12:00:00Z");
         String actorId = UUID.randomUUID().toString();
         when(storage.store(eq(ticket.getId()), any(InputStream.class)))
-                .thenReturn(new StoredFile("tickets/" + ticket.getId() + "/internal", 1));
+                .thenReturn(new StoredFile("tickets/" + ticket.getId() + "/internal", AttachmentFixtures.bytes("application/pdf").length));
 
         Attachment saved = service.storeForTicket(ticket,
                 new AttachmentService.UploadActor(ActorType.AREA_RESPONSIBLE, actorId),
                 MessageVisibility.INTERNAL,
-                service.validate(new MultipartFile[]{file("internal.pdf", "application/pdf", 1)}), now)
+                service.validate(new MultipartFile[]{file("internal.pdf", "application/pdf")}), now)
                 .getFirst();
 
         assertEquals(MessageVisibility.INTERNAL, saved.getVisibility());
@@ -163,12 +164,12 @@ class AttachmentServiceTest {
         Ticket ticket = ticket();
         String firstKey = "tickets/" + ticket.getId() + "/first";
         when(storage.store(eq(ticket.getId()), any(InputStream.class)))
-                .thenReturn(new StoredFile(firstKey, 1))
+                .thenReturn(new StoredFile(firstKey, AttachmentFixtures.bytes("image/jpeg").length))
                 .thenThrow(new AttachmentStorageUnavailableException());
 
         assertThrows(AttachmentStorageUnavailableException.class,
                 () -> service.storeForTicket(ticket, identity(), service.validate(new MultipartFile[]{
-                        file("one.jpg", "image/jpeg", 1), file("two.jpg", "image/jpeg", 1)
+                        file("one.jpg", "image/jpeg"), file("two.jpg", "image/jpeg")
                 }), Instant.now()));
 
         verify(storage).delete(firstKey);
@@ -183,7 +184,7 @@ class AttachmentServiceTest {
 
         assertThrows(AttachmentStorageUnavailableException.class,
                 () -> service.storeForTicket(ticket, identity(),
-                        service.validate(new MultipartFile[]{file("one.jpg", "image/jpeg", 1)}), Instant.now()));
+                        service.validate(new MultipartFile[]{file("one.jpg", "image/jpeg")}), Instant.now()));
 
         verify(storage, never()).delete(any());
         verify(repository, never()).saveAll(any());
@@ -193,13 +194,13 @@ class AttachmentServiceTest {
     void metadataFailureCleansStoredFilesWithoutHidingOriginalError() {
         Ticket ticket = ticket();
         String key = "tickets/" + ticket.getId() + "/file";
-        when(storage.store(eq(ticket.getId()), any(InputStream.class))).thenReturn(new StoredFile(key, 1));
+        when(storage.store(eq(ticket.getId()), any(InputStream.class))).thenReturn(new StoredFile(key, AttachmentFixtures.bytes("image/jpeg").length));
         IllegalStateException original = new IllegalStateException("database failure");
         when(repository.saveAll(any())).thenThrow(original);
 
         IllegalStateException thrown = assertThrows(IllegalStateException.class,
                 () -> service.storeForTicket(ticket, identity(),
-                        service.validate(new MultipartFile[]{file("one.jpg", "image/jpeg", 1)}), Instant.now()));
+                        service.validate(new MultipartFile[]{file("one.jpg", "image/jpeg")}), Instant.now()));
 
         assertSame(original, thrown);
         verify(storage).delete(key);
@@ -209,14 +210,14 @@ class AttachmentServiceTest {
     void cleanupFailureDoesNotReplaceTheOriginalFailure() {
         Ticket ticket = ticket();
         String key = "tickets/" + ticket.getId() + "/file";
-        when(storage.store(eq(ticket.getId()), any(InputStream.class))).thenReturn(new StoredFile(key, 1));
+        when(storage.store(eq(ticket.getId()), any(InputStream.class))).thenReturn(new StoredFile(key, AttachmentFixtures.bytes("image/jpeg").length));
         IllegalStateException original = new IllegalStateException("database failure");
         when(repository.saveAll(any())).thenThrow(original);
         doThrow(new AttachmentStorageUnavailableException()).when(storage).delete(key);
 
         RuntimeException thrown = assertThrows(RuntimeException.class,
                 () -> service.storeForTicket(ticket, identity(),
-                        service.validate(new MultipartFile[]{file("one.jpg", "image/jpeg", 1)}), Instant.now()));
+                        service.validate(new MultipartFile[]{file("one.jpg", "image/jpeg")}), Instant.now()));
 
         assertSame(original, thrown);
     }
@@ -225,16 +226,77 @@ class AttachmentServiceTest {
     void transactionRollbackCleansStoredFileAndRepeatedCleanupIsSafe() {
         Ticket ticket = ticket();
         String key = "tickets/" + ticket.getId() + "/file";
-        when(storage.store(eq(ticket.getId()), any(InputStream.class))).thenReturn(new StoredFile(key, 1));
+        when(storage.store(eq(ticket.getId()), any(InputStream.class))).thenReturn(new StoredFile(key, AttachmentFixtures.bytes("image/jpeg").length));
         TransactionSynchronizationManager.initSynchronization();
 
         service.storeForTicket(ticket, identity(),
-                service.validate(new MultipartFile[]{file("one.jpg", "image/jpeg", 1)}), Instant.now());
+                service.validate(new MultipartFile[]{file("one.jpg", "image/jpeg")}), Instant.now());
         List<TransactionSynchronization> synchronizations = TransactionSynchronizationManager.getSynchronizations();
         synchronizations.forEach(sync -> sync.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK));
         synchronizations.forEach(sync -> sync.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK));
 
         verify(storage, times(2)).delete(key);
+    }
+
+    @Test
+    void invalidBatchNeverWritesEvenWhenTheFirstFileIsValid() {
+        MultipartFile[] files = {file("valid.png", "image/png"),
+                new MockMultipartFile("evidence", "fake.png", "image/png", new byte[12])};
+        assertThrows(InvalidAttachmentException.class,
+                () -> service.storeForTicket(ticket(), identity(), service.validate(files), Instant.now()));
+        verifyNoInteractions(storage);
+        verify(repository, never()).saveAll(any());
+    }
+
+    @Test
+    void extensionDoesNotOverrideContentAndDeclaredMimeMustMatch() {
+        assertEquals("image/png", service.validate(new MultipartFile[]{
+                file("misleading.exe", "image/png")}).getFirst().contentType());
+        assertThrows(InvalidAttachmentException.class, () -> service.validate(new MultipartFile[]{
+                new MockMultipartFile("evidence", "photo.png", "image/png", AttachmentFixtures.bytes("image/jpeg"))}));
+        assertThrows(InvalidAttachmentException.class, () -> service.validate(new MultipartFile[]{
+                new MockMultipartFile("evidence", "image.png", "image/png", "MZ executable".getBytes())}));
+    }
+
+    @Test
+    void enforcesExactSizeLimitsAndStoresOnlyTheValidatedSnapshot() throws Exception {
+        byte[] bytes = AttachmentFixtures.bytes("image/png");
+        properties.getLimits().setMaxFileSize(DataSize.ofBytes(bytes.length));
+        properties.getLimits().setMaxTotalSize(DataSize.ofBytes(bytes.length));
+        MultipartFile source = mock(MultipartFile.class);
+        when(source.getSize()).thenReturn((long) bytes.length);
+        when(source.getContentType()).thenReturn("image/png");
+        when(source.getOriginalFilename()).thenReturn("proof.png");
+        when(source.getInputStream()).thenReturn(new java.io.ByteArrayInputStream(bytes))
+                .thenThrow(new java.io.IOException("must never reopen"));
+        var validated = service.validate(new MultipartFile[]{source});
+        Ticket ticket = ticket();
+        when(storage.store(eq(ticket.getId()), any(InputStream.class))).thenAnswer(invocation -> {
+            assertArrayEquals(bytes, ((InputStream) invocation.getArgument(1)).readAllBytes());
+            return new StoredFile("snapshot", bytes.length);
+        });
+        service.storeForTicket(ticket, identity(), validated, Instant.now());
+        verify(source, times(1)).getInputStream();
+        properties.getLimits().setMaxFileSize(DataSize.ofBytes(bytes.length - 1));
+        assertThrows(AttachmentPayloadTooLargeException.class,
+                () -> service.validate(new MultipartFile[]{file("too-large.png", "image/png")}));
+    }
+
+    @Test
+    void rejectsUnreadableStreamsAndDeclaredSizeMismatchWithoutStorage() throws Exception {
+        MultipartFile source = sizedFile("proof.png", "image/png", 12);
+        when(source.getInputStream()).thenThrow(new java.io.IOException("private disk details"));
+        var error = assertThrows(InvalidAttachmentException.class,
+                () -> service.validate(new MultipartFile[]{source}));
+        assertFalse(error.getMessage().contains("private"));
+        doReturn(new java.io.ByteArrayInputStream(new byte[0])).when(source).getInputStream();
+        assertThrows(InvalidAttachmentException.class, () -> service.validate(new MultipartFile[]{source}));
+        doReturn(new java.io.ByteArrayInputStream(AttachmentFixtures.bytes("image/png"))).when(source).getInputStream();
+        assertThrows(InvalidAttachmentException.class, () -> service.validate(new MultipartFile[]{source}));
+        properties.getLimits().setMaxFileSize(DataSize.ofBytes(12));
+        doReturn(new java.io.ByteArrayInputStream(new byte[13])).when(source).getInputStream();
+        assertThrows(AttachmentPayloadTooLargeException.class, () -> service.validate(new MultipartFile[]{source}));
+        verifyNoInteractions(storage);
     }
 
     private AttachmentProperties properties() {
@@ -247,8 +309,10 @@ class AttachmentServiceTest {
         return value;
     }
 
-    private MockMultipartFile file(String name, String contentType, int size) {
-        return new MockMultipartFile("evidence", name, contentType, new byte[size]);
+    private MockMultipartFile file(String name, String contentType) {
+        return contentType.equals("application/zip")
+                ? new MockMultipartFile("evidence", name, contentType, new byte[]{1})
+                : AttachmentFixtures.file("evidence", name, contentType);
     }
 
     private MultipartFile sizedFile(String name, String contentType, long size) {

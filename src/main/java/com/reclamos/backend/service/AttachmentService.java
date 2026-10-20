@@ -21,6 +21,7 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.time.Instant;
@@ -72,8 +73,13 @@ public class AttachmentService {
             if (!allowedTypes.contains(contentType)) {
                 throw new UnsupportedAttachmentMediaTypeException("El tipo de archivo no está permitido.");
             }
-            validated.add(new ValidatedAttachment(file, normalizeFileName(file.getOriginalFilename()),
-                    contentType, file.getSize()));
+            normalizeFileName(file.getOriginalFilename());
+        }
+        for (MultipartFile file : evidence) {
+            String contentType = normalizeContentType(file.getContentType());
+            byte[] content = readContent(file, maxFileSize);
+            AttachmentFormatValidator.validate(content, contentType);
+            validated.add(new ValidatedAttachment(content, normalizeFileName(file.getOriginalFilename()), contentType));
         }
         return List.copyOf(validated);
     }
@@ -112,7 +118,7 @@ public class AttachmentService {
     }
 
     private StoredFile store(Ticket ticket, ValidatedAttachment item) {
-        try (InputStream content = item.file().getInputStream()) {
+        try (InputStream content = new ByteArrayInputStream(item.content)) {
             return fileStorage.store(ticket.getId(), content);
         } catch (IOException exception) {
             throw new AttachmentStorageUnavailableException(exception);
@@ -182,7 +188,38 @@ public class AttachmentService {
         return fileName;
     }
 
-    public record ValidatedAttachment(MultipartFile file, String fileName, String contentType, long sizeBytes) {
+    private byte[] readContent(MultipartFile file, long maximum) {
+        // Never allocate according to an untrusted multipart size or read an unbounded stream.
+        int limit = (int) Math.min(maximum, Integer.MAX_VALUE - 1L);
+        try (InputStream input = file.getInputStream()) {
+            byte[] content = input.readNBytes(limit + 1);
+            if (content.length > maximum) {
+                throw new AttachmentPayloadTooLargeException("Un archivo supera el tamaño máximo permitido.");
+            }
+            if (content.length == 0 || content.length != file.getSize()) {
+                throw new InvalidAttachmentException("El archivo está vacío o incompleto.");
+            }
+            return content;
+        } catch (IOException exception) {
+            throw new InvalidAttachmentException("No se pudo leer el archivo adjunto.");
+        }
+    }
+
+    /** Immutable snapshot: storage receives exactly the bytes whose format was checked. */
+    public static final class ValidatedAttachment {
+        private final byte[] content;
+        private final String fileName;
+        private final String contentType;
+
+        private ValidatedAttachment(byte[] content, String fileName, String contentType) {
+            this.content = content;
+            this.fileName = fileName;
+            this.contentType = contentType;
+        }
+
+        public String fileName() { return fileName; }
+        public String contentType() { return contentType; }
+        public long sizeBytes() { return content.length; }
     }
 
     public record UploadActor(ActorType type, String id) {

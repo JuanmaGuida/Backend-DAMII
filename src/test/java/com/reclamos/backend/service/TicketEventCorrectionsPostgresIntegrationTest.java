@@ -1,5 +1,7 @@
 package com.reclamos.backend.service;
 
+import com.reclamos.backend.support.AttachmentFixtures;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.reclamos.backend.dto.UpdateTicketStatusEnvelope;
 import com.reclamos.backend.dto.UpdateTicketStatusRequest;
@@ -492,7 +494,7 @@ class TicketEventCorrectionsPostgresIntegrationTest {
         }
         String text = content.equals("attachments") ? null : "  Altura 1240  ";
         MultipartFile[] files = content.equals("text") ? new MultipartFile[0] : new MultipartFile[]{
-                new MockMultipartFile("attachments", "evidence.pdf", "application/pdf", new byte[]{1, 2, 3})};
+                AttachmentFixtures.file("attachments", "evidence.pdf", "application/pdf")};
         var result = anonymous
                 ? information.answerAnonymousFromTracking(ticket.getId(), new AnswerInformationRequest(text), files)
                 : information.answerInformation(ticket.getId(), new AnswerInformationRequest(text), owner(ticket), files);
@@ -512,7 +514,8 @@ class TicketEventCorrectionsPostgresIntegrationTest {
         assertThat(publishedFiles).hasSize(files.length);
         if (files.length > 0) {
             assertThat(publishedFiles.getFirst()).containsOnlyKeys("fileName", "contentType", "url", "sizeBytes")
-                    .containsEntry("fileName", "evidence.pdf").containsEntry("sizeBytes", 3);
+                    .containsEntry("fileName", "evidence.pdf")
+                    .containsEntry("sizeBytes", AttachmentFixtures.bytes("application/pdf").length);
             assertThat(publishedFiles.getFirst().get("url")).isEqualTo(result.getAttachments().getFirst().getDownloadUrl());
             assertThat(db.queryForObject("SELECT count(*) FROM information_request_attachments r JOIN attachments a "
                     + "ON a.id=r.attachment_id WHERE a.ticket_id=? AND r.role='RESPONSE'", Integer.class, ticket.getId())).isEqualTo(1);
