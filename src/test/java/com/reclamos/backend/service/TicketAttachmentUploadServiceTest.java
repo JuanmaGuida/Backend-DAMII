@@ -1,5 +1,7 @@
 package com.reclamos.backend.service;
 
+import com.reclamos.backend.support.AttachmentFixtures;
+
 import com.reclamos.backend.dto.request.AttachmentUploadRequest;
 import com.reclamos.backend.entity.ActorType;
 import com.reclamos.backend.entity.Attachment;
@@ -58,7 +60,7 @@ class TicketAttachmentUploadServiceTest {
                 attachmentReferenceService, Clock.fixed(NOW, ZoneOffset.UTC));
         ticket = ticket(false, OWNER_ID, AREA_ID);
         file = new MockMultipartFile("attachments", "proof.pdf", "application/pdf", new byte[]{1});
-        validated = new AttachmentService.ValidatedAttachment(file, "proof.pdf", "application/pdf", 1);
+        validated = AttachmentFixtures.validated("proof.pdf", "application/pdf");
         when(ticketRepository.findById(TICKET_ID)).thenReturn(Optional.of(ticket));
     }
 

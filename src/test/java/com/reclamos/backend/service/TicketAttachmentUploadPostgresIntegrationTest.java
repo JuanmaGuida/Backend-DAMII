@@ -1,5 +1,7 @@
 package com.reclamos.backend.service;
 
+import com.reclamos.backend.support.AttachmentFixtures;
+
 import com.reclamos.backend.dto.request.AttachmentUploadRequest;
 import com.reclamos.backend.entity.ActorType;
 import com.reclamos.backend.entity.Attachment;
@@ -55,13 +57,13 @@ class TicketAttachmentUploadPostgresIntegrationTest {
                         + "FROM request_types WHERE code='INFORMAR_UN_BACHE'",
                 ticketId, "HU28-" + ticketId.toString().substring(0, 20), "hash-" + ticketId, citizenId);
         when(fileStorage.store(eq(ticketId), any(InputStream.class)))
-                .thenReturn(new StoredFile("tickets/" + ticketId + "/proof", 3));
+                .thenReturn(new StoredFile("tickets/" + ticketId + "/proof", AttachmentFixtures.bytes("application/pdf").length));
         var identity = new AuthenticatedIdentity("subject", citizenId, "Owner", null, ModuleRole.CITIZEN);
 
         var response = uploadService.upload(ticketId,
                 new AttachmentUploadRequest(MessageVisibility.PUBLIC),
-                new MockMultipartFile[]{new MockMultipartFile(
-                        "attachments", "proof.pdf", "application/pdf", new byte[]{1, 2, 3})}, identity);
+                new MockMultipartFile[]{AttachmentFixtures.file(
+                        "attachments", "proof.pdf", "application/pdf")}, identity);
 
         Attachment stored = attachmentRepository.findById(response.getFirst().getId()).orElseThrow();
         assertThat(stored.getTicket().getId()).isEqualTo(ticketId);
