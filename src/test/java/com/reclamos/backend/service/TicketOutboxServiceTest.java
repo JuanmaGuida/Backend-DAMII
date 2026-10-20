@@ -1,7 +1,6 @@
 package com.reclamos.backend.service;
 
 import com.reclamos.backend.entity.CancellationReasonCode;
-import com.reclamos.backend.entity.ActorType;
 import com.reclamos.backend.entity.Attachment;
 import com.reclamos.backend.entity.AnonymousContactChannel;
 import com.reclamos.backend.entity.Category;
@@ -258,6 +257,31 @@ class TicketOutboxServiceTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void internalInformationRequiredPublishesOnlyIdentifiedProjectionWithEffectiveDeadline() {
+        service.informationRequired(ticket(false, "M2", TicketStatus.PENDING_INFORMATION), "Aporte el dato", RESOLUTION_DUE, NOW);
+        service.informationRequired(ticket(false, "M6", TicketStatus.PENDING_INFORMATION), "Aporte el dato", RESOLUTION_DUE, NOW);
+        service.informationRequired(ticket(true, "M2", TicketStatus.PENDING_INFORMATION), "Aporte el dato", RESOLUTION_DUE, NOW);
+        service.informationRequired(ticket(true, "M6", TicketStatus.PENDING_INFORMATION), "Aporte el dato", RESOLUTION_DUE, NOW);
+
+        var captor = ArgumentCaptor.forClass(OutboxEvent.class);
+        verify(repository, times(2)).save(captor.capture());
+        assertThat(captor.getAllValues()).allSatisfy(event -> {
+            assertThat(event.getUpdateType()).isEqualTo(TicketUpdatedType.INFORMATION_REQUIRED);
+            EventEnvelopeContractAssertions.assertFullEventValid(event.getPayload());
+            var data = (Map<String, Object>) event.getPayload().get("data");
+            assertThat(data).containsEntry("currentStatus", "PENDING_INFORMATION")
+                    .containsEntry("publicMessage", "Aporte el dato");
+            assertThat((Map<String, Object>) data.get("details")).containsOnlyKeys("informationRequest");
+            assertThat((Map<String, Object>) ((Map<String, Object>) data.get("details")).get("informationRequest"))
+                    .containsOnlyKeys("messageForCitizen", "requiredBy")
+                    .containsEntry("messageForCitizen", "Aporte el dato")
+                    .containsEntry("requiredBy", RESOLUTION_DUE.toString());
+            assertThat((List<?>) data.get("attachments")).isEmpty();
+        });
+    }
+
+    @Test
     void informationProvidedPublishesForIdentifiedAndForAnonymousExternalRequestOnly() {
         service.informationProvided(ticket(false, "M2", TicketStatus.IN_PROGRESS), "Dato", false, NOW);
         service.informationProvided(ticket(false, "M6", TicketStatus.IN_PROGRESS), "Dato", true, NOW);
@@ -265,11 +289,13 @@ class TicketOutboxServiceTest {
         service.informationProvided(ticket(true, "M6", TicketStatus.IN_PROGRESS), "Dato", false, NOW);
         service.informationProvided(ticket(true, "M2", TicketStatus.IN_PROGRESS), "Dato", false, NOW);
 
-        verify(repository, times(3)).save(any());
+        var captor = ArgumentCaptor.forClass(OutboxEvent.class);
+        verify(repository, times(3)).save(captor.capture());
+        captor.getAllValues().forEach(event -> EventEnvelopeContractAssertions.assertFullEventValid(event.getPayload()));
     }
 
     @Test
-    void informationProvidedContainsRestoredTicketTextAttachmentAndCitizenActor() {
+    void informationProvidedContainsRestoredTicketTextAndPublicAttachmentWithoutPrivateActorMetadata() {
         Ticket ticket = ticket(true, "M6", TicketStatus.IN_PROGRESS);
         Attachment attachment = new Attachment();
         attachment.setTicket(ticket);
@@ -282,12 +308,16 @@ class TicketOutboxServiceTest {
         org.mockito.Mockito.when(attachmentReferenceService.downloadUrl(attachment))
                 .thenReturn("https://m2.example/api/attachments/44/content");
 
-        service.informationProvided(ticket, "Detalle", List.of(attachment),
-                ActorType.CITIZEN, null, true, NOW);
+        Attachment internal = new Attachment();
+        internal.setVisibility(MessageVisibility.INTERNAL);
+        internal.setStorageKey("private-storage");
+        internal.setFileName("private-note.pdf");
+        service.informationProvided(ticket, "Detalle", List.of(attachment, internal), true, NOW);
 
         ArgumentCaptor<OutboxEvent> captor = ArgumentCaptor.forClass(OutboxEvent.class);
         verify(repository).save(captor.capture());
         OutboxEvent event = captor.getValue();
+        EventEnvelopeContractAssertions.assertFullEventValid(event.getPayload());
         assertThat(event.getUpdateType()).isEqualTo(TicketUpdatedType.INFORMATION_PROVIDED);
         @SuppressWarnings("unchecked")
         Map<String, Object> data = (Map<String, Object>) event.getPayload().get("data");
@@ -308,9 +338,12 @@ class TicketOutboxServiceTest {
                         .containsEntry("url", "https://m2.example/api/attachments/44/content")
                         .doesNotContainValue("tickets/one/proof")
                         .containsEntry("sizeBytes", 42L));
-        assertThat((Map<String, Object>) data.get("updatedBy"))
-                .containsEntry("type", "CITIZEN")
-                .containsEntry("id", null);
+        assertThat(data).doesNotContainKeys("updatedBy", "internalMessage", "informationRequestId", "formData", "formTemplateId");
+        assertThat(event.getPayload().toString()).doesNotContain("private-", "tickets/one/proof");
+        verify(attachmentReferenceService, never()).downloadUrl(internal);
+        // Reproduce H10's former producer error against the unmodified full-event schema.
+        data.put("updatedBy", Map.of("type", "CITIZEN"));
+        EventEnvelopeContractAssertions.assertFullEventInvalid(event.getPayload());
     }
 
     @Test
