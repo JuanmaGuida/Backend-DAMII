@@ -20,17 +20,22 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 
 import java.time.Instant;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 @SpringBootTest(properties = {
         "ticket.information-request.expiration-scan-delay=3600000",
         "ticket.resolution.confirmation-scan-delay=3600000",
-        "ticket.sla.milestone-scan-delay=3600000"
+        "ticket.sla.milestone-scan-delay=3600000",
+        "spring.flyway.schemas=information_notification_test",
+        "spring.datasource.hikari.schema=information_notification_test",
+        "spring.jpa.properties.hibernate.default_schema=information_notification_test"
 })
 @ActiveProfiles("dev")
 @Import(InformationProvidedNotificationIntegrationTest.RecordingSenderConfiguration.class)
@@ -81,6 +86,11 @@ class InformationProvidedNotificationIntegrationTest {
         assertThat(activityRepository.findAllByTicket_IdOrderBySequenceAsc(ticketId))
                 .filteredOn(activity -> activity.getActionType() == ActivityType.INFORMATION_PROVIDED)
                 .hasSize(1);
+
+        await().atMost(Duration.ofSeconds(10)).untilAsserted(() ->
+                assertThat(database.queryForObject("SELECT status FROM notification_logs WHERE ticket_id=? AND type=?",
+                        String.class, ticketId, NotificationType.INFORMATION_PROVIDED.name()))
+                        .isEqualTo(NotificationStatus.SENT.name()));
 
         List<Map<String, Object>> logs = database.queryForList("""
                 SELECT citizen_id, status, attempt_count

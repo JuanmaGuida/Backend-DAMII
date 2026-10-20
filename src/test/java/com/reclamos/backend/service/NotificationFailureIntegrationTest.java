@@ -29,17 +29,23 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 
 import java.time.Instant;
+import java.time.Duration;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.awaitility.Awaitility.await;
 
 @SpringBootTest(properties = {
         "ticket.information-request.expiration-scan-delay=3600000",
         "ticket.resolution.confirmation-scan-delay=3600000",
-        "ticket.sla.milestone-scan-delay=3600000"
+        "ticket.sla.milestone-scan-delay=3600000",
+        // A worker from another cached test context must not use a different sender.
+        "spring.flyway.schemas=notification_failure_test",
+        "spring.datasource.hikari.schema=notification_failure_test",
+        "spring.jpa.properties.hibernate.default_schema=notification_failure_test"
 })
 @ActiveProfiles("dev")
 @Import(NotificationFailureIntegrationTest.FailingSenderConfiguration.class)
@@ -152,6 +158,10 @@ class NotificationFailureIntegrationTest {
                 .filteredOn(activity ->
                         activity.getActionType() == ActivityType.INFORMATION_REQUIRED)
                 .hasSize(1);
+
+        await().atMost(Duration.ofSeconds(10)).untilAsserted(() ->
+                assertThat(database.queryForObject("SELECT status FROM notification_logs WHERE ticket_id=?",
+                        String.class, ticketId)).isEqualTo(NotificationStatus.FAILED.name()));
 
         Map<String, Object> notification = database.queryForMap("""
                 SELECT

@@ -9,6 +9,8 @@ import com.reclamos.backend.repository.TicketActivityRepository;
 import com.reclamos.backend.repository.TicketRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -70,6 +72,64 @@ class DuplicateTicketServiceTest {
 
         verifyNoInteractions(sla, outbox);
         verify(activities, never()).save(any());
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = TicketStatus.class, names = {"CANCELLED", "CLOSED", "RESOLVED"})
+    void rejectsTerminalSourceWithoutChangingStateLinkHistorySlaOrEvents(TicketStatus status) {
+        Ticket duplicate = ticket(status, 3);
+        Instant changedAt = now.minusSeconds(60);
+        duplicate.setStatusChangedAt(changedAt);
+        Ticket main = ticket(TicketStatus.IN_PROGRESS, 10);
+        arrangeLocks(duplicate, main);
+
+        assertThrows(TicketStateConflictException.class,
+                () -> service.link(duplicate.getId(), new LinkDuplicateRequest(main.getId()), agent));
+
+        assertEquals(status, duplicate.getCurrentStatus());
+        assertEquals(changedAt, duplicate.getStatusChangedAt());
+        assertNull(duplicate.getMainTicket());
+        assertEquals(TicketStatus.IN_PROGRESS, main.getCurrentStatus());
+        verify(tickets, never()).save(any());
+        verifyNoInteractions(activities, sla, outbox);
+    }
+
+    @Test
+    void rejectsTurningAPrincipalIntoADuplicateAndPreservesTheFirstLinkAndHistory() {
+        Ticket a = ticket(TicketStatus.IN_REVIEW, 10);
+        Ticket b = ticket(TicketStatus.REGISTERED, 1);
+        Ticket c = ticket(TicketStatus.IN_PROGRESS, 20);
+        arrangeLocks(b, a);
+        service.link(b.getId(), new LinkDuplicateRequest(a.getId()), agent);
+        clearInvocations(tickets, activities, sla, outbox);
+        arrangeLocks(a, c);
+        when(tickets.existsByMainTicket_Id(a.getId())).thenReturn(true);
+
+        assertThrows(TicketStateConflictException.class,
+                () -> service.link(a.getId(), new LinkDuplicateRequest(c.getId()), agent));
+
+        assertSame(a, b.getMainTicket());
+        assertEquals(TicketStatus.DUPLICATE, b.getCurrentStatus());
+        assertNull(a.getMainTicket());
+        assertEquals(TicketStatus.IN_REVIEW, a.getCurrentStatus());
+        verify(tickets, never()).save(any());
+        verifyNoInteractions(activities, sla, outbox);
+    }
+
+    @Test
+    void takesBothTicketLocksInStableOrderBeforeCheckingIncomingLinks() {
+        Ticket duplicate = ticket(TicketStatus.REGISTERED, 1);
+        Ticket main = ticket(TicketStatus.IN_PROGRESS, 1);
+        arrangeLocks(duplicate, main);
+
+        service.link(duplicate.getId(), new LinkDuplicateRequest(main.getId()), agent);
+
+        var order = inOrder(tickets);
+        UUID first = duplicate.getId().compareTo(main.getId()) < 0 ? duplicate.getId() : main.getId();
+        UUID second = first.equals(duplicate.getId()) ? main.getId() : duplicate.getId();
+        order.verify(tickets).findByIdForUpdate(first);
+        order.verify(tickets).findByIdForUpdate(second);
+        order.verify(tickets).existsByMainTicket_Id(duplicate.getId());
     }
 
     @Test

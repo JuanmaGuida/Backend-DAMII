@@ -58,6 +58,16 @@ public class DuplicateTicketService {
         if (duplicate.getCurrentStatus() == TicketStatus.DUPLICATE) {
             throw new TicketStateConflictException("El ticket duplicado no tiene un vínculo principal válido");
         }
+        if (duplicate.getCurrentStatus() == TicketStatus.CLOSED
+                || duplicate.getCurrentStatus() == TicketStatus.CANCELLED
+                || duplicate.getCurrentStatus() == TicketStatus.RESOLVED) {
+            throw new TicketStateConflictException("El estado del ticket no permite convertirlo en duplicado");
+        }
+        // Todo link entrante también bloquea este ticket como principal. Mantener el lock
+        // hasta el commit hace segura esta consulta ante B -> A simultáneo con A -> C.
+        if (ticketRepository.existsByMainTicket_Id(duplicateId)) {
+            throw new TicketStateConflictException("Un ticket principal con duplicados no puede convertirse en duplicado");
+        }
         if (main.getMainTicket() != null || main.getCurrentStatus() == TicketStatus.DUPLICATE) {
             throw new TicketStateConflictException("El principal no puede ser a su vez un duplicado");
         }
