@@ -92,6 +92,8 @@ public class TicketResolutionService {
         TicketResolution resolution = applyValidatedResolution(ticket, new ResolutionApplication(
                 request.getType(), request.getPublicMessage(), request.getInternalMessage(),
                 actorType, actorId, MODULE_ID, now, null));
+        // Sólo la resolución originada en M2 publica; la externa conserva sus efectos locales.
+        ticketOutboxService.resolved(ticket, request.getType(), request.getPublicMessage(), clock.instant());
 
         return new TicketResolutionResponse(resolution.getId(), ticket.getId(), TicketStatus.RESOLVED,
                 resolution.getType(), resolution.getPublicMessage(), resolution.getInternalMessage(), now);
@@ -129,16 +131,6 @@ public class TicketResolutionService {
         ticket.setResolutionConfirmationDueAt(application.resolvedAt().plus(confirmationDuration));
         ticketRepository.save(ticket);
         saveResolutionActivity(ticket, previousStatus, application);
-        // DDA2-180: data.updatedAt de ticketUpdated tiene que ser "cuándo M2
-        // persistió el cambio" (Eventos V1.69 §7.1/§11), no
-        // application.resolvedAt() — ese es data.updateOccurredAt cuando la
-        // resolución llega por integración externa (TicketStatusUpdateService),
-        // el momento del hecho en el productor, no de M2. resolvedAt() se
-        // sigue usando para el resto del dominio (SLA, TicketResolution,
-        // statusChangedAt): sólo el timestamp publicado en el evento tiene
-        // que ser el propio de M2.
-        ticketOutboxService.resolved(ticket, application.type(), application.publicMessage(),
-                clock.instant());
         if (notificationService != null) {
             notificationService.queueCitizen(ticket, NotificationType.RESOLVED);
             notificationService.queueAssignedAgent(ticket, NotificationType.RESOLVED,

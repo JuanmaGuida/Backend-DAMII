@@ -169,18 +169,18 @@ public class TicketOutboxService {
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
-    public void closed(Ticket ticket, String reason, Instant updatedAt) {
+    public void closed(Ticket ticket, String reasonCode, Instant updatedAt) {
         if (ticket.isAnonymous() && isSelfManaged(ticket)) {
             return;
         }
         saveUpdated(ticket, TicketUpdatedType.CLOSED, null,
-                Map.of("closure", Map.of("reason", reason)), List.of(), updatedAt);
+                Map.of("closure", Map.of("reasonCode", reasonCode)), List.of(), updatedAt);
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
     public void cancelled(Ticket ticket, CancellationReasonCode reasonCode, String publicMessage,
                           boolean originatedByM2, Instant updatedAt) {
-        if (ticket.isAnonymous() && (!originatedByM2 || isSelfManaged(ticket))) {
+        if (!originatedByM2 || (ticket.isAnonymous() && isSelfManaged(ticket))) {
             return;
         }
         saveUpdated(ticket, TicketUpdatedType.CANCELLED, publicMessage,
