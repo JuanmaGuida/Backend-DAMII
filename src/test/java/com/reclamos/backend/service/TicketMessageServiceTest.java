@@ -87,7 +87,7 @@ class TicketMessageServiceTest {
 
     @Test
     void ownerCanSendAPublicMessageOnTheirOwnTicket() {
-        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ownTicket));
+        when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ownTicket));
 
         TicketMessageResponse response = service.create(ticketId, request(MessageVisibility.PUBLIC, "Hola"), owner);
 
@@ -100,11 +100,17 @@ class TicketMessageServiceTest {
         assertEquals(MessageVisibility.PUBLIC, captor.getValue().getVisibility());
         assertEquals("Hola", captor.getValue().getText());
         assertEquals(ActorType.CITIZEN, response.authorType());
+        var order = inOrder(ticketRepository, messageRepository, activityRepository);
+        order.verify(ticketRepository).findByIdForUpdate(ticketId);
+        order.verify(messageRepository).save(any());
+        order.verify(activityRepository).countByTicketId(ticketId);
+        order.verify(activityRepository).save(any());
+        verify(ticketRepository, never()).findById(any());
     }
 
     @Test
     void ownerCannotSendAnInternalMessageOnTheirOwnTicketEvenIfTheyAreStaff() {
-        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ownTicket));
+        when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ownTicket));
         AuthenticatedIdentity ownerAsAdmin = new AuthenticatedIdentity(
                 "owner", ownerId, "Vecino/Admin", null, ModuleRole.ADMIN);
 
@@ -115,7 +121,7 @@ class TicketMessageServiceTest {
 
     @Test
     void ownerActingAsAdminCanStillSendPublicOnTheirOwnTicketAsCitizen() {
-        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ownTicket));
+        when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ownTicket));
         AuthenticatedIdentity ownerAsAdmin = new AuthenticatedIdentity(
                 "owner", ownerId, "Vecino/Admin", null, ModuleRole.ADMIN);
 
@@ -127,7 +133,7 @@ class TicketMessageServiceTest {
 
     @Test
     void agentCanSendPublicOrInternalOnAnUnrelatedTicket() {
-        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(otherTicket));
+        when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(otherTicket));
         AuthenticatedIdentity agent = new AuthenticatedIdentity(
                 "agent", UUID.randomUUID(), "Agente", null, ModuleRole.AGENT);
 
@@ -143,7 +149,7 @@ class TicketMessageServiceTest {
 
     @Test
     void areaResponsibleCanSendOnATicketOfTheirOwnArea() {
-        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(otherTicket));
+        when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(otherTicket));
         AuthenticatedIdentity areaResponsible = new AuthenticatedIdentity(
                 "area", UUID.randomUUID(), "Responsable", "M2", ModuleRole.AREA_RESPONSIBLE);
 
@@ -155,7 +161,7 @@ class TicketMessageServiceTest {
 
     @Test
     void areaResponsibleCannotSendOnATicketOfADifferentArea() {
-        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(otherTicket));
+        when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(otherTicket));
         AuthenticatedIdentity areaResponsible = new AuthenticatedIdentity(
                 "area", UUID.randomUUID(), "Responsable", "M5", ModuleRole.AREA_RESPONSIBLE);
 
@@ -166,7 +172,7 @@ class TicketMessageServiceTest {
 
     @Test
     void aCitizenCannotSendMessagesOnSomeoneElsesTicket() {
-        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(otherTicket));
+        when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(otherTicket));
         AuthenticatedIdentity anotherCitizen = new AuthenticatedIdentity(
                 "otro", UUID.randomUUID(), "Otro vecino", null, ModuleRole.CITIZEN);
 
@@ -177,7 +183,7 @@ class TicketMessageServiceTest {
 
     @Test
     void nullIdentityIsForbidden() {
-        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(otherTicket));
+        when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(otherTicket));
         assertThrows(UnauthorizedTicketOperationException.class,
                 () -> service.create(ticketId, request(MessageVisibility.PUBLIC, "hola"), null));
         verifyNoInteractions(messageRepository);
@@ -185,7 +191,7 @@ class TicketMessageServiceTest {
 
     @Test
     void missingTicketIsNotFound() {
-        when(ticketRepository.findById(ticketId)).thenReturn(Optional.empty());
+        when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.empty());
         assertThrows(ResourceNotFoundException.class,
                 () -> service.create(ticketId, request(MessageVisibility.PUBLIC, "hola"), owner));
         verifyNoInteractions(messageRepository);
@@ -193,7 +199,7 @@ class TicketMessageServiceTest {
 
     @Test
     void createAlsoRecordsAMatchingActivityForTheGeneralTimeline() {
-        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ownTicket));
+        when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ownTicket));
         when(activityRepository.countByTicketId(ticketId)).thenReturn(3);
 
         service.create(ticketId, request(MessageVisibility.PUBLIC, "hola"), owner);
@@ -208,7 +214,7 @@ class TicketMessageServiceTest {
 
     @Test
     void internalMessageIsRecordedAsInternalMessageAddedActivity() {
-        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(otherTicket));
+        when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(otherTicket));
         AuthenticatedIdentity agent = new AuthenticatedIdentity(
                 "agent", UUID.randomUUID(), "Agente", null, ModuleRole.AGENT);
 
@@ -226,7 +232,7 @@ class TicketMessageServiceTest {
         Ticket anonymousTicket = new Ticket();
         anonymousTicket.setId(ticketId);
         anonymousTicket.setAnonymous(true);
-        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(anonymousTicket));
+        when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(anonymousTicket));
 
         TicketMessageResponse response =
                 service.createAnonymous(ticketId, request(MessageVisibility.PUBLIC, "Hola"));
@@ -241,6 +247,12 @@ class TicketMessageServiceTest {
         assertEquals("Hola", captor.getValue().getText());
         assertEquals(ActorType.CITIZEN, response.authorType());
         assertNull(response.authorId());
+        var order = inOrder(ticketRepository, messageRepository, activityRepository);
+        order.verify(ticketRepository).findByIdForUpdate(ticketId);
+        order.verify(messageRepository).save(any());
+        order.verify(activityRepository).countByTicketId(ticketId);
+        order.verify(activityRepository).save(any());
+        verify(ticketRepository, never()).findById(any());
     }
 
     @Test
@@ -248,7 +260,7 @@ class TicketMessageServiceTest {
         Ticket anonymousTicket = new Ticket();
         anonymousTicket.setId(ticketId);
         anonymousTicket.setAnonymous(true);
-        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(anonymousTicket));
+        when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(anonymousTicket));
         when(activityRepository.countByTicketId(ticketId)).thenReturn(0);
 
         service.createAnonymous(ticketId, request(MessageVisibility.PUBLIC, "Hola"));
@@ -265,7 +277,7 @@ class TicketMessageServiceTest {
         Ticket identifiedTicket = new Ticket();
         identifiedTicket.setId(ticketId);
         identifiedTicket.setAnonymous(false);
-        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(identifiedTicket));
+        when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(identifiedTicket));
 
         assertThrows(UnauthorizedTicketOperationException.class,
                 () -> service.createAnonymous(ticketId, request(MessageVisibility.PUBLIC, "Hola")));
@@ -278,7 +290,7 @@ class TicketMessageServiceTest {
         inconsistentTicket.setId(ticketId);
         inconsistentTicket.setAnonymous(true);
         inconsistentTicket.setCitizenId(ownerId);
-        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(inconsistentTicket));
+        when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(inconsistentTicket));
 
         assertThrows(UnauthorizedTicketOperationException.class,
                 () -> service.createAnonymous(ticketId, request(MessageVisibility.PUBLIC, "Hola")));
@@ -290,7 +302,7 @@ class TicketMessageServiceTest {
         Ticket anonymousTicket = new Ticket();
         anonymousTicket.setId(ticketId);
         anonymousTicket.setAnonymous(true);
-        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(anonymousTicket));
+        when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(anonymousTicket));
 
         assertThrows(UnauthorizedTicketOperationException.class,
                 () -> service.createAnonymous(ticketId, request(MessageVisibility.INTERNAL, "nota")));
@@ -299,7 +311,7 @@ class TicketMessageServiceTest {
 
     @Test
     void createAnonymousOnAMissingTicketIsNotFound() {
-        when(ticketRepository.findById(ticketId)).thenReturn(Optional.empty());
+        when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.empty());
 
         assertThrows(ResourceNotFoundException.class,
                 () -> service.createAnonymous(ticketId, request(MessageVisibility.PUBLIC, "Hola")));

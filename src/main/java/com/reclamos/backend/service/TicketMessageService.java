@@ -60,7 +60,7 @@ public class TicketMessageService {
 
     @Transactional
     public TicketMessageResponse create(UUID ticketId, TicketMessageRequest request, AuthenticatedIdentity actor) {
-        Ticket ticket = findTicket(ticketId);
+        Ticket ticket = lockTicket(ticketId);
         ActorType authorType = requireWriteAuthority(ticket, actor, request.getVisibility());
 
         TicketMessage message = new TicketMessage();
@@ -90,7 +90,7 @@ public class TicketMessageService {
      */
     @Transactional
     public TicketMessageResponse createAnonymous(UUID ticketId, TicketMessageRequest request) {
-        Ticket ticket = findTicket(ticketId);
+        Ticket ticket = lockTicket(ticketId);
         if (!ticket.isAnonymous() || ticket.getCitizenId() != null
                 || request.getVisibility() != MessageVisibility.PUBLIC) {
             throw new UnauthorizedTicketOperationException();
@@ -257,6 +257,13 @@ public class TicketMessageService {
     private boolean isOwnTicket(Ticket ticket, AuthenticatedIdentity identity) {
         return !ticket.isAnonymous() && ticket.getCitizenId() != null
                 && ticket.getCitizenId().equals(identity.citizenId());
+    }
+
+    // Mismo orden que lifecycle: Ticket antes de mensajes, actividades y notificaciones.
+    // El lock dura toda la transacción y serializa count + insert de la secuencia.
+    private Ticket lockTicket(UUID ticketId) {
+        return ticketRepository.findByIdForUpdate(ticketId)
+                .orElseThrow(() -> new ResourceNotFoundException("El ticket solicitado no existe"));
     }
 
     private Ticket findTicket(UUID ticketId) {
