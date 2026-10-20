@@ -15,6 +15,9 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface TicketSlaRepository extends JpaRepository<TicketSla, Long> {
+    boolean existsByTicket_IdAndCompletedAtIsNullAndStatus(UUID ticketId,
+            com.reclamos.backend.entity.SlaStatus status);
+
     Optional<TicketSla> findFirstByTicket_IdAndSlaTypeOrderByCycleNumberDesc(UUID ticketId, SlaType slaType);
 
     @Query("select s from TicketSla s where s.ticket.id in :ticketIds and s.slaType = :slaType " +

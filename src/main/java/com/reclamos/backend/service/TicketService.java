@@ -87,6 +87,8 @@ public class TicketService {
     private final InformationRequestProjectionService informationRequestProjectionService;
     private final FormValidationService formValidationService;
     private final RiskCalculationService riskCalculationService;
+    private final PriorityCalculationService priorityCalculationService;
+    private final TicketSlaMilestoneService milestoneService;
     private final TicketOutboxService ticketOutboxService;
     private final TrackingCodeService trackingCodeService;
     private final TicketPublicIdGenerator publicIdGenerator;
@@ -156,10 +158,12 @@ public class TicketService {
         ticket.setDescription(request.description());
         ticket.setFormData(new HashMap<>(resolvedForm.formData()));
         ticket.setCurrentStatus(TicketStatus.REGISTERED);
-        ticket.setCurrentPriority(max(requestType.getMinimumPriority(), risk));
         ticket.setCreatedAt(now);
         TicketLocation location = request.location() == null ? null : toLocation(ticket, request.location());
         ticket.setEstimatedAffectedCount(estimateAffectedCount(requestType, location));
+        ticket.setCurrentPriority(priorityCalculationService.calculate(assessment.score(),
+                ticket.getEstimatedAffectedCount(), new PriorityCalculationService.AgeFraction(0, 1),
+                requestType.getMinimumPriority()));
         ticket.setReopenCount(0);
         ticket.setEscalated(false);
         ticket.setPublic(false);
@@ -288,20 +292,24 @@ public class TicketService {
         Priority previousPriority = ticket.getCurrentPriority();
 
         int estimatedAffectedCount = estimateAffectedCount(newRequestType, location);
-        Priority newPriority = max(newRequestType.getMinimumPriority(), newRequestType.getBaseRisk());
         FormTemplate newFormTemplate = formValidationService.resolveActiveTemplate(newRequestType);
 
         ticket.setRequestType(newRequestType);
         ticket.setTicketType(newRequestType.getTicketType());
         ticket.setResponsibleAreaId(newRequestType.getResponsibleAreaId());
         ticket.setEstimatedAffectedCount(estimatedAffectedCount);
-        ticket.setCurrentPriority(newPriority);
         ticket.setFormTemplateId(newFormTemplate == null ? null : newFormTemplate.getId());
         // Las respuestas del formData anterior están validadas contra el
         // FormTemplate del RequestType viejo y no corresponden necesariamente
         // a los campos del nuevo, así que se resetea a {} (formTemplateId ya
         // queda registrado con la nueva plantilla más arriba).
         ticket.setFormData(new HashMap<>());
+        RiskAssessment assessment = riskCalculationService.calculateRisk(ticket);
+        Instant reclassifiedAt = clock.instant();
+        Priority newPriority = priorityCalculationService.calculate(assessment.score(), estimatedAffectedCount,
+                priorityCalculationService.age(ticketSlaService.findLatestResolutionCycle(ticket).orElse(null),
+                        reclassifiedAt), newRequestType.getMinimumPriority());
+        ticket.setCurrentPriority(newPriority);
         // Guía funcional §5 / Decisiones #2: la corrección de clasificación
         // durante la primera IN_REVIEW recalcula el SLA inicial desde
         // createdAt (no desde "ahora") con la nueva prioridad.
@@ -309,11 +317,10 @@ public class TicketService {
 
         String message = "RequestType corregido de '" + previousRequestType.getCode()
                 + "' a '" + newRequestType.getCode() + "' durante la revisión inicial";
-        Instant reclassifiedAt = clock.instant();
         recordActivity(ticket, ActivityType.REQUEST_TYPE_CHANGED, ticket.getCurrentStatus(), ticket.getCurrentStatus(),
                 actor, previousPriority, newPriority, message, reclassifiedAt);
-        activateCriticalEscalationIfNeeded(ticket, reclassifiedAt);
         Optional<TicketSla> resolutionSla = ticketSlaService.recalculateInitialResolutionCycle(ticket, reclassifiedAt);
+        milestoneService.reconcileEscalation(ticket, reclassifiedAt, false);
         ticketOutboxService.contentUpdated(ticket,
                 resolutionSla.map(TicketSla::getDueAt).orElse(null), reclassifiedAt);
 
@@ -723,27 +730,7 @@ public class TicketService {
      * reclasificación iniciada por un agente.
      */
     private void activateCriticalEscalationIfNeeded(Ticket ticket, Instant activatedAt) {
-        if (ticket.getCurrentPriority() != Priority.CRITICAL || ticket.isEscalated()) {
-            return;
-        }
-
-        ticket.setEscalated(true);
-        ticket.setEscalationReasonCode(EscalationReasonCode.CRITICAL_PRIORITY);
-        ticket.setEscalatedAt(activatedAt);
-        ticketRepository.save(ticket);
-
-        TicketActivity activity = new TicketActivity();
-        activity.setTicket(ticket);
-        activity.setSequence(activityRepository.countByTicketId(ticket.getId()) + 1);
-        activity.setActionType(ActivityType.ESCALATED);
-        activity.setPreviousStatus(ticket.getCurrentStatus());
-        activity.setNewStatus(ticket.getCurrentStatus());
-        activity.setActorType(ActorType.SYSTEM);
-        activity.setActorId(null);
-        activity.setReasonCode(EscalationReasonCode.CRITICAL_PRIORITY.name());
-        activity.setMessage("Escalamiento automático por prioridad crítica");
-        activity.setOccurredAt(activatedAt);
-        activityRepository.save(activity);
+        milestoneService.reconcileEscalation(ticket, activatedAt, false);
     }
 
     private TicketResponse toResponse(Ticket ticket, TicketLocation location) {
@@ -974,19 +961,4 @@ public class TicketService {
         }
         return location;
     }
-
-    private Priority max(Priority minimum, Risk risk) {
-        Priority fromRisk = Priority.valueOf(risk.name());
-        return priorityRank(minimum) >= priorityRank(fromRisk) ? minimum : fromRisk;
-    }
-
-    private int priorityRank(Priority priority) {
-        return switch (priority) {
-            case LOW -> 0;
-            case MEDIUM -> 1;
-            case HIGH -> 2;
-            case CRITICAL -> 3;
-        };
-    }
-
 }

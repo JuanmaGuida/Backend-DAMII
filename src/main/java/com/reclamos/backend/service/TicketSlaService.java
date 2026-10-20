@@ -125,7 +125,9 @@ public class TicketSlaService {
             return Optional.empty();
         }
         int nextCycle = slaRepository.findMaxCycleNumber(ticket.getId(), SlaType.RESOLUTION).orElse(0) + 1;
-        return Optional.of(createCycle(ticket, SlaType.RESOLUTION, nextCycle, reopenedAt, schedule.orElseThrow()));
+        TicketSla cycle = createCycle(ticket, SlaType.RESOLUTION, nextCycle, reopenedAt, schedule.orElseThrow());
+        milestoneService.reconcileEscalation(ticket, reopenedAt, true);
+        return Optional.of(cycle);
     }
 
     public Optional<TicketSla> findLatestResolutionCycle(Ticket ticket) {
