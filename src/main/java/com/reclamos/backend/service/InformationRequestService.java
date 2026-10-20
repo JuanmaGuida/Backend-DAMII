@@ -39,6 +39,7 @@ public class InformationRequestService {
     private final AttachmentReferenceService attachmentReferenceService;
     private final InformationRequestAttachmentRepository informationRequestAttachmentRepository;
     private final NotificationService notificationService;
+    private final ReclassificationDataService reclassificationDataService;
 
     @Transactional
     public InformationRequestResponse requestInformation(UUID ticketId, CreateInformationRequest request,
@@ -78,7 +79,22 @@ public class InformationRequestService {
                 requestedAt, dueAt, externalEventId));
     }
 
+    InformationRequest requestReclassification(Ticket ticket, String message, AuthenticatedIdentity actor) {
+        Instant now = deadlineService.now();
+        InformationRequest request = createPending(ticket, new InformationRequestApplication(MODULE_ID,
+                actor.role() == ModuleRole.ADMIN ? ActorType.ADMIN : ActorType.AGENT,
+                actor.citizenId().toString(), message, null, now, deadlineService.calculateDueAt(now), null),
+                InformationRequestPurpose.RECLASSIFICATION);
+        ticketOutboxService.reclassificationInformationRequired(ticket, message, request.getDueAt(), now);
+        return request;
+    }
+
     private InformationRequest createPending(Ticket ticket, InformationRequestApplication application) {
+        return createPending(ticket, application, InformationRequestPurpose.GENERAL);
+    }
+
+    private InformationRequest createPending(Ticket ticket, InformationRequestApplication application,
+                                              InformationRequestPurpose purpose) {
         if (!REQUESTABLE_STATUSES.contains(ticket.getCurrentStatus())) {
             throw new InformationRequestConflictException(
                     "El estado actual del ticket no permite solicitar información");
@@ -91,6 +107,7 @@ public class InformationRequestService {
         TicketStatus resumeStatus = ticket.getCurrentStatus();
         InformationRequest informationRequest = new InformationRequest(); // Se crea la solicitud y se registra quién la realizó, el mensaje y el plazo
         informationRequest.setTicket(ticket);
+        informationRequest.setPurpose(purpose);
         informationRequest.setRequestedByModuleId(application.sourceModuleId());
         informationRequest.setRequestedByActorType(application.actorType());
         informationRequest.setRequestedByActorId(application.actorId());
@@ -131,7 +148,7 @@ public class InformationRequestService {
                 || !ticket.getCitizenId().equals(identity.citizenId())) {
             throw new UnauthorizedTicketOperationException();
         }
-        return answerPending(ticket, normalizedMessage(request), identity.citizenId().toString(), identity, validated);
+        return answerPending(ticket, request, normalizedMessage(request), identity.citizenId().toString(), identity, validated);
     }
 
     @Transactional
@@ -147,10 +164,10 @@ public class InformationRequestService {
         if (!ticket.isAnonymous() || ticket.getCitizenId() != null) {
             throw new UnauthorizedTicketOperationException();
         }
-        return answerPending(ticket, normalizedMessage(request), null, null, validated);
+        return answerPending(ticket, request, normalizedMessage(request), null, null, validated);
     }
 
-    private InformationRequestResponse answerPending(Ticket ticket, String responseMessage, String actorId,
+    private InformationRequestResponse answerPending(Ticket ticket, AnswerInformationRequest answer, String responseMessage, String actorId,
                                                      AuthenticatedIdentity identity,
                                                      List<AttachmentService.ValidatedAttachment> validatedAttachments) {
         if (ticket.getCurrentStatus() != TicketStatus.PENDING_INFORMATION) {
@@ -164,6 +181,12 @@ public class InformationRequestService {
         if (deadlineService.isExpired(informationRequest.getDueAt())) {
             throw new InformationRequestExpiredException();
         }
+        TicketReclassificationProposal proposal = null;
+        if (informationRequest.getPurpose() == InformationRequestPurpose.RECLASSIFICATION) {
+            proposal = reclassificationDataService.validateAnswer(informationRequest, answer, !validatedAttachments.isEmpty());
+        } else if (answer.getFormData() != null || answer.getLocation() != null) {
+            throw new InvalidTicketRequestException("Una solicitud GENERAL no admite respuestas estructuradas");
+        }
         Instant answeredAt = deadlineService.now();
         List<Attachment> storedAttachments = attachmentService.storeForTicket(
                 ticket, identity, validatedAttachments, answeredAt);
@@ -175,6 +198,7 @@ public class InformationRequestService {
             return link;
         }).toList();
         informationRequestAttachmentRepository.saveAll(links);
+        if (proposal != null) reclassificationDataService.answered(proposal, storedAttachments, answeredAt);
         informationRequest.setResponseMessage(responseMessage);
         informationRequest.setAnsweredAt(answeredAt);
         informationRequest.setAnsweredByType(ActorType.CITIZEN);
@@ -189,8 +213,12 @@ public class InformationRequestService {
         saveActivity(ticket, ActivityType.INFORMATION_PROVIDED, TicketStatus.PENDING_INFORMATION,
                 informationRequest.getResumeStatus(), ActorType.CITIZEN, actorId,
                 MODULE_ID, null, responseMessage, answeredAt, null);
-        ticketOutboxService.informationProvided(ticket, responseMessage, storedAttachments,
-                !MODULE_ID.equalsIgnoreCase(informationRequest.getRequestedByModuleId()), answeredAt);
+        if (proposal != null) {
+            ticketOutboxService.reclassificationInformationProvided(ticket, answeredAt);
+        } else {
+            ticketOutboxService.informationProvided(ticket, responseMessage, storedAttachments,
+                    !MODULE_ID.equalsIgnoreCase(informationRequest.getRequestedByModuleId()), answeredAt);
+        }
         notificationService.queueAssignedAgent(ticket, NotificationType.INFORMATION_PROVIDED,
                 identity == null ? null : identity.citizenId());
         return response(informationRequest, storedAttachments);
@@ -208,6 +236,7 @@ public class InformationRequestService {
                     request.setStatus(InformationRequestStatus.CANCELLED);
                     informationRequestRepository.save(request);
                 });
+        reclassificationDataService.terminate(lockedTicket, "El ticket terminó durante la propuesta", deadlineService.now());
     }
 
     @Scheduled(fixedDelayString = "${ticket.information-request.expiration-scan-delay:60000}") // Revisa periódicamente las solicitudes pendientes que se les venció el plazo
@@ -270,7 +299,7 @@ public class InformationRequestService {
             throw new InvalidTicketRequestException("La respuesta de información es obligatoria");
         }
         List<AttachmentService.ValidatedAttachment> validated = attachmentService.validate(attachments);
-        if ((request.getResponseMessage() == null || request.getResponseMessage().isBlank()) && validated.isEmpty()) {
+        if ((request.getResponseMessage() == null || request.getResponseMessage().isBlank()) && validated.isEmpty() && request.getFormData() == null && request.getLocation() == null) {
             throw new InvalidTicketRequestException("La respuesta debe incluir texto o al menos un archivo");
         }
         return validated;

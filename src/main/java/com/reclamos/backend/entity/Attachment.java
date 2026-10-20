@@ -30,6 +30,10 @@ public class Attachment {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    /** Non-null while evidence belongs exclusively to an unconfirmed/abandoned proposal. */
+    @Column(name = "reclassification_proposal_id")
+    private Long reclassificationProposalId;
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(
             name = "ticket_id",

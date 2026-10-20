@@ -21,6 +21,8 @@ public class InformationRequestProjectionService {
     private final InformationRequestRepository informationRequestRepository;
     private final InformationRequestAttachmentRepository informationRequestAttachmentRepository;
     private final AttachmentReferenceService attachmentReferenceService;
+    private final com.reclamos.backend.repository.TicketReclassificationProposalRepository proposals;
+    private final ReclassificationDataService reclassificationDataService;
 
     @Transactional(readOnly = true)
     public Projection findPending(UUID ticketId) {
@@ -44,7 +46,10 @@ public class InformationRequestProjectionService {
                 .toList();
         return new Projection(
                 new PendingInformationRequestResponse(request.getStatus(), request.getMessageForCitizen(),
-                        request.getRequestedAt(), request.getDueAt(), attachments),
+                        request.getRequestedAt(), request.getDueAt(), attachments, request.getPurpose(),
+                        request.getPurpose() == com.reclamos.backend.entity.InformationRequestPurpose.RECLASSIFICATION
+                                ? proposals.findByInformationRequestId(request.getId()).map(reclassificationDataService::requirements).orElse(null)
+                                : null),
                 new StaffInformationRequestContextResponse(request.getInternalMessage(),
                         request.getRequestedByModuleId(), request.getRequestedByActorType(),
                         request.getResumeStatus()));

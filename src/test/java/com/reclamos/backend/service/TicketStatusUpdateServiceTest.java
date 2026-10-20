@@ -124,7 +124,7 @@ class TicketStatusUpdateServiceTest {
                 new InformationRequestDeadlineService(
                         Clock.fixed(FIXED_NOW, ZoneOffset.UTC), Duration.ofHours(72)),
                 informationRequestExpirationService, ticketSlaService, outbox,
-                attachmentService, attachmentReferenceService, informationRequestAttachmentRepository, mock(NotificationService.class));
+                attachmentService, attachmentReferenceService, informationRequestAttachmentRepository, mock(NotificationService.class), mock(ReclassificationDataService.class));
         service = new TicketStatusUpdateService(ticketRepository, activityRepository, locationRepository,
                 messageRepository, inboxEventRepository, resolutionService, ticketSlaService,
                 informationRequestService, cancellationRepository,

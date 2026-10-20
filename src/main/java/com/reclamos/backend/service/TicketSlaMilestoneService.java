@@ -90,6 +90,14 @@ public class TicketSlaMilestoneService {
 
     /** Caller holds the Ticket lock. Completed BREACHED cycles are history, not active causes. */
     public void reconcileEscalation(Ticket ticket, Instant now, boolean publish) {
+        reconcileEscalation(ticket, now, publish, false);
+    }
+
+    public void reconcileReclassificationEscalation(Ticket ticket, Instant now) {
+        reconcileEscalation(ticket, now, false, true);
+    }
+
+    private void reconcileEscalation(Ticket ticket, Instant now, boolean publish, boolean selectPrecedence) {
         EscalationReasonCode previous = ticket.getEscalationReasonCode();
         boolean manual = ticket.isEscalated() && previous == EscalationReasonCode.MANUAL;
         boolean critical = ticket.getCurrentPriority() == Priority.CRITICAL;
@@ -98,7 +106,9 @@ public class TicketSlaMilestoneService {
         boolean valid = ticket.isEscalated() && (manual
                 || previous == EscalationReasonCode.CRITICAL_PRIORITY && critical
                 || previous == EscalationReasonCode.SLA_BREACHED && breached);
-        if (valid) return; // An additional cause does not replace a still valid original reason.
+        EscalationReasonCode preferred = manual ? EscalationReasonCode.MANUAL
+                : breached ? EscalationReasonCode.SLA_BREACHED : critical ? EscalationReasonCode.CRITICAL_PRIORITY : null;
+        if (valid && (!selectPrecedence || previous == preferred)) return; // An additional cause does not replace a still valid original reason.
         EscalationReasonCode next = manual ? EscalationReasonCode.MANUAL
                 : breached ? EscalationReasonCode.SLA_BREACHED : critical ? EscalationReasonCode.CRITICAL_PRIORITY : null;
         if (!ticket.isEscalated() && next == null) return;

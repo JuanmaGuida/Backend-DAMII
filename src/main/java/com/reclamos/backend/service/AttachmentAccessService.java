@@ -66,6 +66,7 @@ public class AttachmentAccessService {
             return true;
         }
         return identity.role() == ModuleRole.AREA_RESPONSIBLE
+                && attachment.getReclassificationProposalId() == null
                 && Objects.equals(ticket.getResponsibleAreaId(), identity.areaId());
     }
 

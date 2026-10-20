@@ -1403,13 +1403,11 @@ paths:
   /api/tickets/{ticketId}/classification:
     patch:
       tags: [ Tickets ]
-      summary: Corregir la clasificación de un ticket
+      summary: Compatibilidad de clasificación
       description: |
-        Permite reclasificar el RequestType durante la primera revisión del
-        ticket (antes de derivarlo a un área), recalculando área responsable,
-        cantidad estimada de afectados, plantilla de formulario, prioridad y
-        el SLA inicial (Story 3.2). Requiere rol AGENT o ADMIN y no permite
-        usar capacidad administrativa sobre un ticket propio.
+        AGENT/ADMIN sobre ticket ajeno IN_REVIEW. Mismo RequestType conserva el ticket sin efectos.
+        Un tipo diferente retorna 409 TICKET_STATE_CONFLICT con indicación del flujo de propuestas.
+        Nunca vacía formData ni aplica una clasificación provisional.
       operationId: correctTicketClassification
       security:
         - bearerAuth: [ ]
@@ -2164,6 +2162,366 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/TicketResolutionConflict' }
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+  /api/staff/tickets/{ticketId}/reclassification-proposals:
+    parameters:
+      - name: ticketId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [Tickets]
+      operationId: proposeReclassification
+      summary: Proponer clasificación provisional
+      description: |
+        Sólo AGENT/ADMIN. Las escrituras requieren ticket ajeno; la lectura staff permanece disponible.
+        La selección es provisional y auditable.
+        Crear exige IN_REVIEW inicial o RETURNED/REQUEST_TYPE_MISMATCH aceptado del módulo responsable.
+        Si faltan datos genera InformationRequest RECLASSIFICATION. Sólo confirmar READY aplica la clasificación,
+        revalida formulario/evidencia/anonimato e inicia IN_PROGRESS (M2) o ROUTED (externo).
+        Confirmación y abandono son idempotentes por propuesta. Para sustituir, abandonar antes con motivo.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProposeReclassificationRequest'
+      responses:
+        '201':
+          description: Operación realizada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReclassificationProposalResponse'
+        '400':
+          description: 'Datos inválidos o incompletos'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: 'Autenticación requerida'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: 'Rol no autorizado o ticket propio'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: 'Ticket, tipo o propuesta no encontrados; asociación ticket/propuesta inválida'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: 'Estado incompatible, propuesta abierta, autorización vencida o identificación requerida'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '410':
+          description: INFORMATION_REQUEST_EXPIRED; esperar procesamiento INFO_TIMEOUT
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: 'EVIDENCE_REQUIRED: riesgo HIGH/CRITICAL sin evidencia válida'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+    get:
+      tags: [Tickets]
+      operationId: listReclassifications
+      summary: Consultar historial administrativo
+      description: |
+        Sólo AGENT/ADMIN. Las escrituras requieren ticket ajeno; la lectura staff permanece disponible.
+        La selección es provisional y auditable.
+        Crear exige IN_REVIEW inicial o RETURNED/REQUEST_TYPE_MISMATCH aceptado del módulo responsable.
+        Si faltan datos genera InformationRequest RECLASSIFICATION. Sólo confirmar READY aplica la clasificación,
+        revalida formulario/evidencia/anonimato e inicia IN_PROGRESS (M2) o ROUTED (externo).
+        Confirmación y abandono son idempotentes por propuesta. Para sustituir, abandonar antes con motivo.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Operación realizada
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ReclassificationProposalResponse'
+        '400':
+          description: 'Datos inválidos o incompletos'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: 'Autenticación requerida'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: 'Rol no autorizado o ticket propio'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: 'Ticket, tipo o propuesta no encontrados; asociación ticket/propuesta inválida'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: 'Estado incompatible, propuesta abierta, autorización vencida o identificación requerida'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '410':
+          description: INFORMATION_REQUEST_EXPIRED; esperar procesamiento INFO_TIMEOUT
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: 'EVIDENCE_REQUIRED: riesgo HIGH/CRITICAL sin evidencia válida'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /api/staff/tickets/{ticketId}/reclassification-proposals/{proposalId}:
+    parameters:
+      - name: ticketId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - name: proposalId
+        in: path
+        required: true
+        schema: { type: integer, format: int64 }
+    get:
+      tags: [Tickets]
+      operationId: getReclassification
+      summary: Consultar propuesta y requisitos pendientes
+      description: |
+        Sólo AGENT/ADMIN. Las escrituras requieren ticket ajeno; la lectura staff permanece disponible.
+        La selección es provisional y auditable.
+        Crear exige IN_REVIEW inicial o RETURNED/REQUEST_TYPE_MISMATCH aceptado del módulo responsable.
+        Si faltan datos genera InformationRequest RECLASSIFICATION. Sólo confirmar READY aplica la clasificación,
+        revalida formulario/evidencia/anonimato e inicia IN_PROGRESS (M2) o ROUTED (externo).
+        Confirmación y abandono son idempotentes por propuesta. Para sustituir, abandonar antes con motivo.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Operación realizada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReclassificationProposalResponse'
+        '400':
+          description: 'Datos inválidos o incompletos'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: 'Autenticación requerida'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: 'Rol no autorizado o ticket propio'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: 'Ticket, tipo o propuesta no encontrados; asociación ticket/propuesta inválida'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: 'Estado incompatible, propuesta abierta, autorización vencida o identificación requerida'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '410':
+          description: INFORMATION_REQUEST_EXPIRED; esperar procesamiento INFO_TIMEOUT
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: 'EVIDENCE_REQUIRED: riesgo HIGH/CRITICAL sin evidencia válida'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /api/staff/tickets/{ticketId}/reclassification-proposals/{proposalId}/confirm:
+    parameters:
+      - name: ticketId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - name: proposalId
+        in: path
+        required: true
+        schema: { type: integer, format: int64 }
+    post:
+      tags: [Tickets]
+      operationId: confirmReclassification
+      summary: Confirmar propuesta e iniciar gestión
+      description: |
+        Sólo AGENT/ADMIN. Las escrituras requieren ticket ajeno; la lectura staff permanece disponible.
+        La selección es provisional y auditable.
+        Crear exige IN_REVIEW inicial o RETURNED/REQUEST_TYPE_MISMATCH aceptado del módulo responsable.
+        Si faltan datos genera InformationRequest RECLASSIFICATION. Sólo confirmar READY aplica la clasificación,
+        revalida formulario/evidencia/anonimato e inicia IN_PROGRESS (M2) o ROUTED (externo).
+        Confirmación y abandono son idempotentes por propuesta. Para sustituir, abandonar antes con motivo.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Operación realizada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReclassificationProposalResponse'
+        '400':
+          description: 'Datos inválidos o incompletos'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: 'Autenticación requerida'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: 'Rol no autorizado o ticket propio'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: 'Ticket, tipo o propuesta no encontrados; asociación ticket/propuesta inválida'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: 'Estado incompatible, propuesta abierta, autorización vencida o identificación requerida'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '410':
+          description: INFORMATION_REQUEST_EXPIRED; esperar procesamiento INFO_TIMEOUT
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: 'EVIDENCE_REQUIRED: riesgo HIGH/CRITICAL sin evidencia válida'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /api/staff/tickets/{ticketId}/reclassification-proposals/{proposalId}/abandon:
+    parameters:
+      - name: ticketId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - name: proposalId
+        in: path
+        required: true
+        schema: { type: integer, format: int64 }
+    post:
+      tags: [Tickets]
+      operationId: abandonReclassification
+      summary: Abandonar propuesta con motivo obligatorio
+      description: |
+        Sólo AGENT/ADMIN. Las escrituras requieren ticket ajeno; la lectura staff permanece disponible.
+        La selección es provisional y auditable.
+        Crear exige IN_REVIEW inicial o RETURNED/REQUEST_TYPE_MISMATCH aceptado del módulo responsable.
+        Si faltan datos genera InformationRequest RECLASSIFICATION. Sólo confirmar READY aplica la clasificación,
+        revalida formulario/evidencia/anonimato e inicia IN_PROGRESS (M2) o ROUTED (externo).
+        Confirmación y abandono son idempotentes por propuesta. Para sustituir, abandonar antes con motivo.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AbandonReclassificationRequest'
+      responses:
+        '200':
+          description: Operación realizada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReclassificationProposalResponse'
+        '400':
+          description: 'Datos inválidos o incompletos'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: 'Autenticación requerida'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: 'Rol no autorizado o ticket propio'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: 'Ticket, tipo o propuesta no encontrados; asociación ticket/propuesta inválida'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: 'Estado incompatible, propuesta abierta, autorización vencida o identificación requerida'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '410':
+          description: INFORMATION_REQUEST_EXPIRED; esperar procesamiento INFO_TIMEOUT
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: 'EVIDENCE_REQUIRED: riesgo HIGH/CRITICAL sin evidencia válida'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
 components:
   securitySchemes:
     bearerAuth:
@@ -3231,7 +3589,7 @@ components:
                  INFORMATION_REQUIRED, INFORMATION_PROVIDED, PROGRESS_REPORTED, DUPLICATE_LINKED,
                  RESOLVED, REOPENED, CANCELLATION_REQUESTED, CANCELLATION_APPROVED,
                  CANCELLATION_REJECTED, CANCELLED, CLOSED, PUBLIC_MESSAGE_SENT,
-                 INTERNAL_MESSAGE_ADDED, ATTACHMENT_ADDED]
+                 INTERNAL_MESSAGE_ADDED, ATTACHMENT_ADDED, RECLASSIFICATION_PROPOSED, RECLASSIFICATION_ABANDONED]
         previousStatus:
           allOf:
             - $ref: '#/components/schemas/TicketStatus'
@@ -3426,11 +3784,21 @@ components:
       additionalProperties: false
     AnswerInformationRequest:
       type: object
+      description: |
+        GENERAL admite texto o archivos. RECLASSIFICATION combina formData parcial con respuestas provisionales
+        disponibles y location con contexto existente. Se valida todo server-side. Si falta un required, hay un
+        valor inválido o falta evidencia HIGH/CRITICAL, no persiste cambios ni archivos y mantiene PENDING.
+        Respuesta completa vuelve a IN_REVIEW/READY sin confirmar el tipo. JSON o multipart data + attachments.
+        Para anónimos usar tracking/actions/information-response con trackingCode y contraseña en el body.
       properties:
-        responseMessage:
-          type: string
+        responseMessage: { type: string, nullable: true }
+        formData:
+          type: object
+          additionalProperties: true
           nullable: true
-          description: Opcional cuando se adjunta al menos un archivo válido.
+          description: Sólo claves de la versión destino. null explícito si allowUnknown; false y 0 válidos.
+        location:
+          $ref: '#/components/schemas/LocationData'
       additionalProperties: false
     InformationRequestResponse:
       type: object
@@ -3477,6 +3845,11 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/TicketAttachmentResponse'
+        purpose: { type: string, enum: [GENERAL, RECLASSIFICATION] }
+        reclassification:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/ReclassificationRequirementsResponse'
     StaffInformationRequestContextResponse:
       type: object
       required: [internalMessage, requestedByModuleId, requestedByActorType, resumeStatus]
@@ -3786,3 +4159,55 @@ components:
     RiskOperator:
       type: string
       enum: [EQUALS, BETWEEN, GREATER_THAN, LESS_THAN, IN]
+
+    ProposeReclassificationRequest:
+      type: object
+      required: [requestTypeId]
+      properties:
+        requestTypeId: { type: integer, format: int64 }
+        formData: { type: object, additionalProperties: true, nullable: true }
+        messageForCitizen: { type: string, maxLength: 4000, nullable: true }
+      additionalProperties: false
+    AbandonReclassificationRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 4000 }
+      additionalProperties: false
+    ReclassificationRequirementsResponse:
+      type: object
+      properties:
+        fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/FormFieldResponse'
+        missingFields: { type: array, items: { type: string } }
+        availableAnswers: { type: object, additionalProperties: true }
+        locationRequired: { type: boolean }
+        neighborhoodRequired: { type: boolean }
+        evidenceRequired: { type: boolean }
+        identificationRequired: { type: boolean }
+      description: Estructura ciudadana autorizada; nunca viaja por eventos. Tracking sin contraseña omite esta estructura.
+    ReclassificationProposalResponse:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        ticketId: { type: string, format: uuid }
+        origin: { type: string, enum: [INITIAL_REVIEW, REQUEST_TYPE_MISMATCH] }
+        status: { type: string, enum: [PROPOSED, WAITING_INFORMATION, READY, CONFIRMED, ABANDONED] }
+        requestTypeId: { type: integer, format: int64 }
+        formTemplateId: { type: integer, format: int64, nullable: true }
+        proposedData: { type: object, additionalProperties: true }
+        previousClassificationSnapshot: { type: object, additionalProperties: true }
+        informationRequestId: { type: string, format: uuid, nullable: true }
+        proposedBy: { type: string }
+        confirmedBy: { type: string, nullable: true }
+        abandonmentReason: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        resolvedAt: { type: string, format: date-time, nullable: true }
+        requirements:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/ReclassificationRequirementsResponse'
+      description: Sólo staff; snapshot inmutable y propuestas finales históricas. No exponer en proyecciones ciudadanas o eventos.

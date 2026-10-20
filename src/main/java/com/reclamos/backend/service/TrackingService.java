@@ -21,6 +21,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -42,10 +43,17 @@ public class TrackingService {
         String trackingCodeHash = trackingCodeService.hash(trackingCode);
         Ticket ticket = ticketRepository.findByTrackingCodeHash(trackingCodeHash)
                 .orElseThrow(TrackingTicketNotFoundException::new);
-        return toPublicResponse(ticket);
+        return toPublicResponse(ticket, false);
     }
 
-    private TrackingTicketResponse toPublicResponse(Ticket ticket) {
+    @Transactional(readOnly = true)
+    public TrackingTicketResponse findAnonymousByAccess(UUID authenticatedTicketId) {
+        Ticket ticket = ticketRepository.findById(authenticatedTicketId).filter(Ticket::isAnonymous)
+                .orElseThrow(TrackingTicketNotFoundException::new);
+        return toPublicResponse(ticket, true);
+    }
+
+    private TrackingTicketResponse toPublicResponse(Ticket ticket, boolean accredited) {
         RequestType requestType = ticket.getRequestType();
         Subcategory subcategory = requestType.getSubcategory();
         Category category = subcategory.getCategory();
@@ -64,7 +72,7 @@ public class TrackingService {
                         deadlines.firstResponseDueAt(),
                         deadlines.resolutionDueAt()),
                 publicAttachments(ticket),
-                projection(ticket),
+                projection(ticket, accredited),
                 neighborhoodName(ticket),
                 publicMessages(ticket)
         );
@@ -131,9 +139,16 @@ public class TrackingService {
                 message.getVisibility(), message.getText(), message.getCreatedAt(), message.getUpdatedAt());
     }
 
-    private com.reclamos.backend.dto.response.PendingInformationRequestResponse projection(Ticket ticket) {
+    private com.reclamos.backend.dto.response.PendingInformationRequestResponse projection(Ticket ticket, boolean accredited) {
         InformationRequestProjectionService.Projection pending =
                 informationRequestProjectionService.findPending(ticket.getId());
-        return pending == null ? null : pending.citizen();
+        if (pending == null) return null;
+        var citizen = pending.citizen();
+        if (!accredited && citizen.reclassification() != null) {
+            return new com.reclamos.backend.dto.response.PendingInformationRequestResponse(citizen.status(),
+                    citizen.messageForCitizen(), citizen.requestedAt(), citizen.dueAt(), citizen.attachments(),
+                    citizen.purpose(), null);
+        }
+        return citizen;
     }
 }

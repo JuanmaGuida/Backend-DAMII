@@ -100,6 +100,8 @@ public class TicketService {
     private final TicketLabelRepository ticketLabelRepository;
     private final NotificationService notificationService;
     private final Clock clock;
+    private final TicketReclassificationProposalRepository reclassificationProposals;
+    private final ReclassificationDataService reclassificationDataService;
 
     @Transactional
     public CreateTicketResponse create(CreateTicketRequest request, AuthenticatedIdentity identity,
@@ -246,85 +248,19 @@ public class TicketService {
         return toResponse(ticket, locationRepository.findByTicket_Id(ticketId).orElse(null));
     }
 
-    /**
-     * Story 3.2 (BE - Endpoint de corrección de clasificación). Sólo se permite
-     * mientras el ticket está en su primera IN_REVIEW y todavía no se finalizó la
-     * clasificación (Entidades V1.49 §4.1 / Guía funcional complementaria M2
-     * V1.09 §6).
-     * <p>
-     * Recalcula responsibleAreaId, estimatedAffectedCount, formTemplateId,
-     * formData, currentPriority y el SLA inicial (Guía funcional §5 /
-     * Decisiones #2: "si RequestType se corrige durante la primera IN_REVIEW,
-     * se recalcula el SLA inicial desde createdAt con la nueva
-     * clasificación").
-     * <p>
-     * Prioridad: a diferencia del eventual recálculo periódico definido como
-     * regla futura (donde, por la "REGLA DE EVOLUCIÓN" de la Guía funcional
-     * §3, currentPriority nunca bajaría), una corrección de RequestType durante la primera IN_REVIEW
-     * todavía forma parte de la clasificación inicial y sí puede recalcularla
-     * libremente. Como formData se resetea a {} más abajo, el riesgo
-     * recalculado da exactamente newRequestType.baseRisk sin incrementos, así
-     * que se usa baseRisk directamente. La prioridad resultante se floorea
-     * únicamente contra newRequestType.minimumPriority (mismo patrón que
-     * create()), pudiendo quedar por debajo de la anterior.
-     */
+    /** Compatibility route: unchanged classification is a no-op; changes require an auditable proposal. */
     @Transactional
     public TicketResponse correctClassification(UUID ticketId, Long newRequestTypeId, AuthenticatedIdentity actor) {
         Ticket ticket = loadForUpdate(ticketId);
         requireTriageAuthority(ticket, actor);
-
-        if (ticket.getCurrentStatus() != TicketStatus.IN_REVIEW || ticket.getClassificationFinalizedAt() != null) {
-            throw new TicketStateConflictException(
-                    "La clasificación sólo puede corregirse durante la primera revisión del ticket, "
-                            + "antes de derivarlo, iniciar gestión o vincularlo como duplicado");
+        if (ticket.getCurrentStatus() != TicketStatus.IN_REVIEW) {
+            throw new TicketStateConflictException("La clasificación requiere IN_REVIEW");
         }
-
-        RequestType newRequestType = requestTypeRepository.findByIdForUpdate(newRequestTypeId)
-                .filter(RequestType::isActive)
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "El Request Type solicitado no existe o está inactivo"));
-
-        RequestType previousRequestType = ticket.getRequestType();
-        TicketLocation location = locationRepository.findByTicket_Id(ticketId).orElse(null);
-        if (Objects.equals(previousRequestType.getId(), newRequestType.getId())) {
-            return toResponse(ticket, location);
+        if (Objects.equals(ticket.getRequestType().getId(), newRequestTypeId)) {
+            return toResponse(ticket, locationRepository.findByTicket_Id(ticketId).orElse(null));
         }
-        Priority previousPriority = ticket.getCurrentPriority();
-
-        int estimatedAffectedCount = estimateAffectedCount(newRequestType, location);
-        FormTemplate newFormTemplate = formValidationService.resolveActiveTemplate(newRequestType);
-
-        ticket.setRequestType(newRequestType);
-        ticket.setTicketType(newRequestType.getTicketType());
-        ticket.setResponsibleAreaId(newRequestType.getResponsibleAreaId());
-        ticket.setEstimatedAffectedCount(estimatedAffectedCount);
-        ticket.setFormTemplateId(newFormTemplate == null ? null : newFormTemplate.getId());
-        // Las respuestas del formData anterior están validadas contra el
-        // FormTemplate del RequestType viejo y no corresponden necesariamente
-        // a los campos del nuevo, así que se resetea a {} (formTemplateId ya
-        // queda registrado con la nueva plantilla más arriba).
-        ticket.setFormData(new HashMap<>());
-        RiskAssessment assessment = riskCalculationService.calculateRisk(ticket);
-        Instant reclassifiedAt = clock.instant();
-        Priority newPriority = priorityCalculationService.calculate(assessment.score(), estimatedAffectedCount,
-                priorityCalculationService.age(ticketSlaService.findLatestResolutionCycle(ticket).orElse(null),
-                        reclassifiedAt), newRequestType.getMinimumPriority());
-        ticket.setCurrentPriority(newPriority);
-        // Guía funcional §5 / Decisiones #2: la corrección de clasificación
-        // durante la primera IN_REVIEW recalcula el SLA inicial desde
-        // createdAt (no desde "ahora") con la nueva prioridad.
-        ticketRepository.save(ticket);
-
-        String message = "RequestType corregido de '" + previousRequestType.getCode()
-                + "' a '" + newRequestType.getCode() + "' durante la revisión inicial";
-        recordActivity(ticket, ActivityType.REQUEST_TYPE_CHANGED, ticket.getCurrentStatus(), ticket.getCurrentStatus(),
-                actor, previousPriority, newPriority, message, reclassifiedAt);
-        Optional<TicketSla> resolutionSla = ticketSlaService.recalculateInitialResolutionCycle(ticket, reclassifiedAt);
-        milestoneService.reconcileEscalation(ticket, reclassifiedAt, false);
-        ticketOutboxService.contentUpdated(ticket,
-                resolutionSla.map(TicketSla::getDueAt).orElse(null), reclassifiedAt);
-
-        return toResponse(ticket, location, resolutionSla.orElse(null));
+        throw new TicketStateConflictException(
+                "El cambio requiere una propuesta: POST /api/staff/tickets/{ticketId}/reclassification-proposals y confirmación explícita");
     }
 
     /**
@@ -361,6 +297,15 @@ public class TicketService {
             throw new TicketStateConflictException("El ticket no tiene una clasificación válida; no puede iniciar gestión");
         }
 
+        if (reclassificationProposals.findOpen(ticketId).isPresent()) {
+            throw new TicketStateConflictException("Confirme o abandone la propuesta abierta antes de iniciar gestión");
+        }
+        if (ticket.getClassificationFinalizedAt() != null && activityRepository.findAllByTicket_IdOrderBySequenceAsc(ticketId)
+                .stream().filter(a -> a.getActionType() == ActivityType.RETURNED_BY_AREA)
+                .reduce((a,b) -> b).map(a -> "REQUEST_TYPE_MISMATCH".equals(a.getReasonCode())).orElse(false)) {
+            throw new TicketStateConflictException("REQUEST_TYPE_MISMATCH requiere confirmar una propuesta autorizada");
+        }
+        reclassificationDataService.validateCurrentClassification(ticket);
         TicketStatus previousStatus = ticket.getCurrentStatus();
         Instant now = clock.instant();
         boolean selfManaged = SELF_MANAGED_AREA_ID.equalsIgnoreCase(ticket.getResponsibleAreaId());
@@ -443,6 +388,7 @@ public class TicketService {
         }
 
         Instant now = clock.instant();
+        reclassificationDataService.terminate(ticket, "Cancelación administrativa del ticket", now);
 
         TicketCancellation cancellation = new TicketCancellation();
         cancellation.setTicket(ticket);
@@ -810,7 +756,8 @@ public class TicketService {
     }
 
     private boolean isCitizenVisibleActivity(TicketActivity activity) {
-        return activity.getActionType() != ActivityType.INTERNAL_MESSAGE_ADDED
+        return (activity.getReasonCode() == null || !activity.getReasonCode().startsWith("RECLASSIFICATION_"))
+                && activity.getActionType() != ActivityType.INTERNAL_MESSAGE_ADDED
                 && activity.getActionType() != ActivityType.ATTACHMENT_ADDED;
     }
 

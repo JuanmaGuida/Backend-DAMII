@@ -31,6 +31,7 @@ public class DuplicateTicketService {
     private final TicketOutboxService ticketOutboxService;
     private final TicketService ticketService;
     private final Clock clock;
+    private final com.reclamos.backend.repository.TicketReclassificationProposalRepository reclassificationProposals;
 
     @Transactional
     public DuplicateLinkResponse link(UUID duplicateId, LinkDuplicateRequest request,
@@ -75,6 +76,9 @@ public class DuplicateTicketService {
             throw new TicketStateConflictException("El estado del ticket principal no permite vincular duplicados");
         }
 
+        if (reclassificationProposals.findOpen(duplicateId).isPresent()) {
+            throw new TicketStateConflictException("Abandone la propuesta de reclasificación antes de vincular el duplicado");
+        }
         TicketStatus previous = duplicate.getCurrentStatus();
         Instant now = clock.instant();
         duplicate.setMainTicket(main);

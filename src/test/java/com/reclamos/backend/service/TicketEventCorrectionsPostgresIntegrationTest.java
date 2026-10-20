@@ -67,6 +67,8 @@ class TicketEventCorrectionsPostgresIntegrationTest {
     private final List<UUID> ids = new ArrayList<>();
     private final List<UUID> eventIds = new ArrayList<>();
     private final List<UUID> citizenIds = new ArrayList<>();
+    private final Map<Long, Boolean> originalAnonymousPolicy = new HashMap<>();
+    private final List<Long> localTypes = new ArrayList<>();
 
     @AfterEach
     void cleanUp() {
@@ -86,6 +88,8 @@ class TicketEventCorrectionsPostgresIntegrationTest {
         }
         for (UUID id : ids) db.update("DELETE FROM tickets WHERE id=?", id);
         for (UUID id : citizenIds) db.update("DELETE FROM module_users WHERE citizen_id=?", id);
+        localTypes.forEach(id -> db.update("DELETE FROM request_types WHERE id=?",id));
+        originalAnonymousPolicy.forEach((id,allowed) -> db.update("UPDATE request_types SET allows_anonymous=? WHERE id=?",allowed,id));
     }
 
     static Stream<Arguments> externalVariants() {
@@ -163,8 +167,17 @@ class TicketEventCorrectionsPostgresIntegrationTest {
     @SuppressWarnings("unchecked")
     void routedSupportsNoFilesNoLocationNoSlaAndEmptyConfirmedAnswers() throws Exception {
         Ticket ticket = routingFixture(false);
-        db.update("UPDATE tickets SET form_data='{}'::jsonb,is_escalated=false,escalation_reason_code=NULL,"
-                + "escalated_at=NULL WHERE id=?", ticket.getId());
+        transactions.executeWithoutResult(ignored -> {
+            String name = "Event empty form " + UUID.randomUUID();
+            Long typeId = db.queryForObject("INSERT INTO request_types(code,subcategory_id,name,description,ticket_type,responsible_area_id,minimum_priority,base_risk,affected_population_factor,allows_anonymous,requires_location,active) "
+                    + "SELECT ?,id,?,?,'REQUEST','M6','LOW','LOW',0,TRUE,FALSE,TRUE FROM subcategories ORDER BY id LIMIT 1 RETURNING id", Long.class, name, name, name);
+            localTypes.add(typeId);
+            RequestType noForm = requestTypes.findById(typeId).orElseThrow();
+            Ticket managed = tickets.findById(ticket.getId()).orElseThrow();
+            managed.setRequestType(noForm); managed.setTicketType(noForm.getTicketType());
+            managed.setResponsibleAreaId(noForm.getResponsibleAreaId()); managed.setFormTemplateId(null);
+            managed.setFormData(Map.of()); managed.setEscalated(false); managed.setEscalationReasonCode(null); managed.setEscalatedAt(null);
+        });
 
         ticketService.routeToArea(ticket.getId(), triageAgent());
 
@@ -178,6 +191,21 @@ class TicketEventCorrectionsPostgresIntegrationTest {
                 .containsEntry("reasonCode", null).containsEntry("escalatedAt", null);
         assertThat((List<?>) data.get("attachments")).isEmpty();
         assertThat(eventTypes(ticket)).containsExactly("ROUTED");
+    }
+
+    @Test
+    void routedSnapshotFiltersUnexpectedHistoricalKeysAsDefenseInDepth() throws Exception {
+        Ticket ticket = routingFixture(false);
+        transactions.executeWithoutResult(ignored -> {
+            Ticket managed = tickets.findById(ticket.getId()).orElseThrow();
+            Map<String,Object> answers = new HashMap<>(managed.getFormData());
+            answers.put("previousAnswer", "outdated"); answers.put("formTemplateId", "private-form-key");
+            managed.setFormData(answers); managed.setCurrentStatus(TicketStatus.ROUTED);
+            outbox.routed(managed, null, null, Instant.now());
+        });
+        var payload = payloads(ticket).getFirst();
+        EventEnvelopeContractAssertions.assertFullEventValid(payload);
+        assertThat(payload.toString()).contains("cantidadLuminarias").doesNotContain("previousAnswer", "formTemplateId", "private-form-key");
     }
 
     @Test
@@ -224,9 +252,13 @@ class TicketEventCorrectionsPostgresIntegrationTest {
             managed.setResponsibleAreaId(confirmed.getResponsibleAreaId());
             managed.setFormTemplateId(templates.findFirstByRequestType_IdAndActiveTrueOrderByVersionDesc(confirmed.getId())
                     .orElseThrow().getId());
-            // Persisted unexpected/previous keys must never leave in the snapshot.
-            managed.setFormData(Map.of("cantidadLuminarias", "UNA", "zonaSinIluminacion", false,
-                    "cablesVisibles", false, "previousAnswer", "outdated", "formTemplateId", "private-form-key"));
+            // A lifecycle fixture must satisfy creation/confirmation rules. Snapshot filtering
+            // of historical unexpected keys is exercised separately as defense in depth.
+            managed.setFormData(Map.of("cantidadLuminarias", "UNA", "zonaSinIluminacion", false, "cablesVisibles", false));
+            if (anonymous) {
+                originalAnonymousPolicy.putIfAbsent(confirmed.getId(), confirmed.isAllowsAnonymous());
+                confirmed.setAllowsAnonymous(true);
+            }
             managed.setCurrentPriority(Priority.HIGH);
             managed.setEscalated(true);
             managed.setEscalationReasonCode(EscalationReasonCode.MANUAL);
