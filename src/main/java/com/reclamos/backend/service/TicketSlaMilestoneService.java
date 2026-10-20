@@ -7,7 +7,6 @@ import com.reclamos.backend.repository.TicketRepository;
 import com.reclamos.backend.repository.TicketSlaRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,12 +33,6 @@ public class TicketSlaMilestoneService {
     void setNotificationService(NotificationService notificationService) {
         this.notificationService = notificationService;
     }
-
-    @Value("${app.events.producer.module-id:M2}")
-    private String producerModuleId = MODULE_ID;
-
-    @Value("${app.events.producer.service:help-center-api}")
-    private String producerService = "help-center-api";
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void processCandidate(UUID ticketId, Long slaId, Instant effectiveNow) {
@@ -165,17 +158,7 @@ public class TicketSlaMilestoneService {
         data.put("currentPriority", ticket.getCurrentPriority().name());
         data.put("details", details);
         data.put("updatedAt", updatedAt.toString());
-        Map<String, Object> producer = new LinkedHashMap<>();
-        producer.put("moduleId", producerModuleId);
-        producer.put("service", producerService);
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("specVersion", "1.0");
-        payload.put("eventId", eventId.toString());
-        payload.put("eventType", "ticketUpdated");
-        payload.put("occurredAt", updatedAt.toString());
-        payload.put("producer", producer);
-        payload.put("subject", "tickets/" + ticket.getId());
-        payload.put("data", data);
+        Map<String, Object> payload = OutgoingEventEnvelope.create(eventId, "ticketUpdated", updatedAt, data);
 
         OutboxEvent event = new OutboxEvent();
         event.setEventId(eventId);

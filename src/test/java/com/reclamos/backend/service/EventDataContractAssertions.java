@@ -9,7 +9,7 @@ import com.networknt.schema.SpecVersion;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** Validates only data; full Core envelope alignment belongs to H01. */
+/** Validates only data; envelope compatibility is asserted separately. */
 final class EventDataContractAssertions {
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final JsonSchema SCHEMA = JsonSchemaFactory.getInstance(

@@ -100,7 +100,14 @@ public class TicketStatusUpdateService {
     @Transactional
     public TicketResponse applyUpdate(UUID ticketId, UpdateTicketStatusEnvelope envelope) {
         validateEnvelope(ticketId, envelope);
+        // The DEV input contract has no correlationId. Preserve its absence while
+        // identifying the real cause of independent M2 facts (for example SLA escalation).
+        try (var ignored = OutgoingEventEnvelope.incoming(null, envelope.eventId())) {
+            return applyValidatedUpdate(ticketId, envelope);
+        }
+    }
 
+    private TicketResponse applyValidatedUpdate(UUID ticketId, UpdateTicketStatusEnvelope envelope) {
         Optional<InboxEvent> existing = inboxEventRepository.findById(envelope.eventId());
         if (existing.isPresent()) {
             return handleDuplicateEvent(ticketId, existing.get());
