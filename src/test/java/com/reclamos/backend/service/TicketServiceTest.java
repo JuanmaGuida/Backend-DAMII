@@ -215,6 +215,40 @@ class TicketServiceTest {
     // ==================================================================
 
     @Test
+    void otherUsesItsConfiguredPopulationFactorWithoutOverridingRiskOrPriority() {
+        allowLowRisk();
+        requestType.setCode("OTHER");
+        requestType.setAffectedPopulationFactor(new BigDecimal("0.2500"));
+        Neighborhood neighborhood = new Neighborhood();
+        neighborhood.setId(UUID.randomUUID());
+        neighborhood.setPopulation(13912);
+        when(neighborhoods.existsById(neighborhood.getId())).thenReturn(true);
+        when(neighborhoods.getReferenceById(neighborhood.getId())).thenReturn(neighborhood);
+
+        service.create(request(location(null, null, null, neighborhood.getId())), identity(), null);
+
+        verify(tickets).save(argThat(ticket -> ticket.getEstimatedAffectedCount() == 3478
+                && ticket.getCurrentPriority() == Priority.LOW));
+        verify(locations).save(argThat(location -> location.getNeighborhood() == neighborhood
+                && location.getTicket().getEstimatedAffectedCount() == 3478));
+    }
+
+    @Test
+    void missingFactorRetainsZeroFallbackForTransientTypeWithoutChangingPersistedCatalogRequirements() {
+        allowLowRisk();
+        requestType.setAffectedPopulationFactor(null);
+        Neighborhood neighborhood = new Neighborhood();
+        neighborhood.setId(UUID.randomUUID());
+        neighborhood.setPopulation(13912);
+        when(neighborhoods.existsById(neighborhood.getId())).thenReturn(true);
+        when(neighborhoods.getReferenceById(neighborhood.getId())).thenReturn(neighborhood);
+
+        service.create(request(location(null, null, null, neighborhood.getId())), identity(), null);
+
+        verify(tickets).save(argThat(ticket -> ticket.getEstimatedAffectedCount() == 0));
+    }
+
+    @Test
     void lowRiskWithoutEvidenceCreatesRegisteredServerClassifiedTicket() {
         when(risks.calculateRisk(any(RequestType.class), any(ResolvedForm.class)))
                 .thenReturn(new RiskAssessment(0, Risk.LOW));
@@ -915,6 +949,7 @@ class TicketServiceTest {
     @Test
     void sameClassificationDoesNotWriteOrPublishContentUpdated() {
         Ticket ticket = ticket(TicketStatus.IN_REVIEW, Priority.LOW);
+        ticket.setEstimatedAffectedCount(3478);
         RequestType current = ticket.getRequestType();
         when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
         when(requestTypes.findById(current.getId())).thenReturn(Optional.of(current));
@@ -922,6 +957,7 @@ class TicketServiceTest {
 
         service.correctClassification(ticketId, current.getId(), actor);
 
+        assertThat(ticket.getEstimatedAffectedCount()).isEqualTo(3478);
         verify(tickets, never()).save(any());
         verify(activities, never()).save(any());
         verify(ticketOutboxService, never()).contentUpdated(any(), any(), any());

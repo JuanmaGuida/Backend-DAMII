@@ -158,7 +158,8 @@ public class TicketService {
         ticket.setCurrentStatus(TicketStatus.REGISTERED);
         ticket.setCurrentPriority(max(requestType.getMinimumPriority(), risk));
         ticket.setCreatedAt(now);
-        ticket.setEstimatedAffectedCount(0);
+        TicketLocation location = request.location() == null ? null : toLocation(ticket, request.location());
+        ticket.setEstimatedAffectedCount(estimateAffectedCount(requestType, location));
         ticket.setReopenCount(0);
         ticket.setEscalated(false);
         ticket.setPublic(false);
@@ -172,9 +173,8 @@ public class TicketService {
                 ? List.of()
                 : attachmentService.storeForTicket(ticket, identity, validatedAttachments, now);
 
-        TicketLocation location = null;
-        if (request.location() != null) {
-            location = locationRepository.save(toLocation(ticket, request.location()));
+        if (location != null) {
+            location = locationRepository.save(location);
         }
         TicketActivity activity = new TicketActivity();
         activity.setTicket(ticket);
@@ -678,6 +678,11 @@ public class TicketService {
                 .orElseThrow(() -> new ResourceNotFoundException("El ticket solicitado no existe"));
     }
 
+    /**
+     * Guía funcional v1.15 §4: población del barrio por factor del tipo vigente.
+     * Creación y corrección inicial comparten la política existente: HALF_UP
+     * a personas enteras y cero cuando no se informó ubicación/barrio o factor.
+     */
     private int estimateAffectedCount(RequestType requestType, TicketLocation location) {
         if (location == null || location.getNeighborhood() == null
                 || requestType.getAffectedPopulationFactor() == null) {
