@@ -1,13 +1,29 @@
 package com.reclamos.backend.support;
 
+import com.reclamos.backend.service.AttachmentFormatValidator;
+import com.reclamos.backend.service.HeifContentValidationStrategy;
+import com.reclamos.backend.service.JpegContentValidationStrategy;
+import com.reclamos.backend.service.PdfContentValidationStrategy;
+import com.reclamos.backend.service.PngContentValidationStrategy;
+import com.reclamos.backend.service.WebpContentValidationStrategy;
 import org.springframework.mock.web.MockMultipartFile;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
+import java.util.List;
 
 public final class AttachmentFixtures {
     private AttachmentFixtures() { }
+
+    public static AttachmentFormatValidator formatValidator() {
+        return new AttachmentFormatValidator(List.of(
+                new PngContentValidationStrategy(),
+                new JpegContentValidationStrategy(),
+                new WebpContentValidationStrategy(),
+                new HeifContentValidationStrategy(),
+                new PdfContentValidationStrategy()));
+    }
 
     public static byte[] bytes(String mime) {
         String extension = switch (mime) {
@@ -40,7 +56,7 @@ public final class AttachmentFixtures {
         properties.getLimits().setMaxFileSize(org.springframework.util.unit.DataSize.ofMegabytes(10));
         properties.getLimits().setMaxTotalSize(org.springframework.util.unit.DataSize.ofMegabytes(50));
         properties.setAllowedContentTypes(java.util.Set.of(mime));
-        return new com.reclamos.backend.service.AttachmentService(null, null, properties)
+        return new com.reclamos.backend.service.AttachmentService(null, null, properties, formatValidator())
                 .validate(new MockMultipartFile[]{file("attachments", name, mime)}).getFirst();
     }
 }
