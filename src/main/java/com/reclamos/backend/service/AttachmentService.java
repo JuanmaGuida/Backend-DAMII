@@ -38,6 +38,7 @@ public class AttachmentService {
     private final AttachmentRepository attachmentRepository;
     private final FileStorage fileStorage;
     private final AttachmentProperties properties;
+    private final AttachmentFormatValidator formatValidator;
 
     public List<ValidatedAttachment> validate(MultipartFile[] evidence) {
         if (evidence == null || evidence.length == 0) {
@@ -78,7 +79,7 @@ public class AttachmentService {
         for (MultipartFile file : evidence) {
             String contentType = normalizeContentType(file.getContentType());
             byte[] content = readContent(file, maxFileSize);
-            AttachmentFormatValidator.validate(content, contentType);
+            formatValidator.validate(content, contentType);
             validated.add(new ValidatedAttachment(content, normalizeFileName(file.getOriginalFilename()), contentType));
         }
         return List.copyOf(validated);

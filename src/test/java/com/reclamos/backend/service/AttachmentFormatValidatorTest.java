@@ -15,16 +15,18 @@ import java.util.zip.CRC32;
 import static org.junit.jupiter.api.Assertions.*;
 
 class AttachmentFormatValidatorTest {
+    private final AttachmentFormatValidator validator = AttachmentFixtures.formatValidator();
+
     @ParameterizedTest
     @ValueSource(strings = {"image/jpeg", "image/png", "image/webp", "image/heic", "image/heif", "application/pdf"})
     void acceptsRealEncodedFilesAndRejectsTruncation(String mime) {
         byte[] valid = AttachmentFixtures.bytes(mime);
-        assertDoesNotThrow(() -> AttachmentFormatValidator.validate(valid, mime));
+        assertDoesNotThrow(() -> validator.validate(valid, mime));
         for (int length : new int[]{0, 1, 8, valid.length / 2, valid.length - 1}) {
             // A PDF may legitimately end with or without its final newline.
             if (mime.equals("application/pdf") && length == valid.length - 1) length -= 6;
             byte[] truncated = Arrays.copyOf(valid, length);
-            assertThrows(InvalidAttachmentException.class, () -> AttachmentFormatValidator.validate(truncated, mime));
+            assertThrows(InvalidAttachmentException.class, () -> validator.validate(truncated, mime));
         }
     }
 
@@ -35,24 +37,24 @@ class AttachmentFormatValidatorTest {
         byte[] exe = "MZ\u0090\u0000This program cannot be run in DOS mode".getBytes(StandardCharsets.ISO_8859_1);
         byte[] other = AttachmentFixtures.bytes(mime.equals("image/png") ? "application/pdf" : "image/png");
         for (byte[] invalid : new byte[][]{text, exe, other}) {
-            assertThrows(InvalidAttachmentException.class, () -> AttachmentFormatValidator.validate(invalid, mime));
+            assertThrows(InvalidAttachmentException.class, () -> validator.validate(invalid, mime));
         }
     }
 
     @Test
     void acceptsProgressiveLosslessAndAnimatedVariants() {
-        AttachmentFormatValidator.validate(AttachmentFixtures.resource("progressive.jpg"), "image/jpeg");
-        AttachmentFormatValidator.validate(AttachmentFixtures.resource("lossless.webp"), "image/webp");
-        AttachmentFormatValidator.validate(AttachmentFixtures.resource("animated.webp"), "image/webp");
-        AttachmentFormatValidator.validate(AttachmentFixtures.resource("xref-stream.pdf"), "application/pdf");
-        AttachmentFormatValidator.validate(AttachmentFixtures.resource("incremental.pdf"), "application/pdf");
+        validator.validate(AttachmentFixtures.resource("progressive.jpg"), "image/jpeg");
+        validator.validate(AttachmentFixtures.resource("lossless.webp"), "image/webp");
+        validator.validate(AttachmentFixtures.resource("animated.webp"), "image/webp");
+        validator.validate(AttachmentFixtures.resource("xref-stream.pdf"), "application/pdf");
+        validator.validate(AttachmentFixtures.resource("incremental.pdf"), "application/pdf");
     }
 
     @Test
     void jpegIdentificationDoesNotAddARestrictionOnCameraDataAfterEoi() {
         byte[] jpeg = AttachmentFixtures.bytes("image/jpeg");
         byte[] withCameraPayload = Arrays.copyOf(jpeg, jpeg.length + 16);
-        AttachmentFormatValidator.validate(withCameraPayload, "image/jpeg");
+        validator.validate(withCameraPayload, "image/jpeg");
     }
 
     @Test
@@ -154,6 +156,6 @@ class AttachmentFormatValidatorTest {
     }
 
     private void assertInvalid(byte[] data, String mime) {
-        assertThrows(InvalidAttachmentException.class, () -> AttachmentFormatValidator.validate(data, mime));
+        assertThrows(InvalidAttachmentException.class, () -> validator.validate(data, mime));
     }
 }

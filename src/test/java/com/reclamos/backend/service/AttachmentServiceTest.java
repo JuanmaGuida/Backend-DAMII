@@ -44,7 +44,7 @@ class AttachmentServiceTest {
     void setUp() {
         reset(repository, storage);
         properties = properties();
-        service = new AttachmentService(repository, storage, properties);
+        service = new AttachmentService(repository, storage, properties, AttachmentFixtures.formatValidator());
         when(repository.saveAll(any())).thenAnswer(invocation -> invocation.getArgument(0));
     }
 
