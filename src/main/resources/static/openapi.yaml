@@ -737,6 +737,84 @@ paths:
           $ref: '#/components/responses/InvalidRequest'
         '401':
           $ref: '#/components/responses/InvalidToken'
+  /api/indicators/overview:
+    get:
+      tags: [Indicators]
+      operationId: getIndicatorOverview
+      summary: Resumen global y métricas filtradas
+      description: >-
+        Sólo AGENT/ADMIN. Lectura sin escrituras en una transacción REPEATABLE_READ.
+        Todos los contadores y distribuciones consideran el mismo universo filtrado, sin paginación.
+        Sin days abarca todos los tickets creados hasta generatedAt y devuelve hasta seis casos de atención.
+        Con days usa períodos consecutivos de days*24 horas, anclados al reloj servidor; cuenta la cohorte creada
+        en [periodStart,generatedAt], compara con [previousPeriodStart,periodStart) y devuelve 7/10/12 intervalos.
+        Activos son principales REGISTERED/IN_REVIEW/ROUTED/IN_PROGRESS/PENDING_INFORMATION.
+        unassigned significa activos sin assignedAgent M2; pueden tener un área externa responsable.
+        overdue usa el último RESOLUTION vigente BREACHED; nearDue exige NEAR_DUE vigente sin pausa.
+        Los terminales y DUPLICATE no generan alertas operativas. Los estados persistidos son la fuente de verdad;
+        esta lectura no ejecuta el scheduler ni recalcula SLA/prioridad.
+        urgent es la unión de activos CRITICAL, escalados, vencidos o próximos a vencer; HIGH solo no basta.
+        completedSlaMeasured/Met consideran el último ciclo RESOLUTION completado por principal,
+        sólo MET/BREACHED, excluyendo STOPPED y DUPLICATE; no evalúan ciclos abiertos o pausados.
+        La media usa createdAt hasta resolvedAt de la última TicketResolution de tickets hoy RESOLVED/CLOSED;
+        no usa statusChangedAt ni updatedAt. Sin resolución registrada la media es null.
+        La tendencia de resolución usa esos tickets hoy resueltos/cerrados aunque se hayan creado antes del período.
+        Barrio ausente se agrupa como Sin barrio informado, sin inferir ausencia de dirección.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/IndicatorCategoryId'
+        - $ref: '#/components/parameters/IndicatorNeighborhoodId'
+        - $ref: '#/components/parameters/IndicatorPriority'
+        - $ref: '#/components/parameters/IndicatorAreaId'
+        - $ref: '#/components/parameters/IndicatorStatus'
+        - $ref: '#/components/parameters/OverviewWithoutLocation'
+        - $ref: '#/components/parameters/OverviewSla'
+        - $ref: '#/components/parameters/OverviewDays'
+      responses:
+        '200':
+          description: Resumen global. Los ceros son resultados válidos sólo en una respuesta exitosa.
+          headers:
+            Cache-Control: { schema: { type: string }, description: no-store }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IndicatorOverviewResponse' }
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/InvalidToken' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/indicators/export:
+    get:
+      tags: [Indicators]
+      operationId: exportIndicatorTickets
+      summary: Exportar todos los tickets del universo filtrado como CSV
+      description: >-
+        Sólo AGENT/ADMIN. Mismos filtros y período de overview, sin paginación.
+        Lectura por cursor PostgreSQL con fetchSize 200 y transacción read-only REPEATABLE_READ.
+        UTF-8 con BOM, separador coma, comillas escapadas y columnas Ticket, Creado, Estado, Área, Ubicación.
+        Ubicación contiene sólo el barrio, como el CSV previo; no incluye dirección, identidad ni contacto.
+        Los valores con prefijos interpretables como fórmulas Excel se neutralizan con apóstrofe.
+        El archivo se transmite sin cargar todos los registros en memoria. No modifica tickets ni genera eventos.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/IndicatorCategoryId'
+        - $ref: '#/components/parameters/IndicatorNeighborhoodId'
+        - $ref: '#/components/parameters/IndicatorPriority'
+        - $ref: '#/components/parameters/IndicatorAreaId'
+        - $ref: '#/components/parameters/IndicatorStatus'
+        - $ref: '#/components/parameters/OverviewWithoutLocation'
+        - $ref: '#/components/parameters/OverviewSla'
+        - $ref: '#/components/parameters/OverviewDays'
+      responses:
+        '200':
+          description: CSV detallado; si no hay coincidencias contiene sólo encabezados.
+          headers:
+            Cache-Control: { schema: { type: string }, description: no-store }
+            Content-Disposition: { schema: { type: string }, description: attachment; filename=metricas.csv }
+          content:
+            text/csv:
+              schema: { type: string, format: binary }
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/InvalidToken' }
+        '403': { $ref: '#/components/responses/Forbidden' }
   /api/indicators/categories:
     get:
       tags: [ Indicators ]
@@ -2975,6 +3053,24 @@ components:
       scheme: bearer
       description: Token Bearer obtenido del proveedor de identidad vigente. En DEV puede obtenerse mediante /api/auth/login.
   parameters:
+    OverviewWithoutLocation:
+      name: withoutLocation
+      in: query
+      description: Excluye tickets con barrio, dirección/calle no vacía o par de coordenadas; igual a la bandeja.
+      schema: { type: boolean, default: false }
+    OverviewDays:
+      name: days
+      in: query
+      description: Período de creación; omitido significa todo el historial. Comparación usa período anterior igual.
+      schema: { type: integer, enum: [7, 30, 90, 365] }
+    OverviewSla:
+      name: sla
+      in: query
+      description: >-
+        breached/near_due sólo alertas de ciclo vigente; near_due excluye pausas.
+        on_track exige principal activo con último RESOLUTION RUNNING, incluso pausado.
+        no_resolution_sla coincide con ausencia de ciclo propio aplicable, incluyendo DUPLICATE.
+      schema: { type: string, enum: [breached, near_due, on_track, no_resolution_sla] }
     IndicatorCategoryId:
       name: categoryId
       in: query
@@ -3136,6 +3232,65 @@ components:
             code: DATA_INTEGRITY_CONFLICT
             message: La operación entra en conflicto con datos existentes
   schemas:
+    IndicatorOverviewResponse:
+      type: object
+      required: [generatedAt, periodStart, previousPeriodStart, counts, statuses, categories, neighborhoods, areas, trend, attention]
+      properties:
+        generatedAt: { type: string, format: date-time }
+        periodStart: { type: string, format: date-time, nullable: true }
+        previousPeriodStart: { type: string, format: date-time, nullable: true }
+        counts: { $ref: '#/components/schemas/IndicatorOverviewCounts' }
+        statuses: { type: array, items: { $ref: '#/components/schemas/IndicatorBreakdown' } }
+        categories: { type: array, items: { $ref: '#/components/schemas/IndicatorBreakdown' } }
+        neighborhoods: { type: array, items: { $ref: '#/components/schemas/IndicatorBreakdown' } }
+        areas: { type: array, items: { $ref: '#/components/schemas/IndicatorBreakdown' } }
+        trend: { type: array, items: { $ref: '#/components/schemas/IndicatorTrend' } }
+        attention: { type: array, maxItems: 6, items: { $ref: '#/components/schemas/IndicatorAttentionTicket' } }
+    IndicatorOverviewCounts:
+      type: object
+      required: [total, active, unassigned, overdue, nearDue, urgent, resolved, escalated, reopenCount, completedSlaMeasured, completedSlaMet, averageResolutionHours, previousTotal]
+      properties:
+        total: { type: integer, format: int64, minimum: 0 }
+        active: { type: integer, format: int64, minimum: 0 }
+        unassigned: { type: integer, format: int64, minimum: 0 }
+        overdue: { type: integer, format: int64, minimum: 0 }
+        nearDue: { type: integer, format: int64, minimum: 0 }
+        urgent: { type: integer, format: int64, minimum: 0 }
+        resolved: { type: integer, format: int64, minimum: 0 }
+        escalated: { type: integer, format: int64, minimum: 0 }
+        reopenCount: { type: integer, format: int64, minimum: 0 }
+        completedSlaMeasured: { type: integer, format: int64, minimum: 0 }
+        completedSlaMet: { type: integer, format: int64, minimum: 0 }
+        previousTotal: { type: integer, format: int64, minimum: 0 }
+        averageResolutionHours: { type: number, format: double, nullable: true }
+    IndicatorBreakdown:
+      type: object
+      required: [key, name, count]
+      properties:
+        key: { type: string }
+        name: { type: string }
+        count: { type: integer, format: int64, minimum: 0 }
+    IndicatorTrend:
+      type: object
+      required: [from, created, resolved]
+      properties:
+        from: { type: string, format: date-time }
+        created: { type: integer, format: int64, minimum: 0 }
+        resolved: { type: integer, format: int64, minimum: 0 }
+    IndicatorAttentionTicket:
+      type: object
+      required: [id, publicId, summary, currentStatus, currentPriority, escalated, slaBreached, slaNearDue, resolutionDueAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        publicId: { type: string }
+        summary: { type: string }
+        currentStatus: { $ref: '#/components/schemas/TicketStatus' }
+        currentPriority: { $ref: '#/components/schemas/Priority' }
+        escalated: { type: boolean }
+        slaBreached: { type: boolean }
+        slaNearDue: { type: boolean }
+        resolutionDueAt: { type: string, format: date-time, nullable: true }
+        updatedAt: { type: string, format: date-time }
     CategoryIndicatorResponse:
       type: object
       required: [ categoryId, categoryName, count ]

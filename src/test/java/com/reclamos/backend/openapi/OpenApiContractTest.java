@@ -67,6 +67,8 @@ class OpenApiContractTest {
             "POST /api/admin/catalog/request-types/{requestTypeId}/activate",
             "GET /api/admin/catalog/request-types/{requestTypeId}/form",
             "PUT /api/admin/catalog/request-types/{requestTypeId}/form",
+            "GET /api/indicators/overview",
+            "GET /api/indicators/export",
             "GET /api/indicators/categories",
             "GET /api/indicators/neighborhoods",
             "GET /api/indicators/priorities",
@@ -146,6 +148,8 @@ class OpenApiContractTest {
             "POST /api/admin/catalog/request-types/{requestTypeId}/activate",
             "GET /api/admin/catalog/request-types/{requestTypeId}/form",
             "PUT /api/admin/catalog/request-types/{requestTypeId}/form",
+            "GET /api/indicators/overview",
+            "GET /api/indicators/export",
             "GET /api/indicators/categories",
             "GET /api/indicators/neighborhoods",
             "GET /api/indicators/priorities",
@@ -263,7 +267,7 @@ class OpenApiContractTest {
     void versionedFileIsAValidOpenApi3DocumentWithExactlyTheCurrentBusinessOperations() {
         assertTrue(string(spec.get("openapi")).startsWith("3."));
         assertEquals("3.0.3", parsedOpenApi.getOpenapi());
-        assertEquals(76, parsedOpenApi.getPaths().size());
+        assertEquals(78, parsedOpenApi.getPaths().size());
         assertNotNull(map(spec, "info").get("title"));
         assertNotNull(map(spec, "components").get("schemas"));
         assertEquals(EXPECTED_OPERATIONS, documentedOperations());
