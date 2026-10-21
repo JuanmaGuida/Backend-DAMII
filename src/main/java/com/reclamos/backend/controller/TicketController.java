@@ -91,9 +91,10 @@ public class TicketController {
             @RequestParam(required = false) TicketStatus status,
             @RequestParam(required = false) Set<UUID> labelIds,
             @RequestParam(required = false) String search,
+            @RequestParam(required = false) Boolean withoutLocation,
             @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable
     ) {
-        TicketFilter filter = new TicketFilter(categoryId, priority, neighborhoodId, responsibleAreaId, status, labelIds, search);
+        TicketFilter filter = new TicketFilter(categoryId, priority, neighborhoodId, responsibleAreaId, status, labelIds, search, withoutLocation);
         return ticketService.listTickets(filter, pageable);
     }
 

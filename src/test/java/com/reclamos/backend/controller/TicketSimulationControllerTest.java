@@ -49,6 +49,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @WithMockUser
 class TicketSimulationControllerTest {
 
+    @Test
+    @WithMockUser(roles = "AREA_RESPONSIBLE")
+    void areaRoleCannotInvokeOperationalSimulationEvenWhenEnabled() throws Exception {
+        mockMvc.perform(post("/api/tickets/{ticketId}/simulate-status-update", UUID.randomUUID())
+                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(ticketStatusUpdateService);
+    }
+
     @Autowired
     private MockMvc mockMvc;
 

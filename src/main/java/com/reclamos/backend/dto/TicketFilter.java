@@ -23,10 +23,16 @@ public record TicketFilter(
         String responsibleAreaId,
         TicketStatus status,
         Set<UUID> labelIds,
-        String search
+        String search,
+        Boolean withoutLocation
 ) {
     public TicketFilter {
         search = search == null || search.isBlank() ? null : search.trim();
+    }
+
+    public TicketFilter(Long categoryId, Priority priority, UUID neighborhoodId,
+                        String responsibleAreaId, TicketStatus status, Set<UUID> labelIds, String search) {
+        this(categoryId, priority, neighborhoodId, responsibleAreaId, status, labelIds, search, null);
     }
 
     public TicketFilter(Long categoryId, Priority priority, UUID neighborhoodId,

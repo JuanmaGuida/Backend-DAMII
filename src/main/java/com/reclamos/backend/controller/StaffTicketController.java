@@ -24,6 +24,16 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import org.springframework.data.domain.Page;
+import com.reclamos.backend.dto.TicketResponse;
+import com.reclamos.backend.dto.TicketFilter;
+import org.springframework.web.bind.annotation.RequestParam;
+import com.reclamos.backend.entity.Priority;
+import com.reclamos.backend.entity.TicketStatus;
+import org.springframework.data.web.PageableDefault;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.domain.Pageable;
+import java.util.Set;
 import java.util.List;
 import java.util.UUID;
 
@@ -31,13 +41,28 @@ import java.util.UUID;
  * Guía funcional complementaria M2 §7/§7.1: namespace /staff/tickets para
  * las vistas de gestión interna (AGENT, AREA_RESPONSIBLE, ADMIN), separado
  * de /tickets (vista ciudadana propia) y /me/tickets (listado ciudadano
- * propio). No incluye todavía ninguna acción de escritura staff — sólo los
- * dos detalles de sólo lectura pedidos hasta ahora.
+ * propio). Incluye el listado acotado al área autenticada.
  */
 @RestController
 @RequestMapping("/api/staff/tickets")
 @RequiredArgsConstructor
 public class StaffTicketController {
+
+    @GetMapping("/area")
+    public Page<TicketResponse> listArea(
+            @RequestParam(required = false) Long categoryId,
+            @RequestParam(required = false) Priority priority,
+            @RequestParam(required = false) UUID neighborhoodId,
+            @RequestParam(required = false) TicketStatus status,
+            @RequestParam(required = false) Set<UUID> labelIds,
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) Boolean withoutLocation,
+            @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC)
+            Pageable pageable,
+            @AuthenticationPrincipal AuthenticatedIdentity identity) {
+        return ticketService.listAreaTickets(new TicketFilter(categoryId, priority,
+                neighborhoodId, null, status, labelIds, search, withoutLocation), pageable, identity);
+    }
 
     private final TicketService ticketService;
     private final DuplicateCandidateService duplicateCandidateService;

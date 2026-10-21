@@ -38,6 +38,7 @@ public class TicketResponse {
     private boolean slaBreached;
     private Instant resolutionNearDueAt;
     private UUID neighborhoodId;
+    private boolean hasLocation;
     private String neighborhoodName;
     private Instant classificationFinalizedAt;
     private Instant statusChangedAt;
