@@ -28,6 +28,17 @@ public final class TicketSpecifications {
         return (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
 
+            if (Boolean.TRUE.equals(filter.withoutLocation()) && query != null) {
+                Subquery<Integer> locations = query.subquery(Integer.class);
+                Root<TicketLocation> location = locations.from(TicketLocation.class);
+                locations.select(cb.literal(1)).where(cb.equal(location.get("ticket"), root), cb.or(
+                        cb.isNotNull(location.get("neighborhood")),
+                        cb.notEqual(cb.trim(location.get("addressLine")), ""),
+                        cb.notEqual(cb.trim(location.get("street")), ""),
+                        cb.and(cb.isNotNull(location.get("latitude")), cb.isNotNull(location.get("longitude")))));
+                predicates.add(cb.not(cb.exists(locations)));
+            }
+
             if (filter.status() != null) {
                 predicates.add(cb.equal(root.get("currentStatus"), filter.status()));
             }

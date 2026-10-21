@@ -167,10 +167,9 @@ public class TicketMessageService {
      * tiene que pertenecer al ticket indicado, ser un mensaje propio de M2
      * (nunca uno recibido por integración) y tener este actor como autor
      * (authorId siempre es actor.citizenId().toString(), independientemente
-     * del role — ver create()). No se reevalúa la matriz de
-     * requireWriteAuthority (rol/área/ownership del ticket): autoría propia
-     * alcanza y es la única condición documentada para poder tocar un
-     * mensaje ya publicado.
+     * del role — ver create()). AREA_RESPONSIBLE debe conservar acceso al
+     * ticket en el área actual; la autoría no permite eludir un cambio de área.
+     * El propietario conserva la edición de sus mensajes ciudadanos.
      */
     private TicketMessage findOwnMessage(UUID ticketId, Long messageId, AuthenticatedIdentity actor) {
         if (actor == null) {
@@ -186,6 +185,9 @@ public class TicketMessageService {
                 && message.getAuthorId().equals(actor.citizenId().toString());
         if (!isOwnMessage) {
             throw new UnauthorizedTicketOperationException();
+        }
+        if (actor.role() == ModuleRole.AREA_RESPONSIBLE) {
+            requireReadAuthority(message.getTicket(), actor);
         }
         return message;
     }
@@ -217,7 +219,8 @@ public class TicketMessageService {
             return ActorType.ADMIN;
         }
         if (actor.role() == ModuleRole.AREA_RESPONSIBLE) {
-            if (!ticket.getResponsibleAreaId().equals(actor.areaId())) {
+            if (actor.areaId() == null || actor.areaId().isBlank()
+                    || !actor.areaId().equals(ticket.getResponsibleAreaId())) {
                 throw new UnauthorizedTicketOperationException();
             }
             return ActorType.AREA_RESPONSIBLE;
@@ -248,7 +251,8 @@ public class TicketMessageService {
             throw new UnauthorizedTicketOperationException();
         }
         if (identity.role() == ModuleRole.AREA_RESPONSIBLE
-                && !ticket.getResponsibleAreaId().equals(identity.areaId())) {
+                && (identity.areaId() == null || identity.areaId().isBlank()
+                || !identity.areaId().equals(ticket.getResponsibleAreaId()))) {
             throw new UnauthorizedTicketOperationException();
         }
         return true;

@@ -77,6 +77,7 @@ class OpenApiContractTest {
             "POST /api/tickets",
             "GET /api/tickets/{ticketId}",
             "POST /api/tickets/{ticketId}/attachments",
+            "GET /api/staff/tickets/area",
             "GET /api/staff/tickets/{ticketId}",
             "GET /api/staff/tickets/{ticketId}/citizen-view",
             "GET /api/staff/tickets/{ticketId}/duplicate-candidates",
@@ -154,6 +155,7 @@ class OpenApiContractTest {
             "GET /api/tickets",
             "GET /api/tickets/{ticketId}",
             "POST /api/tickets/{ticketId}/attachments",
+            "GET /api/staff/tickets/area",
             "GET /api/staff/tickets/{ticketId}",
             "GET /api/staff/tickets/{ticketId}/citizen-view",
             "GET /api/staff/tickets/{ticketId}/duplicate-candidates",
@@ -235,10 +237,33 @@ class OpenApiContractTest {
     }
 
     @Test
+    void staffFactsAndAreaListingRemainScopedInTheContract() {
+        Map<String, Object> schemas = map(spec, "components", "schemas");
+        for (String name : Set.of("TicketDetailResponse", "TrackingTicketResponse", "TicketResponse")) {
+            Set<String> properties = map(schemas, name, "properties").keySet();
+            assertFalse(properties.contains("formData"));
+            assertFalse(properties.contains("formTemplate"));
+            assertFalse(properties.contains("location"));
+            assertFalse(properties.contains("currentProgress"));
+        }
+        assertEquals(Set.of("id", "version", "fields"), map(schemas, "StaffTicketFormResponse", "properties").keySet());
+        assertEquals(Set.of("code", "label", "type", "options"),
+                map(schemas, "StaffTicketFormResponse", "properties", "fields", "items", "properties").keySet());
+        assertEquals(Set.of("addressLine", "street", "streetNumber", "neighborhoodId", "neighborhoodName", "latitude", "longitude", "reference"),
+                map(schemas, "StaffTicketLocationResponse", "properties").keySet());
+        assertTrue(map(schemas, "TicketResponse", "properties").containsKey("hasLocation"));
+        Set<String> parameters = new LinkedHashSet<>();
+        for(Object raw : (java.util.List<?>) operation("GET /api/staff/tickets/area").get("parameters"))
+            parameters.add(string(map(raw).get("name")));
+        assertTrue(parameters.containsAll(Set.of("page", "size", "sort", "withoutLocation")));
+        assertFalse(parameters.contains("responsibleAreaId"));
+    }
+
+    @Test
     void versionedFileIsAValidOpenApi3DocumentWithExactlyTheCurrentBusinessOperations() {
         assertTrue(string(spec.get("openapi")).startsWith("3."));
         assertEquals("3.0.3", parsedOpenApi.getOpenapi());
-        assertEquals(75, parsedOpenApi.getPaths().size());
+        assertEquals(76, parsedOpenApi.getPaths().size());
         assertNotNull(map(spec, "info").get("title"));
         assertNotNull(map(spec, "components").get("schemas"));
         assertEquals(EXPECTED_OPERATIONS, documentedOperations());
@@ -420,7 +445,7 @@ class OpenApiContractTest {
         java.util.List<String> staffDetailAllOf = list(map(schemas, "StaffTicketDetailResponse"), "allOf");
         assertEquals("#/components/schemas/TicketDetailResponse", map(staffDetailAllOf.getFirst()).get("$ref"));
         Map<String, Object> staffProperties = map(map(staffDetailAllOf.get(1)), "properties");
-        assertEquals(Set.of("anonymousContact", "pendingInformationRequestContext"), staffProperties.keySet());
+        assertEquals(Set.of("anonymousContact", "pendingInformationRequestContext", "formData", "formTemplate", "location", "currentProgress"), staffProperties.keySet());
         assertEquals("#/components/schemas/AnonymousContact",
                 map(list(map(staffProperties, "anonymousContact"), "allOf").getFirst()).get("$ref"));
         assertTrue(map(schemas, "TrackingTicketResponse", "properties")

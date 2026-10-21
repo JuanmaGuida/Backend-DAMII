@@ -13,6 +13,10 @@ import lombok.Setter;
 @Setter
 @EqualsAndHashCode(callSuper = true)
 public class StaffTicketDetailResponse extends TicketDetailResponse {
+    private java.util.Map<String, Object> formData;
+    private StaffTicketFormResponse formTemplate;
+    private StaffTicketLocationResponse location;
+    private Short currentProgress;
     private AnonymousContactResponse anonymousContact;
     private StaffInformationRequestContextResponse pendingInformationRequestContext;
 

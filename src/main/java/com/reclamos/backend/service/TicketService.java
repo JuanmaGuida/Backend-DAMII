@@ -98,6 +98,8 @@ public class TicketService {
     private final AnonymousContactValidator anonymousContactValidator;
     private final ModuleUserRepository moduleUserRepository;
     private final TicketLabelRepository ticketLabelRepository;
+    private final FormTemplateRepository formTemplateRepository;
+    private final FormFieldRepository formFieldRepository;
     private final NotificationService notificationService;
     private final Clock clock;
     private final TicketReclassificationProposalRepository reclassificationProposals;
@@ -570,6 +572,20 @@ public class TicketService {
         return mapPage(page, locationsByTicket, latestFirstResponseByTicket, latestResolutionByTicket);
     }
 
+    /** Area is fixed by the authenticated identity, before SQL filtering/count/pagination. */
+    @Transactional(readOnly = true)
+    public Page<TicketResponse> listAreaTickets(TicketFilter filter, Pageable pageable, AuthenticatedIdentity identity) {
+        if (identity == null || identity.role() != ModuleRole.AREA_RESPONSIBLE
+                || identity.areaId() == null || identity.areaId().isBlank()) {
+            throw new UnauthorizedTicketOperationException();
+        }
+        if (pageable.getPageSize() > 200) {
+            throw new InvalidTicketRequestException("El tamaño máximo de página es 200");
+        }
+        return listTickets(new TicketFilter(filter.categoryId(), filter.priority(), filter.neighborhoodId(),
+                identity.areaId(), filter.status(), filter.labelIds(), filter.search(), filter.withoutLocation()), pageable);
+    }
+
     /**
      * GET /me/tickets (Entidades V1.49 §"Autenticación, roles y vistas"):
      * cualquier usuario autenticado vía M1 conserva capacidades ciudadanas
@@ -636,6 +652,25 @@ public class TicketService {
         TicketLocation location = locationRepository.findByTicket_Id(ticketId).orElse(null);
         StaffTicketDetailResponse detail = toDetailResponse(
                 ticket, location, true, new StaffTicketDetailResponse());
+        detail.setFormData(ticket.getFormData() == null ? null : new HashMap<>(ticket.getFormData()));
+        detail.setCurrentProgress(ticket.getCurrentProgress());
+        // Provisional answers are consulted through the proposal/owner endpoints, not this detail.
+        omitProvisionalAnswers(detail);
+        if (location != null) {
+            detail.setLocation(new StaffTicketLocationResponse(location.getAddressLine(), location.getStreet(),
+                    location.getStreetNumber(), location.getNeighborhood() == null ? null : location.getNeighborhood().getId(),
+                    location.getNeighborhood() == null ? null : location.getNeighborhood().getName(),
+                    location.getLatitude(), location.getLongitude(), location.getReference()));
+        }
+        if (ticket.getFormTemplateId() != null) {
+            formTemplateRepository.findById(ticket.getFormTemplateId()).ifPresent(template ->
+                    detail.setFormTemplate(new StaffTicketFormResponse(template.getId(), template.getVersion(),
+                            formFieldRepository.findAllByFormTemplate_IdOrderByDisplayOrderAsc(template.getId()).stream()
+                                    .map(field -> new StaffTicketFormResponse.Field(field.getCode(), field.getLabel(), field.getType(),
+                                            field.getConfig() != null && field.getConfig().get("options") instanceof List<?> options
+                                                    ? options : List.of()))
+                                    .toList())));
+        }
         if (ticket.isAnonymous()
                 && (identity.role() == ModuleRole.AGENT || identity.role() == ModuleRole.ADMIN)
                 && ticket.getAnonymousContactChannel() != null
@@ -655,7 +690,8 @@ public class TicketService {
         boolean isOwnTicket = !ticket.isAnonymous() && ticket.getCitizenId() != null
                 && ticket.getCitizenId().equals(identity.citizenId());
         if (identity.role() == ModuleRole.AREA_RESPONSIBLE && !isOwnTicket
-                && !ticket.getResponsibleAreaId().equals(identity.areaId())) {
+                && (identity.areaId() == null || identity.areaId().isBlank()
+                || !identity.areaId().equals(ticket.getResponsibleAreaId()))) {
             throw new UnauthorizedTicketOperationException();
         }
     }
@@ -704,7 +740,18 @@ public class TicketService {
                 .orElseThrow(() -> new ResourceNotFoundException("El ticket solicitado no existe"));
         requireStaffAccess(ticket, identity);
         TicketLocation location = locationRepository.findByTicket_Id(ticketId).orElse(null);
-        return toDetailResponse(ticket, location, false);
+        TicketDetailResponse detail = toDetailResponse(ticket, location, false);
+        omitProvisionalAnswers(detail);
+        return detail;
+    }
+
+    private void omitProvisionalAnswers(TicketDetailResponse detail) {
+        PendingInformationRequestResponse pending = detail.getPendingInformationRequest();
+        if (pending != null && pending.reclassification() != null) {
+            detail.setPendingInformationRequest(new PendingInformationRequestResponse(pending.status(),
+                    pending.messageForCitizen(), pending.requestedAt(), pending.dueAt(), pending.attachments(),
+                    pending.purpose(), null));
+        }
     }
 
     private void validateSort(Sort sort) {
@@ -911,6 +958,10 @@ public class TicketService {
         response.setAssignedAgentId(ticket.getAssignedAgent() != null
                 ? String.valueOf(ticket.getAssignedAgent().getId()) : null);
         response.setAnonymous(ticket.isAnonymous());
+        response.setHasLocation(location != null && (location.getNeighborhood() != null
+                || location.getAddressLine() != null && !location.getAddressLine().isBlank()
+                || location.getStreet() != null && !location.getStreet().isBlank()
+                || location.getLatitude() != null && location.getLongitude() != null));
         response.setEstimatedAffectedCount(ticket.getEstimatedAffectedCount());
         response.setEscalated(ticket.isEscalated());
         response.setEscalationReasonCode(ticket.getEscalationReasonCode());
