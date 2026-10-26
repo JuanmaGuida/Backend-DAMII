@@ -103,7 +103,7 @@ class TicketSlaServiceTest {
         doAnswer(invocation -> {
             active.setStatus(SlaStatus.BREACHED);
             return null;
-        }).when(milestones).processMilestones(ticket, active, DUE);
+        }).when(milestones).recordClosingMilestones(ticket, active, DUE);
 
         TicketSla completed = service.completeFirstResponseCycle(ticket, DUE).orElseThrow();
 
@@ -132,7 +132,8 @@ class TicketSlaServiceTest {
 
         assertEquals(SlaStatus.MET, completed.getStatus());
         assertEquals(resolvedAt, completed.getCompletedAt());
-        verify(milestones).processMilestones(ticket, active, resolvedAt);
+        verify(milestones).recordClosingMilestones(ticket, active, resolvedAt);
+        verify(milestones).reconcileEscalation(ticket, resolvedAt, true);
     }
 
     @Test void resolutionRejectsAnExternalResolvedAtEarlierThanTheCyclesStartedAt() {
@@ -147,7 +148,7 @@ class TicketSlaServiceTest {
         assertNull(active.getCompletedAt());
         assertEquals(SlaStatus.RUNNING, active.getStatus());
         verify(slas, never()).save(any());
-        verify(milestones, never()).processMilestones(any(), any(), any());
+        verifyNoInteractions(milestones);
     }
 
     @Test void initialReclassificationNeverRewritesCompletedHistory() {
@@ -165,7 +166,7 @@ class TicketSlaServiceTest {
         doAnswer(invocation -> {
             ((TicketSla) invocation.getArgument(1)).setStatus(SlaStatus.BREACHED);
             return null;
-        }).when(milestones).processMilestones(ticket, active, DUE);
+        }).when(milestones).recordClosingMilestones(ticket, active, DUE);
 
         TicketSla completed = service.completeActiveResolutionCycle(ticket, DUE).orElseThrow();
 
@@ -299,7 +300,7 @@ class TicketSlaServiceTest {
         doAnswer(invocation -> {
             resolution.setStatus(SlaStatus.BREACHED);
             return null;
-        }).when(milestones).processMilestones(ticket, resolution, DUE);
+        }).when(milestones).recordClosingMilestones(ticket, resolution, DUE);
 
         service.stopActiveCyclesForDuplicate(ticket, DUE);
 

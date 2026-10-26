@@ -48,11 +48,21 @@ public class TicketSlaMilestoneService {
 
     /** El llamador debe mantener los locks pesimistas en orden Ticket -&gt; TicketSla. */
     public void processMilestones(Ticket ticket, TicketSla sla, Instant effectiveNow) {
+        processMilestones(ticket, sla, effectiveNow, true);
+    }
+
+    /** Record legitimate milestones; the lifecycle caller reconciles after all closing cycles are finalized. */
+    void recordClosingMilestones(Ticket ticket, TicketSla sla, Instant effectiveNow) {
+        processMilestones(ticket, sla, effectiveNow, false);
+    }
+
+    private void processMilestones(Ticket ticket, TicketSla sla, Instant effectiveNow, boolean reconcile) {
         if (!isProcessable(sla)) {
             return;
         }
 
         Instant processedAt = clock.instant();
+        SlaStatus previousStatus = sla.getStatus();
         String kind = sla.getSlaType() == SlaType.FIRST_RESPONSE ? "primera respuesta" : "resolución";
         if (sla.getStatus() == SlaStatus.RUNNING && !effectiveNow.isBefore(sla.getNearDueAt())) {
             sla.setStatus(SlaStatus.NEAR_DUE);
@@ -73,49 +83,41 @@ public class TicketSlaMilestoneService {
                 notificationService.queueAssignedAgent(ticket, NotificationType.SLA_BREACHED, null);
             }
 
-            if (!ticket.isEscalated()) {
-                ticket.setEscalated(true);
-                ticket.setEscalationReasonCode(EscalationReasonCode.SLA_BREACHED);
-                ticket.setEscalatedAt(sla.getDueAt());
-                saveActivity(ticket, sla, ActivityType.ESCALATED, EscalationReasonCode.SLA_BREACHED.name(),
-                        "Escalamiento automático por incumplimiento del SLA de " + kind, sla.getDueAt());
-                if (shouldPublishEscalationChanged(ticket)) {
-                    writeEscalationChangedEvent(ticket, processedAt);
-                }
+            // The locked, unfinished cycle has just breached; no repository re-read is needed.
+            if (reconcile) {
+                applyEscalation(ticket, selectEffectiveReason(ticket, true), sla.getDueAt(), processedAt, true, sla);
             }
         }
-        slaRepository.save(sla);
-        ticketRepository.save(ticket);
+        if (sla.getStatus() != previousStatus) slaRepository.save(sla);
     }
 
     /** Caller holds the Ticket lock. Completed BREACHED cycles are history, not active causes. */
     public void reconcileEscalation(Ticket ticket, Instant now, boolean publish) {
-        reconcileEscalation(ticket, now, publish, false);
+        boolean breached = slaRepository.existsByTicket_IdAndCompletedAtIsNullAndStatus(
+                ticket.getId(), SlaStatus.BREACHED);
+        applyEscalation(ticket, selectEffectiveReason(ticket, breached), now, now, publish, null);
     }
 
     public void reconcileReclassificationEscalation(Ticket ticket, Instant now) {
-        reconcileEscalation(ticket, now, false, true);
+        reconcileEscalation(ticket, now, false);
     }
 
-    private void reconcileEscalation(Ticket ticket, Instant now, boolean publish, boolean selectPrecedence) {
+    private EscalationReasonCode selectEffectiveReason(Ticket ticket, boolean breached) {
+        if (ticket.isEscalated() && ticket.getEscalationReasonCode() == EscalationReasonCode.MANUAL) {
+            return EscalationReasonCode.MANUAL;
+        }
+        if (breached) return EscalationReasonCode.SLA_BREACHED;
+        return ticket.getCurrentPriority() == Priority.CRITICAL ? EscalationReasonCode.CRITICAL_PRIORITY : null;
+    }
+
+    private void applyEscalation(Ticket ticket, EscalationReasonCode next, Instant occurredAt,
+                                 Instant processedAt, boolean publish, TicketSla sla) {
         EscalationReasonCode previous = ticket.getEscalationReasonCode();
-        boolean manual = ticket.isEscalated() && previous == EscalationReasonCode.MANUAL;
-        boolean critical = ticket.getCurrentPriority() == Priority.CRITICAL;
-        boolean breached = slaRepository.existsByTicket_IdAndCompletedAtIsNullAndStatus(
-                ticket.getId(), SlaStatus.BREACHED);
-        boolean valid = ticket.isEscalated() && (manual
-                || previous == EscalationReasonCode.CRITICAL_PRIORITY && critical
-                || previous == EscalationReasonCode.SLA_BREACHED && breached);
-        EscalationReasonCode preferred = manual ? EscalationReasonCode.MANUAL
-                : breached ? EscalationReasonCode.SLA_BREACHED : critical ? EscalationReasonCode.CRITICAL_PRIORITY : null;
-        if (valid && (!selectPrecedence || previous == preferred)) return; // An additional cause does not replace a still valid original reason.
-        EscalationReasonCode next = manual ? EscalationReasonCode.MANUAL
-                : breached ? EscalationReasonCode.SLA_BREACHED : critical ? EscalationReasonCode.CRITICAL_PRIORITY : null;
-        if (!ticket.isEscalated() && next == null) return;
+        if (ticket.isEscalated() == (next != null) && previous == next) return;
         boolean activation = !ticket.isEscalated() && next != null;
         ticket.setEscalated(next != null);
         ticket.setEscalationReasonCode(next);
-        if (activation) ticket.setEscalatedAt(now);
+        if (activation) ticket.setEscalatedAt(occurredAt);
         if (next == null) ticket.setEscalatedAt(null);
         TicketActivity activity = new TicketActivity();
         activity.setTicket(ticket);
@@ -128,16 +130,17 @@ public class TicketSlaMilestoneService {
         activity.setReasonCode(next == null ? null : next.name());
         activity.setMessage(activation ? "Escalamiento automático por " + next
                 : next == null ? "Escalamiento desactivado: no quedan causas vigentes"
-                : "Motivo de escalamiento actualizado por pérdida de la causa anterior");
+                : "Motivo de escalamiento actualizado según precedencia de causas vigentes");
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("escalationActive", ticket.isEscalated());
         metadata.put("previousReasonCode", previous == null ? null : previous.name());
         metadata.put("reasonCode", next == null ? null : next.name());
+        if (sla != null) metadata.put("slaType", sla.getSlaType().name());
         activity.setMetadata(metadata);
-        activity.setOccurredAt(now);
+        activity.setOccurredAt(occurredAt);
         activityRepository.save(activity);
         ticketRepository.save(ticket);
-        if (publish && shouldPublishEscalationChanged(ticket)) writeEscalationChangedEvent(ticket, now);
+        if (publish && shouldPublishEscalationChanged(ticket)) writeEscalationChangedEvent(ticket, processedAt);
     }
 
     private boolean isProcessable(TicketSla sla) {

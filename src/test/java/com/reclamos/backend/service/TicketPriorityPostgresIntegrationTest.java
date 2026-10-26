@@ -133,16 +133,141 @@ class TicketPriorityPostgresIntegrationTest {
         assertThat(activities(id,"PRIORITY_CHANGED")).isZero();
     }
 
-    @Test void criticalBreachPreservesOriginalReasonAndDateAndRecordsMilestoneOnce() {
+    @ParameterizedTest @EnumSource(SlaType.class)
+    void criticalBreachUpdatesReasonPreservesDateAndRecordsMilestoneOnce(SlaType type) {
         UUID id=create(false,type("LOW","CRITICAL","0"));
         Object activated=ticket(id).get("escalated_at");
-        long slaId=resolutionId(id); Instant due=resolutionDue(id);
+        long slaId=db.queryForObject("SELECT id FROM ticket_sla WHERE ticket_id=? AND sla_type=?",Long.class,id,type.name());
+        Instant due=db.queryForObject("SELECT due_at FROM ticket_sla WHERE id=?",java.sql.Timestamp.class,slaId).toInstant();
+        var beforeCycles=cycles(id);
         milestones.processCandidate(id,slaId,due); milestones.processCandidate(id,slaId,due.plusSeconds(1));
         priorities.processCandidate(id,due);
-        assertThat(ticket(id)).containsEntry("escalation_reason_code","CRITICAL_PRIORITY").containsEntry("escalated_at",activated);
+        assertThat(ticket(id)).containsEntry("escalation_reason_code","SLA_BREACHED").containsEntry("escalated_at",activated);
+        assertThat(activities(id,"SLA_BREACHED")).isEqualTo(1);
+        assertThat(activities(id,"ESCALATED")).isEqualTo(1);
+        assertThat(events(id,"ESCALATION_CHANGED")).isEqualTo(1);
+        assertThat(ticket(id)).containsEntry("current_status","REGISTERED").containsEntry("current_priority","CRITICAL");
+        var afterCycles=cycles(id);
+        for(int i=0;i<beforeCycles.size();i++) {
+            assertThat(afterCycles.get(i)).containsEntry("due_at",beforeCycles.get(i).get("due_at"))
+                    .containsEntry("near_due_at",beforeCycles.get(i).get("near_due_at"))
+                    .containsEntry("started_at",beforeCycles.get(i).get("started_at"))
+                    .containsEntry("policy_id",beforeCycles.get(i).get("policy_id"));
+        }
+        assertThat(db.queryForMap("SELECT metadata->>'previousReasonCode' AS previous,metadata->>'reasonCode' AS next "
+                + "FROM ticket_activities WHERE ticket_id=? AND action_type='STATE_CHANGED'",id))
+                .containsEntry("previous","CRITICAL_PRIORITY").containsEntry("next","SLA_BREACHED");
+        validateEvents(id);
+    }
+
+    @ParameterizedTest @EnumSource(SlaType.class)
+    void manualRemainsEffectiveWhenCriticalAndSlaBreachCoexist(SlaType type) {
+        UUID id=create(false,type("LOW","CRITICAL","0"));
+        db.update("UPDATE tickets SET escalation_reason_code='MANUAL' WHERE id=?",id);
+        Object activated=ticket(id).get("escalated_at");
+        long slaId=db.queryForObject("SELECT id FROM ticket_sla WHERE ticket_id=? AND sla_type=?",Long.class,id,type.name());
+        Instant due=db.queryForObject("SELECT due_at FROM ticket_sla WHERE id=?",java.sql.Timestamp.class,slaId).toInstant();
+        milestones.processCandidate(id,slaId,due);
+        priorities.processCandidate(id,due);
+        milestones.processCandidate(id,slaId,due.plusSeconds(1));
+        assertThat(ticket(id)).containsEntry("escalation_reason_code","MANUAL").containsEntry("escalated_at",activated);
         assertThat(activities(id,"SLA_BREACHED")).isEqualTo(1);
         assertThat(activities(id,"ESCALATED")).isEqualTo(1);
         assertThat(events(id,"ESCALATION_CHANGED")).isZero();
+        validateEvents(id);
+    }
+
+    @ParameterizedTest @ValueSource(booleans={false,true})
+    void explicitManualWithdrawalAtEntityBoundaryKeepsContinuousActivation(boolean breached) {
+        UUID id=create(false,type("LOW","CRITICAL","0"));
+        db.update("UPDATE tickets SET escalation_reason_code='MANUAL' WHERE id=?",id);
+        if(breached) db.update("UPDATE ticket_sla SET status='BREACHED' WHERE ticket_id=? AND sla_type='RESOLUTION'",id);
+        Object activated=ticket(id).get("escalated_at");
+        // There is no manual command/API in this backend. Exercise its domain boundary under the real lock.
+        tx.executeWithoutResult(s -> {
+            Ticket t=tickets.findByIdForUpdate(id).orElseThrow();
+            t.setEscalationReasonCode(null);
+            milestones.reconcileEscalation(t,Instant.now(),true);
+        });
+        assertThat(ticket(id)).containsEntry("escalation_reason_code",breached?"SLA_BREACHED":"CRITICAL_PRIORITY")
+                .containsEntry("escalated_at",activated).containsEntry("is_escalated",true);
+        assertThat(activities(id,"ESCALATED")).isEqualTo(1);
+        assertThat(activities(id,"STATE_CHANGED")).isEqualTo(1);
+        assertThat(events(id,"ESCALATION_CHANGED")).isEqualTo(1);
+        validateEvents(id);
+    }
+
+    @ParameterizedTest @ValueSource(booleans={false,true})
+    void bothSchedulerOrdersConvergeAndPublishOnlyRealChanges(boolean priorityFirst) {
+        UUID id=create(false,type("MEDIUM","LOW","1"));
+        Instant due=resolutionDue(id); long slaId=resolutionId(id);
+        if(priorityFirst) priorities.processCandidate(id,due);
+        milestones.processCandidate(id,slaId,due);
+        priorities.processCandidate(id,due);
+        var stable=ticket(id); var audit=history(id);
+        milestones.processCandidate(id,slaId,due.plusSeconds(1));
+        priorities.processCandidate(id,due.plusSeconds(1));
+        assertThat(ticket(id)).isEqualTo(stable).containsEntry("escalation_reason_code","SLA_BREACHED");
+        assertThat(history(id)).isEqualTo(audit);
+        assertThat(activities(id,"ESCALATED")).isEqualTo(1);
+        assertThat(activities(id,"SLA_BREACHED")).isEqualTo(1);
+        assertThat(events(id,"ESCALATION_CHANGED")).isEqualTo(priorityFirst?2:1);
+        validateEvents(id);
+    }
+
+    @ParameterizedTest @ValueSource(strings={"LOW","CRITICAL"})
+    void completingBothBreachedCyclesDiscardsOnlyHistoricalCausesOnReconciliation(String priority) {
+        UUID id=create(false,type("LOW",priority,"0"));
+        Instant now=resolutionDue(id).plusSeconds(1);
+        for(Map<String,Object> cycle:cycles(id)) milestones.processCandidate(id,((Number)cycle.get("id")).longValue(),now);
+        Object activated=ticket(id).get("escalated_at");
+        assertThat(ticket(id)).containsEntry("escalation_reason_code","SLA_BREACHED");
+        int published=events(id,"ESCALATION_CHANGED");
+        tx.executeWithoutResult(s -> {
+            Ticket t=tickets.findByIdForUpdate(id).orElseThrow();
+            lifecycle.completeFirstResponseCycle(t,now);
+            milestones.reconcileEscalation(t,now,true);
+        });
+        assertThat(ticket(id)).containsEntry("escalation_reason_code","SLA_BREACHED").containsEntry("escalated_at",activated);
+        assertThat(events(id,"ESCALATION_CHANGED")).isEqualTo(published);
+        tx.executeWithoutResult(s -> {
+            Ticket t=tickets.findByIdForUpdate(id).orElseThrow();
+            lifecycle.completeActiveResolutionCycle(t,now);
+            milestones.reconcileEscalation(t,now,true);
+        });
+        assertThat(ticket(id)).containsEntry("escalation_reason_code",priority.equals("CRITICAL")?"CRITICAL_PRIORITY":null)
+                .containsEntry("escalated_at",priority.equals("CRITICAL")?activated:null)
+                .containsEntry("current_priority",priority).containsEntry("current_status","REGISTERED");
+        assertThat(db.queryForList("SELECT status FROM ticket_sla WHERE ticket_id=? AND completed_at IS NOT NULL",String.class,id))
+                .containsExactly("BREACHED","BREACHED");
+        assertThat(activities(id,"SLA_BREACHED")).isEqualTo(2);
+        assertThat(activities(id,"ESCALATED")).isEqualTo(1);
+        assertThat(events(id,"ESCALATION_CHANGED")).isEqualTo(published+1);
+        validateEvents(id);
+    }
+
+    @Test void reasonChangeRollbackLeavesNoPartialBreachAuditNotificationOrEvent() {
+        UUID id=create(false,type("LOW","CRITICAL","0"));
+        var before=ticket(id); var audit=history(id); var schedules=cycles(id);
+        int notifications=db.queryForObject("SELECT count(*) FROM notification_logs WHERE ticket_id=?",Integer.class,id);
+        db.execute("CREATE FUNCTION qa02_fail_reason_change() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN "
+                + "IF NEW.ticket_id='"+id+"'::uuid AND NEW.update_type='ESCALATION_CHANGED' THEN "
+                + "RAISE EXCEPTION 'QA02 rollback'; END IF; RETURN NEW; END; $$");
+        db.execute("CREATE TRIGGER qa02_fail_reason_change BEFORE INSERT ON outbox_events "
+                + "FOR EACH ROW EXECUTE FUNCTION qa02_fail_reason_change()");
+        try {
+            assertThatThrownBy(() -> milestones.processCandidate(id,resolutionId(id),resolutionDue(id)))
+                    .hasMessageContaining("QA02 rollback");
+            assertThat(ticket(id)).isEqualTo(before);
+            assertThat(history(id)).isEqualTo(audit);
+            assertThat(cycles(id)).isEqualTo(schedules);
+            assertThat(events(id,"ESCALATION_CHANGED")).isZero();
+            assertThat(db.queryForObject("SELECT count(*) FROM notification_logs WHERE ticket_id=?",Integer.class,id))
+                    .isEqualTo(notifications);
+        } finally {
+            db.execute("DROP TRIGGER qa02_fail_reason_change ON outbox_events");
+            db.execute("DROP FUNCTION qa02_fail_reason_change()");
+        }
     }
 
     @Test void manualIsPreservedAndHistoricalBreachIsIgnored() {
@@ -188,8 +313,14 @@ class TicketPriorityPostgresIntegrationTest {
         assertThat(activities(id,"PRIORITY_CHANGED")).isEqualTo(1);
         assertThat(activities(id,"SLA_BREACHED")).isEqualTo(1);
         assertThat(activities(id,"ESCALATED")).isEqualTo(1);
-        assertThat(events(id,"ESCALATION_CHANGED")).isEqualTo(1);
-        assertThat(ticket(id)).containsEntry("current_priority","CRITICAL"); validateEvents(id);
+        int reasonChanges=db.queryForObject("SELECT count(*) FROM ticket_activities WHERE ticket_id=? "
+                + "AND action_type='STATE_CHANGED' AND metadata->>'previousReasonCode'='CRITICAL_PRIORITY' "
+                + "AND metadata->>'reasonCode'='SLA_BREACHED'",Integer.class,id);
+        assertThat(reasonChanges).isBetween(0,1);
+        // Either the breach activates directly, or a real critical activation precedes the reason change.
+        assertThat(events(id,"ESCALATION_CHANGED")).isEqualTo(1+reasonChanges);
+        assertThat(ticket(id)).containsEntry("current_priority","CRITICAL")
+                .containsEntry("escalation_reason_code","SLA_BREACHED"); validateEvents(id);
     }
 
     @Test void concurrencyBetweenRecalculatorsSerializesUpdates() throws Exception {

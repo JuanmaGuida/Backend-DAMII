@@ -593,11 +593,13 @@ class TicketEventCorrectionsPostgresIntegrationTest {
     }
 
     @Test
-    void slaEscalationDiscoveredDuringExternalResolutionStillPublishesItsOwnFact() throws Exception {
+    void persistedSlaEscalationClearedDuringExternalResolutionPublishesItsOwnFact() throws Exception {
         Ticket ticket = create(TicketStatus.ROUTED, false, "M6");
         Instant now = Instant.now();
-        db.update("UPDATE ticket_sla SET started_at=?,near_due_at=?,due_at=? WHERE ticket_id=?",
+        db.update("UPDATE ticket_sla SET status='BREACHED',started_at=?,near_due_at=?,due_at=? WHERE ticket_id=?",
                 java.sql.Timestamp.from(now.minusSeconds(300)), java.sql.Timestamp.from(now.minusSeconds(200)),
+                java.sql.Timestamp.from(now.minusSeconds(100)), ticket.getId());
+        db.update("UPDATE tickets SET is_escalated=TRUE,escalation_reason_code='SLA_BREACHED',escalated_at=? WHERE id=?",
                 java.sql.Timestamp.from(now.minusSeconds(100)), ticket.getId());
         var incoming = envelope(ticket, UpdateTicketStatusType.RESOLVED, null);
         updates.applyUpdate(ticket.getId(), incoming);
@@ -607,6 +609,10 @@ class TicketEventCorrectionsPostgresIntegrationTest {
         EventEnvelopeContractAssertions.assertFullEventValid(payload);
         assertThat(payload).containsEntry("correlationId", null)
                 .containsEntry("causationId", incoming.eventId().toString());
+        assertThat(db.queryForMap("SELECT is_escalated,escalation_reason_code,escalated_at FROM tickets WHERE id=?", ticket.getId()))
+                .containsEntry("is_escalated", false).containsEntry("escalation_reason_code", null).containsEntry("escalated_at", null);
+        assertThat(db.queryForMap("SELECT status,completed_at IS NOT NULL AS completed FROM ticket_sla WHERE ticket_id=?", ticket.getId()))
+                .containsEntry("status", "BREACHED").containsEntry("completed", true);
         var beforeReplay = snapshot(ticket);
         updates.applyUpdate(ticket.getId(), incoming);
         assertThat(snapshot(ticket)).isEqualTo(beforeReplay);
