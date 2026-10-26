@@ -111,6 +111,7 @@ public class TicketSlaService {
     public void terminateActiveCycles(Ticket ticket, Instant terminalAt) {
         terminateActiveCycle(ticket, SlaType.FIRST_RESPONSE, terminalAt);
         terminateActiveCycle(ticket, SlaType.RESOLUTION, terminalAt);
+        milestoneService.reconcileEscalation(ticket, terminalAt, true);
     }
 
     /** Un DUPLICATE deja de tener ciclos SLA operativos propios. */
@@ -227,13 +228,15 @@ public class TicketSlaService {
                     "El cierre del SLA no puede ser anterior al inicio del ciclo activo (startedAt: "
                             + sla.getStartedAt() + ")");
         }
-        milestoneService.processMilestones(ticket, sla, completedAt);
+        milestoneService.recordClosingMilestones(ticket, sla, completedAt);
         if (sla.getStatus() == SlaStatus.RUNNING || sla.getStatus() == SlaStatus.NEAR_DUE) {
             sla.setStatus(SlaStatus.MET);
         }
         sla.setPausedAt(null);
         sla.setCompletedAt(completedAt);
-        return Optional.of(slaRepository.save(sla));
+        slaRepository.save(sla);
+        milestoneService.reconcileEscalation(ticket, completedAt, true);
+        return Optional.of(sla);
     }
 
     private Optional<TicketSla> terminateActiveCycle(Ticket ticket, SlaType type, Instant terminalAt) {
@@ -261,7 +264,8 @@ public class TicketSlaService {
                     "El cierre del SLA no puede ser anterior al inicio del ciclo activo (startedAt: "
                             + sla.getStartedAt() + ")");
         }
-        milestoneService.processMilestones(ticket, sla, terminalAt);
+        // Reclassification reconciles after creating the successor; bulk termination after closing both types.
+        milestoneService.recordClosingMilestones(ticket, sla, terminalAt);
         if (sla.getStatus() != SlaStatus.BREACHED) {
             sla.setStatus(SlaStatus.STOPPED);
         }

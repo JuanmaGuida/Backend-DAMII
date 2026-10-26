@@ -76,19 +76,24 @@ class ResolutionSlaMilestoneServiceTest {
         assertPublishedEscalationChanged(ticket);
     }
 
-    @Test void criticalEscalationIsPreservedWhenSlaBreaches() {
+    @Test void criticalEscalationYieldsToBreachWithoutRestartingActivation() {
         Instant escalatedAt = NEAR.minusSeconds(100);
         ticket.setEscalated(true);
         ticket.setEscalationReasonCode(EscalationReasonCode.CRITICAL_PRIORITY);
+        ticket.setCurrentPriority(Priority.CRITICAL);
         ticket.setEscalatedAt(escalatedAt);
 
         service.processMilestones(ticket, sla, DUE);
 
-        verify(activities, times(2)).save(any());
+        verify(activities, times(3)).save(any());
         assertEquals(SlaStatus.BREACHED, sla.getStatus());
-        assertEquals(EscalationReasonCode.CRITICAL_PRIORITY, ticket.getEscalationReasonCode());
+        assertEquals(EscalationReasonCode.SLA_BREACHED, ticket.getEscalationReasonCode());
         assertEquals(escalatedAt, ticket.getEscalatedAt());
-        verifyNoInteractions(outbox);
+        verify(activities).save(argThat(a -> a.getActionType() == ActivityType.STATE_CHANGED
+                && "CRITICAL_PRIORITY".equals(a.getMetadata().get("previousReasonCode"))
+                && "SLA_BREACHED".equals(a.getMetadata().get("reasonCode"))));
+        verify(activities, never()).save(argThat(a -> a.getActionType() == ActivityType.ESCALATED));
+        assertPublishedEscalationChanged(ticket);
     }
 
     @Test void nearDueDoesNotEscalateOrChangeTicketStateOrPriority() {
@@ -264,6 +269,6 @@ class ResolutionSlaMilestoneServiceTest {
         @SuppressWarnings("unchecked") Map<String, Object> escalation = (Map<String, Object>) details.get("escalation");
         assertEquals(true, escalation.get("active"));
         assertEquals(EscalationReasonCode.SLA_BREACHED.name(), escalation.get("reasonCode"));
-        assertEquals(DUE.toString(), escalation.get("escalatedAt"));
+        assertEquals(expectedTicket.getEscalatedAt().toString(), escalation.get("escalatedAt"));
     }
 }
