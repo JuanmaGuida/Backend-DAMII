@@ -13,6 +13,7 @@ import com.reclamos.backend.exception.*;
 import com.reclamos.backend.identity.AuthenticatedIdentity;
 import com.reclamos.backend.identity.ModuleRole;
 import com.reclamos.backend.repository.*;
+import com.reclamos.backend.security.TrackingAttemptLimiter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -454,7 +455,7 @@ class TicketServiceTest {
 
         var tracked = new TrackingService(tickets, trackingCodes, ticketSlaService,
                 informationRequestProjectionService, attachmentRepository, attachmentReferenceService,
-                locations, ticketMessages)
+                locations, ticketMessages, mock(TrackingAttemptLimiter.class))
                 .findByTrackingCode(created.trackingCode());
 
         assertEquals(created.publicId(), tracked.getPublicId());

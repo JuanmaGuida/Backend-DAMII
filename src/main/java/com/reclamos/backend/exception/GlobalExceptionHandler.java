@@ -3,6 +3,7 @@ package com.reclamos.backend.exception;
 import com.reclamos.backend.dto.error.ApiErrorResponse;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.CacheControl;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -48,6 +49,15 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .cacheControl(CacheControl.noStore())
                 .body(new ApiErrorResponse(TrackingTicketNotFoundException.CODE, exception.getMessage()));
+    }
+
+    @ExceptionHandler(TooManyTrackingAttemptsException.class)
+    public ResponseEntity<ApiErrorResponse> handleTooManyTrackingAttempts(
+            TooManyTrackingAttemptsException exception) {
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header(HttpHeaders.RETRY_AFTER, String.valueOf(exception.getRetryAfterSeconds()))
+                .cacheControl(CacheControl.noStore())
+                .body(new ApiErrorResponse(TooManyTrackingAttemptsException.CODE, exception.getMessage()));
     }
 
     @ExceptionHandler(InvalidAnonymousTicketCredentialsException.class)

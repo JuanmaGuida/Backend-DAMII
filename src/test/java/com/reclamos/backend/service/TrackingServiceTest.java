@@ -16,15 +16,18 @@ import com.reclamos.backend.entity.Ticket;
 import com.reclamos.backend.entity.TicketLocation;
 import com.reclamos.backend.entity.TicketMessage;
 import com.reclamos.backend.entity.TicketStatus;
+import com.reclamos.backend.exception.TooManyTrackingAttemptsException;
 import com.reclamos.backend.exception.TrackingTicketNotFoundException;
 import com.reclamos.backend.repository.AttachmentRepository;
 import com.reclamos.backend.repository.TicketLocationRepository;
 import com.reclamos.backend.repository.TicketMessageRepository;
 import com.reclamos.backend.repository.TicketRepository;
+import com.reclamos.backend.security.TrackingAttemptLimiter;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
@@ -33,8 +36,10 @@ import java.util.Set;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -51,9 +56,10 @@ class TrackingServiceTest {
     private final AttachmentReferenceService attachmentReferenceService = mock(AttachmentReferenceService.class);
     private final TicketLocationRepository locations = mock(TicketLocationRepository.class);
     private final TicketMessageRepository messages = mock(TicketMessageRepository.class);
+    private final TrackingAttemptLimiter attemptLimiter = mock(TrackingAttemptLimiter.class);
     private final TrackingService service = new TrackingService(
             tickets, trackingCodes, ticketSlas, projections, attachmentRepository, attachmentReferenceService,
-            locations, messages);
+            locations, messages, attemptLimiter);
 
     @BeforeEach
     void setUp() {
@@ -246,6 +252,38 @@ class TrackingServiceTest {
 
         verify(trackingCodes, never()).hash("invalid");
         verifyNoInteractions(tickets);
+    }
+
+    @Test
+    void unknownAndMalformedCodesAreRecordedAsClientFailures() {
+        when(trackingCodes.isValid(CODE)).thenReturn(true);
+        when(trackingCodes.hash(CODE)).thenReturn(HASH);
+        when(trackingCodes.isValid("invalid")).thenReturn(false);
+
+        assertThrows(TrackingTicketNotFoundException.class, () -> service.findByTrackingCode(CODE));
+        assertThrows(TrackingTicketNotFoundException.class, () -> service.findByTrackingCode("invalid"));
+
+        verify(attemptLimiter, times(2)).recordFailure(null);
+    }
+
+    @Test
+    void blockedClientIsRejectedBeforeAnyLookup() {
+        doThrow(new TooManyTrackingAttemptsException(Duration.ofMinutes(1))).when(attemptLimiter).assertAllowed(null);
+
+        assertThrows(TooManyTrackingAttemptsException.class, () -> service.findByTrackingCode(CODE));
+
+        verifyNoInteractions(tickets, trackingCodes);
+    }
+
+    @Test
+    void validCodeDoesNotRecordFailures() {
+        when(trackingCodes.isValid(CODE)).thenReturn(true);
+        when(trackingCodes.hash(CODE)).thenReturn(HASH);
+        when(tickets.findByTrackingCodeHash(HASH)).thenReturn(Optional.of(ticket()));
+
+        service.findByTrackingCode(CODE);
+
+        verify(attemptLimiter, never()).recordFailure(any());
     }
 
     @Test

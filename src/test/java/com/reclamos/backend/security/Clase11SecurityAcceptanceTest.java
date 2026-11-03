@@ -208,7 +208,11 @@ class Clase11SecurityAcceptanceTest {
             note("SEC03-attempt-"+String.format("%02d",n+1),"POST /api/tracking/access from 127.0.0.1\nHTTP "+r.getResponse().getStatus()+"\n"+r.getResponse().getContentAsString(StandardCharsets.UTF_8));
         }
         note("SEC03-rate-summary", "20 invalid requests; elapsed_ms="+java.time.Duration.between(start,Instant.now()).toMillis()+"; statuses="+statuses+"; any_429="+statuses.contains(429));
-        record("SEC03-valid-after-attempts","ANONYMOUS",post("/api/tracking/access").contentType(MediaType.APPLICATION_JSON).content("{\"trackingCode\":\""+code+"\"}"),200);
+        assertEquals(404, statuses.get(0));
+        assertTrue(statuses.contains(429), "DDA2-197: superado el umbral debe responder 429");
+        assertTrue(statuses.subList(statuses.indexOf(429), statuses.size()).stream().allMatch(s -> s == 429));
+        record("SEC03-valid-from-blocked-client","ANONYMOUS",post("/api/tracking/access").with(req -> {req.setRemoteAddr("127.0.0.1"); return req;}).contentType(MediaType.APPLICATION_JSON).content("{\"trackingCode\":\""+code+"\"}"),429);
+        record("SEC03-valid-from-other-client","ANONYMOUS",post("/api/tracking/access").with(req -> {req.setRemoteAddr("203.0.113.50"); return req;}).contentType(MediaType.APPLICATION_JSON).content("{\"trackingCode\":\""+code+"\"}"),200);
         record("SEC03-write-without-password","ANONYMOUS",post("/api/tickets/"+created.get("ticketId").asText()+"/messages").contentType(MediaType.APPLICATION_JSON).content("{\"visibility\":\"PUBLIC\",\"text\":\"Intento sin contraseña\",\"trackingCode\":\""+code+"\"}"),401);
         // This is an observation test, not an assertion that the security criterion passes.
     }
