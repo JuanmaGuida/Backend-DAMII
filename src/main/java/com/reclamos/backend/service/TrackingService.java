@@ -16,6 +16,7 @@ import com.reclamos.backend.repository.AttachmentRepository;
 import com.reclamos.backend.repository.TicketLocationRepository;
 import com.reclamos.backend.repository.TicketMessageRepository;
 import com.reclamos.backend.repository.TicketRepository;
+import com.reclamos.backend.security.TrackingAttemptLimiter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,16 +35,23 @@ public class TrackingService {
     private final AttachmentReferenceService attachmentReferenceService;
     private final TicketLocationRepository locationRepository;
     private final TicketMessageRepository messageRepository;
+    private final TrackingAttemptLimiter attemptLimiter;
 
     @Transactional(readOnly = true)
     public TrackingTicketResponse findByTrackingCode(String trackingCode) {
+        attemptLimiter.assertAllowed(null);
         if (!trackingCodeService.isValid(trackingCode)) {
-            throw new TrackingTicketNotFoundException();
+            throw notFound();
         }
         String trackingCodeHash = trackingCodeService.hash(trackingCode);
         Ticket ticket = ticketRepository.findByTrackingCodeHash(trackingCodeHash)
-                .orElseThrow(TrackingTicketNotFoundException::new);
+                .orElseThrow(this::notFound);
         return toPublicResponse(ticket, false);
+    }
+
+    private TrackingTicketNotFoundException notFound() {
+        attemptLimiter.recordFailure(null);
+        return new TrackingTicketNotFoundException();
     }
 
     @Transactional(readOnly = true)

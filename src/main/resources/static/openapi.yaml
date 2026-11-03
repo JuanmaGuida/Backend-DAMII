@@ -2087,6 +2087,7 @@ paths:
                 format: binary
         '400': { $ref: '#/components/responses/InvalidRequest' }
         '401': { $ref: '#/components/responses/InvalidAnonymousTicketCredentials' }
+        '429': { $ref: '#/components/responses/TooManyTrackingAttempts' }
         '404': { $ref: '#/components/responses/NotFound' }
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
   /api/tracking/actions/attachments:
@@ -2126,6 +2127,7 @@ paths:
                   $ref: '#/components/schemas/TicketAttachmentResponse'
         '400': { $ref: '#/components/responses/InvalidRequest' }
         '401': { $ref: '#/components/responses/InvalidAnonymousTicketCredentials' }
+        '429': { $ref: '#/components/responses/TooManyTrackingAttempts' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '413':
@@ -2166,6 +2168,8 @@ paths:
           $ref: '#/components/responses/InvalidRequest'
         '401':
           $ref: '#/components/responses/InvalidAnonymousTicketCredentials'
+        '429':
+          $ref: '#/components/responses/TooManyTrackingAttempts'
         '404':
           description: El código es inválido, inexistente o no corresponde a una solicitud.
           content:
@@ -2202,6 +2206,7 @@ paths:
                 $ref: '#/components/schemas/TicketResponse'
         '400': { $ref: '#/components/responses/InvalidRequest' }
         '401': { $ref: '#/components/responses/InvalidAnonymousTicketCredentials' }
+        '429': { $ref: '#/components/responses/TooManyTrackingAttempts' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/TicketStateConflict' }
@@ -2243,6 +2248,7 @@ paths:
                 $ref: '#/components/schemas/InformationRequestResponse'
         '400': { $ref: '#/components/responses/InvalidRequest' }
         '401': { $ref: '#/components/responses/InvalidAnonymousTicketCredentials' }
+        '429': { $ref: '#/components/responses/TooManyTrackingAttempts' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/InformationRequestConflict' }
@@ -2282,6 +2288,7 @@ paths:
                 $ref: '#/components/schemas/TicketMessageResponse'
         '400': { $ref: '#/components/responses/InvalidRequest' }
         '401': { $ref: '#/components/responses/InvalidAnonymousTicketCredentials' }
+        '429': { $ref: '#/components/responses/TooManyTrackingAttempts' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
@@ -2309,6 +2316,7 @@ paths:
               schema: { $ref: '#/components/schemas/TicketResolutionActionResponse' }
         '400': { $ref: '#/components/responses/InvalidRequest' }
         '401': { $ref: '#/components/responses/InvalidAnonymousTicketCredentials' }
+        '429': { $ref: '#/components/responses/TooManyTrackingAttempts' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/TicketResolutionConflict' }
@@ -2337,6 +2345,7 @@ paths:
               schema: { $ref: '#/components/schemas/TicketResolutionActionResponse' }
         '400': { $ref: '#/components/responses/InvalidRequest' }
         '401': { $ref: '#/components/responses/InvalidAnonymousTicketCredentials' }
+        '429': { $ref: '#/components/responses/TooManyTrackingAttempts' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/TicketResolutionConflict' }
@@ -2791,6 +2800,8 @@ paths:
           $ref: '#/components/responses/InvalidRequest'
         '401':
           description: INVALID_ANONYMOUS_TICKET_CREDENTIALS. Código y contraseña obligatorios.
+        '429':
+          $ref: '#/components/responses/TooManyTrackingAttempts'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -2824,6 +2835,8 @@ paths:
           $ref: '#/components/responses/InvalidRequest'
         '401':
           description: INVALID_ANONYMOUS_TICKET_CREDENTIALS. Código y contraseña obligatorios.
+        '429':
+          $ref: '#/components/responses/TooManyTrackingAttempts'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -3173,6 +3186,22 @@ components:
           example:
             code: INVALID_ANONYMOUS_TICKET_CREDENTIALS
             message: Las credenciales del ticket anónimo no son válidas
+    TooManyTrackingAttempts:
+      description: |
+        Se superó el máximo de intentos fallidos de acceso anónimo desde el mismo origen
+        o contra el mismo ticket. La respuesta no depende de que las credenciales sean
+        correctas; reintentar una vez transcurrido Retry-After.
+      headers:
+        Retry-After:
+          description: Segundos hasta que se puede volver a intentar.
+          schema: { type: integer, minimum: 1, example: 900 }
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          example:
+            code: TOO_MANY_ATTEMPTS
+            message: Demasiados intentos. Intentá de nuevo más tarde.
     NotFound:
       description: Recurso no encontrado.
       content:

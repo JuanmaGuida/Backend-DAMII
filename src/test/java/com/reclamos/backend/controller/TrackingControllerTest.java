@@ -7,6 +7,7 @@ import com.reclamos.backend.entity.ActorType;
 import com.reclamos.backend.entity.TicketStatus;
 import com.reclamos.backend.exception.GlobalExceptionHandler;
 import com.reclamos.backend.exception.InvalidAnonymousTicketCredentialsException;
+import com.reclamos.backend.exception.TooManyTrackingAttemptsException;
 import com.reclamos.backend.exception.TrackingTicketNotFoundException;
 import com.reclamos.backend.security.BearerTokenAuthenticationFilter;
 import com.reclamos.backend.service.*;
@@ -21,6 +22,7 @@ import org.springframework.mock.web.MockPart;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -115,6 +117,23 @@ class TrackingControllerTest {
                     .andExpect(jsonPath("$.length()").value(2))
                     .andExpect(content().string(not(containsString("TrackingTicketNotFoundException"))));
         }
+    }
+
+    @Test
+    void blockedAttemptsReturnNonCacheableTooManyRequestsWithRetryAfter() throws Exception {
+        when(anonymousTicketAccessService.authenticate(CODE, "any-password"))
+                .thenThrow(new TooManyTrackingAttemptsException(Duration.ofSeconds(90)));
+
+        mockMvc.perform(post("/api/tracking/access")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"trackingCode":"%s","anonymousAccessPassword":"any-password"}
+                                """.formatted(CODE)))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(header().string(HttpHeaders.RETRY_AFTER, "90"))
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, containsString("no-store")))
+                .andExpect(jsonPath("$.code").value(TooManyTrackingAttemptsException.CODE))
+                .andExpect(jsonPath("$.length()").value(2));
     }
 
     @Test

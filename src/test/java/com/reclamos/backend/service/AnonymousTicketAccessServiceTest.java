@@ -2,9 +2,12 @@ package com.reclamos.backend.service;
 
 import com.reclamos.backend.entity.Ticket;
 import com.reclamos.backend.exception.InvalidAnonymousTicketCredentialsException;
+import com.reclamos.backend.exception.TooManyTrackingAttemptsException;
 import com.reclamos.backend.repository.TicketRepository;
+import com.reclamos.backend.security.TrackingAttemptLimiter;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -19,8 +22,9 @@ class AnonymousTicketAccessServiceTest {
     private final TicketRepository tickets = mock(TicketRepository.class);
     private final TrackingCodeService trackingCodes = mock(TrackingCodeService.class);
     private final AnonymousTicketCredentialService credentials = mock(AnonymousTicketCredentialService.class);
+    private final TrackingAttemptLimiter attemptLimiter = mock(TrackingAttemptLimiter.class);
     private final AnonymousTicketAccessService service =
-            new AnonymousTicketAccessService(tickets, trackingCodes, credentials);
+            new AnonymousTicketAccessService(tickets, trackingCodes, credentials, attemptLimiter);
 
     @Test
     void authenticatesAnonymousOwnerAndReturnsOnlyTicketId() {
@@ -74,6 +78,56 @@ class AnonymousTicketAccessServiceTest {
         assertThrows(InvalidAnonymousTicketCredentialsException.class,
                 () -> service.authenticate(CODE, "password"));
         verifyNoInteractions(credentials);
+    }
+
+    @Test
+    void blockedAttemptIsRejectedBeforeLookingUpCredentials() {
+        when(trackingCodes.isValid(CODE)).thenReturn(true);
+        when(trackingCodes.hash(CODE)).thenReturn(HASH);
+        doThrow(new TooManyTrackingAttemptsException(Duration.ofMinutes(1))).when(attemptLimiter).assertAllowed(HASH);
+
+        assertThrows(TooManyTrackingAttemptsException.class, () -> service.authenticate(CODE, "password"));
+
+        verifyNoInteractions(tickets, credentials);
+        verify(attemptLimiter, never()).recordFailure(any());
+    }
+
+    @Test
+    void failuresAreRecordedAgainstTheTicketOnlyWhenItExists() {
+        when(trackingCodes.isValid(CODE)).thenReturn(true);
+        when(trackingCodes.hash(CODE)).thenReturn(HASH);
+        when(tickets.findByTrackingCodeHash(HASH)).thenReturn(Optional.empty());
+        assertThrows(InvalidAnonymousTicketCredentialsException.class,
+                () -> service.authenticate(CODE, "password"));
+        verify(attemptLimiter).recordFailure(null);
+
+        reset(attemptLimiter);
+        when(tickets.findByTrackingCodeHash(HASH)).thenReturn(Optional.of(anonymousTicket()));
+        when(credentials.matches("wrong-password", "bcrypt-hash")).thenReturn(false);
+        assertThrows(InvalidAnonymousTicketCredentialsException.class,
+                () -> service.authenticate(CODE, "wrong-password"));
+        verify(attemptLimiter).recordFailure(HASH);
+    }
+
+    @Test
+    void malformedCodeCountsAsClientFailureWithoutTicketKey() {
+        assertThrows(InvalidAnonymousTicketCredentialsException.class,
+                () -> service.authenticate("invalid", "password"));
+
+        verify(attemptLimiter).assertAllowed(null);
+        verify(attemptLimiter).recordFailure(null);
+    }
+
+    @Test
+    void successfulAuthenticationDoesNotRecordFailures() {
+        when(trackingCodes.isValid(CODE)).thenReturn(true);
+        when(trackingCodes.hash(CODE)).thenReturn(HASH);
+        when(tickets.findByTrackingCodeHash(HASH)).thenReturn(Optional.of(anonymousTicket()));
+        when(credentials.matches("correct-password", "bcrypt-hash")).thenReturn(true);
+
+        service.authenticate(CODE, "correct-password");
+
+        verify(attemptLimiter, never()).recordFailure(any());
     }
 
     private Ticket anonymousTicket() {
