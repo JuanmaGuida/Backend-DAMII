@@ -142,8 +142,13 @@ public class TrackingService {
                 .toList();
     }
 
+    /**
+     * El seguimiento por código es público, así que no se publica el
+     * identificador del autor (CDX-01): el tipo de autor alcanza para que la
+     * pantalla distinga quién escribió cada mensaje.
+     */
     private TicketMessageResponse toMessageResponse(TicketMessage message) {
-        return new TicketMessageResponse(message.getId(), message.getAuthorType(), message.getAuthorId(),
+        return new TicketMessageResponse(message.getId(), message.getAuthorType(), null,
                 message.getVisibility(), message.getText(), message.getCreatedAt(), message.getUpdatedAt());
     }
 
