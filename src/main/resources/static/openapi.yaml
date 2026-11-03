@@ -4330,6 +4330,7 @@ components:
         authorId:
           type: string
           nullable: true
+          description: Siempre null en el seguimiento público por código (/api/tracking/**), que no expone identificadores de autor.
         visibility:
           type: string
           enum: [PUBLIC, INTERNAL]

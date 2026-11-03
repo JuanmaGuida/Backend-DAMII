@@ -222,6 +222,35 @@ class TrackingServiceTest {
     }
 
     @Test
+    void trackingNeverExposesTheAuthorIdentifierOfPublicMessages() {
+        Ticket ticket = ticket();
+        TicketMessage fromCitizen = publicMessage(1L, ActorType.CITIZEN, UUID.randomUUID().toString());
+        TicketMessage fromAgent = publicMessage(2L, ActorType.AGENT, UUID.randomUUID().toString());
+        when(trackingCodes.isValid(CODE)).thenReturn(true);
+        when(trackingCodes.hash(CODE)).thenReturn(HASH);
+        when(tickets.findByTrackingCodeHash(HASH)).thenReturn(Optional.of(ticket));
+        when(messages.findAllByTicket_IdAndVisibilityOrderByCreatedAtAsc(
+                ticket.getId(), MessageVisibility.PUBLIC)).thenReturn(List.of(fromCitizen, fromAgent));
+
+        List<TicketMessageResponse> result = service.findByTrackingCode(CODE).getMessages();
+
+        assertEquals(List.of(ActorType.CITIZEN, ActorType.AGENT),
+                result.stream().map(TicketMessageResponse::authorType).toList());
+        assertTrue(result.stream().allMatch(message -> message.authorId() == null));
+    }
+
+    private TicketMessage publicMessage(Long id, ActorType authorType, String authorId) {
+        TicketMessage message = new TicketMessage();
+        message.setId(id);
+        message.setAuthorType(authorType);
+        message.setAuthorId(authorId);
+        message.setVisibility(MessageVisibility.PUBLIC);
+        message.setText("mensaje " + id);
+        message.setCreatedAt(Instant.parse("2026-09-06T10:00:00Z"));
+        return message;
+    }
+
+    @Test
     void messagesIsAnEmptyListRatherThanNullWhenTheTicketHasNonePublic() {
         Ticket ticket = ticket();
         when(trackingCodes.isValid(CODE)).thenReturn(true);
