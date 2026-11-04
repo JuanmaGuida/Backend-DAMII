@@ -46,7 +46,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @WebMvcTest(TicketSimulationController.class)
 @TestPropertySource(properties = "app.simulator.enabled=true")
 @Import({SecurityConfiguration.class, BearerTokenAuthenticationFilter.class})
-@WithMockUser
+@WithMockUser(roles = "AGENT")
 class TicketSimulationControllerTest {
 
     @Test
@@ -56,6 +56,46 @@ class TicketSimulationControllerTest {
                         .contentType(MediaType.APPLICATION_JSON).content("{}"))
                 .andExpect(status().isForbidden());
         verifyNoInteractions(ticketStatusUpdateService);
+    }
+
+    @Test
+    @WithMockUser(roles = "CITIZEN")
+    void citizenCannotInvokeSimulationEvenWhenEnabled() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+
+        mockMvc.perform(post("/api/tickets/{ticketId}/simulate-status-update", ticketId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(envelopeJson(ticketId, """
+                                {
+                                  "updateType": "PROGRESS",
+                                  "updatedBy": {"type": "EXTERNAL_USER", "id": "USR-M6-77"},
+                                  "updateOccurredAt": "2026-09-02T12:00:00Z"
+                                }
+                                """)))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(ticketStatusUpdateService);
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void adminCanInvokeSimulationWhenEnabled() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+        TicketResponse response = new TicketResponse();
+        response.setId(ticketId);
+        response.setCurrentStatus(TicketStatus.IN_PROGRESS);
+        when(ticketStatusUpdateService.applyUpdate(eq(ticketId), any())).thenReturn(response);
+
+        mockMvc.perform(post("/api/tickets/{ticketId}/simulate-status-update", ticketId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(envelopeJson(ticketId, """
+                                {
+                                  "updateType": "STARTED",
+                                  "updatedBy": {"type": "EXTERNAL_USER", "id": "USR-M6-77"},
+                                  "updateOccurredAt": "2026-09-02T12:00:00Z"
+                                }
+                                """)))
+                .andExpect(status().isOk());
     }
 
     @Autowired
