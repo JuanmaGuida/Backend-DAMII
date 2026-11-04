@@ -294,7 +294,11 @@ public class TicketStatusUpdateService {
             cancellationRepository.save(cancellation);
         } else {
             ticket.setCurrentStatus(newStatus);
-            ticket.setStatusChangedAt(request.updateOccurredAt());
+            // PROGRESS informa avance sin cambiar de estado: statusChangedAt
+            // sólo avanza cuando el ticket realmente cambia de estado.
+            if (newStatus != previousStatus) {
+                ticket.setStatusChangedAt(request.updateOccurredAt());
+            }
             ticketRepository.save(ticket);
         }
 
