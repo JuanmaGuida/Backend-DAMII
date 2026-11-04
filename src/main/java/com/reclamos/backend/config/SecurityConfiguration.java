@@ -12,9 +12,6 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-import org.springframework.security.authorization.AuthenticatedAuthorizationManager;
-import org.springframework.security.authorization.AuthorityAuthorizationManager;
-import org.springframework.security.authorization.AuthorizationManagers;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import tools.jackson.databind.ObjectMapper;
@@ -191,10 +188,10 @@ public class SecurityConfiguration {
                                 // TicketMessageService.createAnonymous.
                                 "/api/tracking/actions/messages").permitAll()
                         // El simulador sólo existe cuando app.simulator.enabled=true y aun
-                        // entonces requiere una sesión válida; nunca queda público por accidente.
+                        // entonces queda reservado al personal interno: un ciudadano no puede
+                        // inyectar eventos de estado sobre tickets (propios ni ajenos).
                         .requestMatchers(HttpMethod.POST, "/api/tickets/*/simulate-status-update")
-                        .access(AuthorizationManagers.allOf(AuthenticatedAuthorizationManager.authenticated(),
-                                AuthorizationManagers.not(AuthorityAuthorizationManager.hasRole("AREA_RESPONSIBLE"))))
+                        .hasAnyRole("AGENT", "ADMIN")
                         // BE - DDA2-114/115/116 (US "Panel de administración del catálogo"):
                         // el panel admin de Categories/Subcategories/Request Types es
                         // exclusivo de ADMIN. La verificación exhaustiva de esta
