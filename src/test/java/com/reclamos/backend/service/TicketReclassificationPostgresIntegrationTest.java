@@ -362,6 +362,25 @@ class TicketReclassificationPostgresIntegrationTest {
         assertThat(cycles(id)).hasSize(2);
     }
 
+    @Test void exceptionalConfirmationResetsProgressAndKeepsThePreviousOneInTheAudit() {
+        UUID id = create(false, "LOW"); tickets.routeToArea(id, staff());
+        db.update("UPDATE tickets SET current_progress=67 WHERE id=?", id);
+        returned(id, "M6", "REQUEST_TYPE_MISMATCH");
+        var p = propose(id, type("M2", "LOW", true), null); proposals.confirm(id, p.id(), staff());
+        assertThat(db.queryForObject("SELECT current_progress FROM tickets WHERE id=?", Integer.class, id)).isNull();
+        assertThat(db.queryForObject("SELECT metadata->>'previousProgress' FROM ticket_activities WHERE ticket_id=? AND reason_code='RECLASSIFICATION_CONFIRMED'",
+                String.class, id)).isEqualTo("67");
+    }
+
+    @Test void exceptionalConfirmationWithoutPreviousProgressLeavesNoProgressInTheAudit() {
+        UUID id = create(false, "LOW"); tickets.routeToArea(id, staff());
+        returned(id, "M6", "REQUEST_TYPE_MISMATCH");
+        var p = propose(id, type("M2", "LOW", true), null); proposals.confirm(id, p.id(), staff());
+        assertThat(db.queryForObject("SELECT current_progress FROM tickets WHERE id=?", Integer.class, id)).isNull();
+        assertThat(db.queryForObject("SELECT jsonb_exists(metadata,'previousProgress') FROM ticket_activities WHERE ticket_id=? AND reason_code='RECLASSIFICATION_CONFIRMED'",
+                Boolean.class, id)).isFalse();
+    }
+
     @Test void generalPendingAndReclassificationPendingCannotBeOverlapped() {
         UUID id = create(false, "LOW"); Long target = type("M2", "LOW", true);
         information.requestInformation(id, new CreateInformationRequest("Contexto", null), staff());

@@ -116,6 +116,10 @@ public class TicketReclassificationService {
                 : priorities.age(sla.findLatestResolutionCycle(ticket).orElse(null), now);
         ticket.setCurrentPriority(priorities.calculate(risk.score(), ticket.getEstimatedAffectedCount(), age, target.getMinimumPriority()));
         TicketStatus previous = ticket.getCurrentStatus();
+        // La derivación por REQUEST_TYPE_MISMATCH reasigna el ticket a otra área: el avance que
+        // reportó la anterior no corresponde a la nueva, por lo que se reinicia y queda en la auditoría.
+        Short previousProgress = exceptional ? ticket.getCurrentProgress() : null;
+        if (exceptional) ticket.setCurrentProgress(null);
         ticket.setCurrentStatus("M2".equalsIgnoreCase(target.getResponsibleAreaId()) ? TicketStatus.IN_PROGRESS : TicketStatus.ROUTED);
         ticket.setStatusChangedAt(now);
         if (ticket.getClassificationFinalizedAt() == null) ticket.setClassificationFinalizedAt(now);
@@ -126,7 +130,8 @@ public class TicketReclassificationService {
         Optional<TicketSla> cycle = exceptional ? sla.startReclassifiedResolutionCycle(ticket, now)
                 : sla.recalculateInitialResolutionCycle(ticket, now);
         milestones.reconcileReclassificationEscalation(ticket, now);
-        audit(p, actor, "RECLASSIFICATION_CONFIRMED", "Clasificación confirmada: " + target.getCode(), previous, oldPriority, now);
+        audit(p, actor, "RECLASSIFICATION_CONFIRMED", "Clasificación confirmada: " + target.getCode(), previous, oldPriority, now,
+                previousProgress);
         p.setStatus(ReclassificationProposalStatus.CONFIRMED); p.setConfirmedBy(actor.citizenId().toString());
         p.setResolvedAt(now); p.setUpdatedAt(now); proposals.save(p);
         Instant due = cycle.map(TicketSla::getDueAt).orElse(null);
@@ -219,6 +224,12 @@ public class TicketReclassificationService {
 
     private void audit(TicketReclassificationProposal p, AuthenticatedIdentity actor, String reason, String message,
                        TicketStatus previous, Priority oldPriority, Instant now) {
+        audit(p, actor, reason, message, previous, oldPriority, now, null);
+    }
+
+    /** {@code previousProgress}, si no es null, deja constancia del avance que se reinició con el cambio. */
+    private void audit(TicketReclassificationProposal p, AuthenticatedIdentity actor, String reason, String message,
+                       TicketStatus previous, Priority oldPriority, Instant now, Short previousProgress) {
         Ticket ticket = p.getTicket();
         TicketActivity a = new TicketActivity(); a.setTicket(ticket);
         a.setSequence(activities.countByTicketId(ticket.getId()) + 1);
@@ -232,7 +243,12 @@ public class TicketReclassificationService {
         a.setActorId(actor.citizenId().toString()); a.setSourceModuleId("M2");
         a.setReasonCode(reason); a.setMessage(message); a.setOccurredAt(now);
         a.setPreviousPriority(oldPriority); a.setNewPriority(oldPriority == null ? null : ticket.getCurrentPriority());
-        a.setMetadata(Map.of("proposalId", p.getId(), "origin", p.getOrigin().name(), "targetRequestTypeId", p.getTargetRequestType().getId()));
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("proposalId", p.getId());
+        metadata.put("origin", p.getOrigin().name());
+        metadata.put("targetRequestTypeId", p.getTargetRequestType().getId());
+        if (previousProgress != null) metadata.put("previousProgress", previousProgress.intValue());
+        a.setMetadata(metadata);
         activities.save(a);
     }
 
