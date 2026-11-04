@@ -185,6 +185,7 @@ class TicketStatusUpdateServiceTest {
         assertThat(response.isSlaBreached()).isFalse();
         assertThat(response.getResolutionNearDueAt()).isEqualTo(sla.getNearDueAt());
         assertThat(ticket.getEscalatedAt()).isEqualTo(escalatedAt);
+        assertThat(ticket.getStatusChangedAt()).isEqualTo(realOccurredAt);
         verify(messageRepository).save(any());
 
         // Verifica que externalEventId y occurredAt queden persistidos en TicketActivity.
@@ -237,6 +238,26 @@ class TicketStatusUpdateServiceTest {
 
         assertThat(response.getCurrentStatus()).isEqualTo(TicketStatus.IN_PROGRESS);
         assertThat(ticket.getCurrentProgress()).isEqualTo((short) 40);
+    }
+
+    @Test
+    void progressDoesNotChangeStatusChangedAtBecauseTheStatusIsTheSame() {
+        Ticket ticket = ticket(TicketStatus.IN_PROGRESS);
+        Instant lastRealStatusChange = Instant.parse("2026-09-02T12:00:00Z");
+        ticket.setStatusChangedAt(lastRealStatusChange);
+        when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+        when(activityRepository.countByTicketId(ticketId)).thenReturn(1);
+        when(locationRepository.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
+
+        UpdateTicketStatusRequest data = new UpdateTicketStatusRequest(
+                ticketId, UpdateTicketStatusType.PROGRESS, null, null, 40, null, externalActor,
+                Instant.parse("2026-09-02T13:30:00Z"));
+
+        service.applyUpdate(ticketId, envelope(data));
+
+        assertThat(ticket.getStatusChangedAt()).isEqualTo(lastRealStatusChange);
+        assertThat(ticket.getCurrentProgress()).isEqualTo((short) 40);
+        verify(ticketRepository).save(ticket);
     }
 
     @Test
