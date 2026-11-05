@@ -1,6 +1,7 @@
 package com.reclamos.backend.controller;
 
 import com.reclamos.backend.config.SecurityConfiguration;
+import com.reclamos.backend.config.StrictEventPayloadConfiguration;
 import com.reclamos.backend.dto.TicketResponse;
 import com.reclamos.backend.entity.TicketStatus;
 import com.reclamos.backend.exception.InvalidTicketRequestException;
@@ -45,9 +46,109 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 @WebMvcTest(TicketSimulationController.class)
 @TestPropertySource(properties = "app.simulator.enabled=true")
-@Import({SecurityConfiguration.class, BearerTokenAuthenticationFilter.class})
+@Import({SecurityConfiguration.class, BearerTokenAuthenticationFilter.class, StrictEventPayloadConfiguration.class})
 @WithMockUser(roles = "AGENT")
 class TicketSimulationControllerTest {
+
+    @Test
+    void actorIdThatIsNotAUuidIsRejectedWithoutApplyingTheEvent() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+
+        mockMvc.perform(post("/api/tickets/{ticketId}/simulate-status-update", ticketId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(envelopeJson(ticketId, """
+                                {
+                                  "updateType": "PROGRESS",
+                                  "progress": 40,
+                                  "updatedBy": {"type": "EXTERNAL_USER", "id": "USR-M6-77"},
+                                  "updateOccurredAt": "2026-09-02T12:00:00Z"
+                                }
+                                """)))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(ticketStatusUpdateService);
+    }
+
+    @Test
+    void actorWithoutIdIsAccepted() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+        TicketResponse response = new TicketResponse();
+        response.setId(ticketId);
+        response.setCurrentStatus(TicketStatus.IN_PROGRESS);
+        when(ticketStatusUpdateService.applyUpdate(eq(ticketId), any())).thenReturn(response);
+
+        mockMvc.perform(post("/api/tickets/{ticketId}/simulate-status-update", ticketId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(envelopeJson(ticketId, """
+                                {
+                                  "updateType": "PROGRESS",
+                                  "progress": 40,
+                                  "updatedBy": {"type": "EXTERNAL_USER", "id": null},
+                                  "updateOccurredAt": "2026-09-02T12:00:00Z"
+                                }
+                                """)))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void propertyOutsideTheSchemaInDataIsRejectedWithoutApplyingTheEvent() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+
+        mockMvc.perform(post("/api/tickets/{ticketId}/simulate-status-update", ticketId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(envelopeJson(ticketId, """
+                                {
+                                  "updateType": "PROGRESS",
+                                  "progress": 40,
+                                  "unexpectedField": "ignorado hasta ahora",
+                                  "updatedBy": {"type": "EXTERNAL_USER", "id": null},
+                                  "updateOccurredAt": "2026-09-02T12:00:00Z"
+                                }
+                                """)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+
+        verifyNoInteractions(ticketStatusUpdateService);
+    }
+
+    @Test
+    void propertyOutsideTheSchemaInTheEnvelopeIsRejectedWithoutApplyingTheEvent() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+        String body = envelopeJson(ticketId, """
+                {
+                  "updateType": "PROGRESS",
+                  "progress": 40,
+                  "updatedBy": {"type": "EXTERNAL_USER", "id": null},
+                  "updateOccurredAt": "2026-09-02T12:00:00Z"
+                }
+                """).replaceFirst("\\{", "{\"unexpectedField\": true,");
+
+        mockMvc.perform(post("/api/tickets/{ticketId}/simulate-status-update", ticketId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(ticketStatusUpdateService);
+    }
+
+    @Test
+    void propertyOutsideTheSchemaInTheActorIsRejectedWithoutApplyingTheEvent() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+
+        mockMvc.perform(post("/api/tickets/{ticketId}/simulate-status-update", ticketId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(envelopeJson(ticketId, """
+                                {
+                                  "updateType": "PROGRESS",
+                                  "progress": 40,
+                                  "updatedBy": {"type": "EXTERNAL_USER", "id": null, "role": "ADMIN"},
+                                  "updateOccurredAt": "2026-09-02T12:00:00Z"
+                                }
+                                """)))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(ticketStatusUpdateService);
+    }
 
     @Test
     @WithMockUser(roles = "AREA_RESPONSIBLE")
@@ -68,7 +169,7 @@ class TicketSimulationControllerTest {
                         .content(envelopeJson(ticketId, """
                                 {
                                   "updateType": "PROGRESS",
-                                  "updatedBy": {"type": "EXTERNAL_USER", "id": "USR-M6-77"},
+                                  "updatedBy": {"type": "EXTERNAL_USER", "id": "6f1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"},
                                   "updateOccurredAt": "2026-09-02T12:00:00Z"
                                 }
                                 """)))
@@ -91,7 +192,7 @@ class TicketSimulationControllerTest {
                         .content(envelopeJson(ticketId, """
                                 {
                                   "updateType": "STARTED",
-                                  "updatedBy": {"type": "EXTERNAL_USER", "id": "USR-M6-77"},
+                                  "updatedBy": {"type": "EXTERNAL_USER", "id": "6f1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"},
                                   "updateOccurredAt": "2026-09-02T12:00:00Z"
                                 }
                                 """)))
@@ -117,7 +218,7 @@ class TicketSimulationControllerTest {
                         .content(envelopeJson(ticketId, """
                                 {
                                   "updateType": "STARTED",
-                                  "updatedBy": {"type": "EXTERNAL_USER", "id": "USR-M6-77"}
+                                  "updatedBy": {"type": "EXTERNAL_USER", "id": "6f1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"}
                                 }
                                 """)))
                 .andExpect(status().isUnauthorized());
@@ -137,7 +238,7 @@ class TicketSimulationControllerTest {
                 {
                   "updateType": "STARTED",
                   "publicMessage": "Comenzamos a trabajar en esto.",
-                  "updatedBy": {"type": "EXTERNAL_USER", "id": "USR-M6-77"},
+                  "updatedBy": {"type": "EXTERNAL_USER", "id": "6f1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"},
                   "updateOccurredAt": "2026-09-02T12:00:00Z"
                 }
                 """);
@@ -155,7 +256,7 @@ class TicketSimulationControllerTest {
 
         String body = envelopeJson(ticketId, """
                 {
-                  "updatedBy": {"type": "EXTERNAL_USER", "id": "USR-M6-77"},
+                  "updatedBy": {"type": "EXTERNAL_USER", "id": "6f1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"},
                   "updateOccurredAt": "2026-09-02T12:00:00Z"
                 }
                 """);
@@ -180,7 +281,7 @@ class TicketSimulationControllerTest {
                   "data": {
                     "ticketId": "%s",
                     "updateType": "STARTED",
-                    "updatedBy": {"type": "EXTERNAL_USER", "id": "USR-M6-77"},
+                    "updatedBy": {"type": "EXTERNAL_USER", "id": "6f1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"},
                     "updateOccurredAt": "2026-09-02T12:00:00Z"
                   }
                 }
@@ -201,7 +302,7 @@ class TicketSimulationControllerTest {
         String body = envelopeJson(ticketId, """
                 {
                   "updateType": "STARTED",
-                  "updatedBy": {"type": "EXTERNAL_USER", "id": "USR-M6-77"},
+                  "updatedBy": {"type": "EXTERNAL_USER", "id": "6f1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"},
                   "updateOccurredAt": "2026-09-02T12:00:00Z"
                 }
                 """);
@@ -227,7 +328,7 @@ class TicketSimulationControllerTest {
         String body = envelopeJson(ticketId, """
                 {
                   "updateType": "STARTED",
-                  "updatedBy": {"type": "EXTERNAL_USER", "id": "USR-M6-77"},
+                  "updatedBy": {"type": "EXTERNAL_USER", "id": "6f1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"},
                   "updateOccurredAt": "2026-09-02T12:00:00Z"
                 }
                 """);
@@ -246,7 +347,7 @@ class TicketSimulationControllerTest {
                   "updateType": "RESOLVED",
                   "publicMessage": "Resuelto.",
                   "details": {"resolution": {"type": "UNKNOWN_RESOLUTION"}},
-                  "updatedBy": {"type": "EXTERNAL_USER", "id": "USR-M6-77"},
+                  "updatedBy": {"type": "EXTERNAL_USER", "id": "6f1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"},
                   "updateOccurredAt": "2026-09-02T12:00:00Z"
                 }
                 """);

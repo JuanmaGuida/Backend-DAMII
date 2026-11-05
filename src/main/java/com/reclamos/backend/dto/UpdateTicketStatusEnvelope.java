@@ -27,10 +27,10 @@ public record UpdateTicketStatusEnvelope(
         @NotNull(message = "producer es obligatorio") @Valid Producer producer,
         @NotBlank(message = "subject es obligatorio") String subject,
         @NotNull(message = "data es obligatorio") @Valid UpdateTicketStatusRequest data
-) {
+) implements StrictEventPayload {
     public record Producer(
             @NotBlank(message = "producer.moduleId es obligatorio") String moduleId,
             @NotBlank(message = "producer.service es obligatorio") String service
-    ) {
+    ) implements StrictEventPayload {
     }
 }

@@ -6,6 +6,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -38,25 +39,25 @@ public record UpdateTicketStatusRequest(
         @Valid Details details,
         @NotNull(message = "updatedBy es obligatorio") @Valid Actor updatedBy,
         @NotNull(message = "updateOccurredAt es obligatorio") Instant updateOccurredAt
-) {
+) implements StrictEventPayload {
     public record Details(
             InformationRequest informationRequest,
             ReturnInfo returnInfo,
             Resolution resolution,
             Cancellation cancellation
-    ) {
+    ) implements StrictEventPayload {
     }
 
-    public record InformationRequest(String messageForCitizen, Instant requiredBy) {
+    public record InformationRequest(String messageForCitizen, Instant requiredBy) implements StrictEventPayload {
     }
 
-    public record ReturnInfo(String reasonCode) {
+    public record ReturnInfo(String reasonCode) implements StrictEventPayload {
     }
 
-    public record Resolution(ResolutionType type) {
+    public record Resolution(ResolutionType type) implements StrictEventPayload {
     }
 
-    public record Cancellation(String reasonCode) {
+    public record Cancellation(String reasonCode) implements StrictEventPayload {
     }
 
     /**
@@ -66,7 +67,15 @@ public record UpdateTicketStatusRequest(
      * módulo vía integración, el valor esperado en la práctica es
      * EXTERNAL_USER (ver ejemplos §8.2/§8.3 de Eventos V1.69). Se mapea a
      * nuestro ActorType interno en el service — ver el comentario ahí.
+     * <p>
+     * {@code id} es un UUID o ausente (Eventos §5.2): un identificador con
+     * otro formato se rechaza en lugar de guardarse como identidad opaca.
      */
-    public record Actor(@NotNull(message = "updatedBy.type es obligatorio") String type, String id) {
+    public record Actor(
+            @NotNull(message = "updatedBy.type es obligatorio") String type,
+            @Pattern(regexp = UUID_PATTERN, message = "updatedBy.id debe ser un UUID o null") String id
+    ) implements StrictEventPayload {
+        private static final String UUID_PATTERN =
+                "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$";
     }
 }
