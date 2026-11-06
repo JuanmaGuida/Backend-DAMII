@@ -1201,10 +1201,9 @@ paths:
       summary: Adjuntar archivos a un ticket existente
       description: |
         El propietario identificado sólo puede agregar adjuntos PUBLIC. AGENT y ADMIN
-        pueden agregar PUBLIC o INTERNAL sobre tickets ajenos; AREA_RESPONSIBLE no tiene
-        subida independiente de adjuntos en tickets ajenos (sólo lee y envía mensajes).
-        Un usuario staff que es owner actúa como ciudadano. No modifica el estado ni los
-        demás datos del ticket.
+        pueden agregar PUBLIC o INTERNAL sobre tickets ajenos; AREA_RESPONSIBLE tiene
+        la misma capacidad únicamente dentro de su área. Un usuario staff que es owner
+        actúa como ciudadano. No modifica el estado ni los demás datos del ticket.
       operationId: uploadTicketAttachments
       security:
         - bearerAuth: []
