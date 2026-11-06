@@ -19,7 +19,6 @@ import org.springframework.web.multipart.MultipartFile;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
-import java.util.Objects;
 import java.util.UUID;
 
 @Service
@@ -69,18 +68,12 @@ public class TicketAttachmentUploadService {
             return new UploadAuthorization(new AttachmentService.UploadActor(
                     ActorType.CITIZEN, identity.citizenId().toString()));
         }
-        if (identity.role() == ModuleRole.CITIZEN) {
-            throw new UnauthorizedTicketOperationException();
-        }
-        if (identity.role() == ModuleRole.AREA_RESPONSIBLE
-                && !Objects.equals(ticket.getResponsibleAreaId(), identity.areaId())) {
-            throw new UnauthorizedTicketOperationException();
-        }
+        // Fuera de su propio ticket, un responsable de área sólo lee y envía mensajes: la
+        // subida independiente de adjuntos queda reservada al personal de atención.
         ActorType actorType = switch (identity.role()) {
             case AGENT -> ActorType.AGENT;
             case ADMIN -> ActorType.ADMIN;
-            case AREA_RESPONSIBLE -> ActorType.AREA_RESPONSIBLE;
-            case CITIZEN -> throw new UnauthorizedTicketOperationException();
+            case AREA_RESPONSIBLE, CITIZEN -> throw new UnauthorizedTicketOperationException();
         };
         return new UploadAuthorization(new AttachmentService.UploadActor(
                 actorType, identity.citizenId().toString()));
