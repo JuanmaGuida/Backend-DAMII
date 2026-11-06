@@ -139,25 +139,24 @@ class TicketAttachmentUploadServiceTest {
 
     @ParameterizedTest
     @EnumSource(MessageVisibility.class)
-    void areaResponsibleCannotUploadIndependentlyEvenInsideItsOwnArea(MessageVisibility visibility) {
-        assertThatThrownBy(() -> service.upload(TICKET_ID, request(visibility), new MockMultipartFile[]{file},
-                identity(ModuleRole.AREA_RESPONSIBLE, UUID.randomUUID(), AREA_ID)))
-                .isInstanceOf(UnauthorizedTicketOperationException.class);
+    void areaResponsibleUploadsBothVisibilitiesOnlyInsideItsArea(MessageVisibility visibility) {
+        stubSuccessfulStore();
+        service.upload(TICKET_ID, request(visibility), new MockMultipartFile[]{file},
+                identity(ModuleRole.AREA_RESPONSIBLE, UUID.randomUUID(), AREA_ID));
 
-        verify(attachmentService, never()).validate(any());
-        verify(attachmentService, never()).storeForTicket(any(), any(), any(), any(), any());
+        ArgumentCaptor<AttachmentService.UploadActor> actor = ArgumentCaptor.forClass(
+                AttachmentService.UploadActor.class);
+        verify(attachmentService).storeForTicket(eq(ticket), actor.capture(), eq(visibility), any(), eq(NOW));
+        assertThat(actor.getValue().type()).isEqualTo(ActorType.AREA_RESPONSIBLE);
     }
 
-    @ParameterizedTest
-    @EnumSource(MessageVisibility.class)
-    void areaResponsibleOutsideItsAreaIsForbidden(MessageVisibility visibility) {
-        assertThatThrownBy(() -> service.upload(TICKET_ID, request(visibility),
+    @Test
+    void areaResponsibleOutsideAreaIsForbidden() {
+        assertThatThrownBy(() -> service.upload(TICKET_ID, request(MessageVisibility.PUBLIC),
                 new MockMultipartFile[]{file},
                 identity(ModuleRole.AREA_RESPONSIBLE, UUID.randomUUID(), "AREA-2")))
                 .isInstanceOf(UnauthorizedTicketOperationException.class);
-
         verify(attachmentService, never()).validate(any());
-        verify(attachmentService, never()).storeForTicket(any(), any(), any(), any(), any());
     }
 
     @Test
