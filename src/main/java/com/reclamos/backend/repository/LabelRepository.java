@@ -15,7 +15,7 @@ public interface LabelRepository extends JpaRepository<Label, UUID> {
                    l.name as name,
                    l.description as description,
                    l.active as active,
-                   count(tl) as ticketCount
+                   count(tl.id.ticketId) as ticketCount
             from Label l
             left join TicketLabel tl on tl.label = l
             group by l.id, l.code, l.name, l.description, l.active

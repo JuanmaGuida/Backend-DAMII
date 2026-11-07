@@ -3,7 +3,10 @@ package com.reclamos.backend.security;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class ClientAddressResolverTest {
     private final ClientAddressResolver resolver = new ClientAddressResolver();
@@ -34,12 +37,38 @@ class ClientAddressResolverTest {
         assertEquals("172.18.0.5", resolve("172.18.0.5", "not-an-ip; DROP"));
     }
 
+    @Test
+    void onlyTrustsTheConfiguredProxyNetworks() {
+        ClientAddressResolver narrow = new ClientAddressResolver(List.of("172.18.0.0/16"));
+
+        assertEquals("198.51.100.7", resolve(narrow, "172.18.0.5", "198.51.100.7"));
+        // Una red privada que no figura en la lista deja de ser confiable.
+        assertEquals("10.0.0.4", resolve(narrow, "10.0.0.4", "198.51.100.7"));
+        assertEquals("127.0.0.1", resolve(narrow, "127.0.0.1", "198.51.100.7"));
+    }
+
+    @Test
+    void anEmptyListNeverTrustsTheForwardedHeader() {
+        ClientAddressResolver none = new ClientAddressResolver(List.of());
+
+        assertEquals("172.18.0.5", resolve(none, "172.18.0.5", "198.51.100.7"));
+    }
+
+    @Test
+    void rejectsAMalformedNetworkAtStartup() {
+        assertThrows(IllegalArgumentException.class, () -> new ClientAddressResolver(List.of("no-es-una-red")));
+    }
+
     private String resolve(String peer, String forwardedFor) {
+        return resolve(resolver, peer, forwardedFor);
+    }
+
+    private String resolve(ClientAddressResolver target, String peer, String forwardedFor) {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.setRemoteAddr(peer);
         if (forwardedFor != null) {
             request.addHeader("X-Forwarded-For", forwardedFor);
         }
-        return resolver.resolve(request);
+        return target.resolve(request);
     }
 }
