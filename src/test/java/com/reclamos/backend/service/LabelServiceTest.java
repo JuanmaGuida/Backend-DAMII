@@ -112,6 +112,15 @@ class LabelServiceTest {
         assertThat(response.getName()).isEqualTo("New"); assertThat(response.getDescription()).isEqualTo("description");
     }
 
+    @Test void detailAndUpdateReportTheRealAssignmentCount() {
+        UUID id = UUID.randomUUID(); Label label = active(id); label.setName("Old");
+        when(labels.findById(id)).thenReturn(Optional.of(label)); when(labels.save(label)).thenReturn(label);
+        when(assignments.countById_LabelId(id)).thenReturn(2L);
+
+        assertThat(service.get(id).getTicketCount()).isEqualTo(2L);
+        assertThat(service.update(id, new UpdateLabelRequest("New", null, true)).getTicketCount()).isEqualTo(2L);
+    }
+
     @Test void deletesOnlyUnreferencedLabel() {
         UUID id = UUID.randomUUID(); Label label = active(id); when(labels.findById(id)).thenReturn(Optional.of(label));
         service.delete(id);

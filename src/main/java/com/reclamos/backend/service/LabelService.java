@@ -36,7 +36,8 @@ public class LabelService {
         label.setDescription(trimNullable(request.getDescription()));
         label.setActive(true);
         label.setCreatedAt(clock.instant()); label.setUpdatedAt(clock.instant());
-        return toResponse(labelRepository.saveAndFlush(label));
+        // Una etiqueta recién creada no puede tener asignaciones.
+        return toResponse(labelRepository.saveAndFlush(label), 0);
     }
 
     @Transactional(readOnly = true)
@@ -46,7 +47,7 @@ public class LabelService {
 
 
     @Transactional(readOnly = true)
-    public LabelResponse get(UUID id) { return toResponse(find(id)); }
+    public LabelResponse get(UUID id) { return toResponse(find(id), ticketLabelRepository.countById_LabelId(id)); }
 
     @Transactional(readOnly = true)
     public Page<TicketResponse> listTickets(UUID id, Pageable pageable) {
@@ -60,7 +61,7 @@ public class LabelService {
         Label label = find(id);
         label.setName(request.getName().trim()); label.setDescription(trimNullable(request.getDescription()));
         label.setActive(request.getActive()); label.setUpdatedAt(clock.instant());
-        return toResponse(labelRepository.save(label));
+        return toResponse(labelRepository.save(label), ticketLabelRepository.countById_LabelId(id));
     }
 
     @Transactional
@@ -88,8 +89,8 @@ public class LabelService {
     }
 
     private Label find(UUID id) { return labelRepository.findById(id).orElseThrow(() -> new ResourceNotFoundException("La etiqueta no existe")); }
-    private LabelResponse toResponse(Label l) {
-        return new LabelResponse(l.getId(), l.getCode(), l.getName(), l.getDescription(), l.isActive(), 0);
+    private LabelResponse toResponse(Label l, long ticketCount) {
+        return new LabelResponse(l.getId(), l.getCode(), l.getName(), l.getDescription(), l.isActive(), ticketCount);
     }
     private LabelResponse toResponse(LabelWithTicketCount l) {
         return new LabelResponse(l.getId(), l.getCode(), l.getName(), l.getDescription(), l.getActive(), l.getTicketCount());

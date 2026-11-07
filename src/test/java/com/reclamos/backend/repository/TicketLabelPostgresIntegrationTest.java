@@ -382,6 +382,41 @@ class TicketLabelPostgresIntegrationTest {
         assertThat(labels.existsById(b.getId())).isTrue();
     }
 
+    @Test
+    @Transactional
+    void ticketCountIsTheRealNumberOfAssignmentsInTheListingAndPerLabel() {
+        Label unused = label("COUNT-UNUSED");
+        Label used = label("COUNT-USED");
+        Ticket first = ticket("count-1");
+        Ticket second = ticket("count-2");
+        UUID actor = UUID.randomUUID();
+
+        // Sin asignaciones el contador es cero, no uno.
+        assertThat(listedCount(unused)).isZero();
+        assertThat(assignments.countById_LabelId(unused.getId())).isZero();
+
+        assignments.insertManualIfAbsent(first.getId(), used.getId(), actor, Instant.now());
+        assignments.insertManualIfAbsent(second.getId(), used.getId(), actor, Instant.now());
+
+        assertThat(listedCount(used)).isEqualTo(2);
+        assertThat(assignments.countById_LabelId(used.getId())).isEqualTo(2);
+        assertThat(listedCount(unused)).isZero();
+
+        assignments.deleteAssignment(first.getId(), used.getId());
+        assignments.deleteAssignment(second.getId(), used.getId());
+
+        assertThat(listedCount(used)).isZero();
+        assertThat(assignments.countById_LabelId(used.getId())).isZero();
+    }
+
+    private long listedCount(Label label) {
+        return labels.findAllWithTicketCount().stream()
+                .filter(item -> item.getId().equals(label.getId()))
+                .findFirst()
+                .orElseThrow()
+                .getTicketCount();
+    }
+
     private TicketFilter filter(Set<UUID> ids) {
         return new TicketFilter(
                 null,

@@ -11,6 +11,8 @@ public interface TicketLabelRepository extends JpaRepository<TicketLabel, Ticket
 
     boolean existsById_LabelId(UUID labelId);
 
+    long countById_LabelId(UUID labelId);
+
     @Query("select tl.label from TicketLabel tl where tl.id.ticketId = :ticketId order by tl.label.name, tl.label.id")
     List<com.reclamos.backend.entity.Label> findLabelsByTicketId(@Param("ticketId") UUID ticketId);
 
