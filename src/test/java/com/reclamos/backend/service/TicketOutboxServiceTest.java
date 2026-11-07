@@ -68,6 +68,9 @@ class TicketOutboxServiceTest {
     @Test
     void ticketCreatedPublishesEveryIdentifiedRegisteredTicketButNeverAnonymous() {
         Ticket selfManaged = ticket(false, "M2", TicketStatus.REGISTERED);
+        selfManaged.setTrackingCodeCiphertext("private-ciphertext".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        selfManaged.setTrackingCodeNonce("private-nonce".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        selfManaged.setTrackingCodeKeyId("private-key-id");
         selfManaged.setAnonymousAccessPasswordHash("must-not-be-published");
         selfManaged.setAnonymousContactChannel(AnonymousContactChannel.EMAIL);
         selfManaged.setAnonymousContactValue("private@example.test");
@@ -93,7 +96,9 @@ class TicketOutboxServiceTest {
                     .containsEntry("status", "REGISTERED")
                     .containsEntry("resolutionDueAt", RESOLUTION_DUE.toString())
                     .doesNotContainKeys("trackingCode", "trackingCodeHash", "anonymousAccessPassword",
+                            "trackingCodeCiphertext", "trackingCodeNonce", "trackingCodeKeyId",
                             "anonymousAccessPasswordHash", "anonymousContactChannel", "anonymousContactValue");
+            assertThat(event.getPayload().toString()).doesNotContain("private-ciphertext", "private-nonce", "private-key-id");
         });
     }
 

@@ -145,6 +145,8 @@ class TicketServiceTest {
 
     @BeforeEach
     void setUp() {
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "trackingCodeCipher",
+                new TrackingCodeCipher("AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=", "unit-v1", trackingCodes));
         org.springframework.test.util.ReflectionTestUtils.setField(service, "priorityCalculationService",
                 new PriorityCalculationService(new com.reclamos.backend.config.PriorityProperties(),
                         new SlaCalculationService(mock(SlaPolicyRepository.class))));
@@ -421,7 +423,7 @@ class TicketServiceTest {
     }
 
     @Test
-    void trackingCodesAreDifferentAndOnlyTheirHashesAreStored() {
+    void trackingCodesAreDifferentAndStoredHashesRemainValidAlongsideEncryptedCodes() {
         when(risks.calculateRisk(any(RequestType.class), any(ResolvedForm.class)))
                 .thenReturn(new RiskAssessment(0, Risk.LOW));
 

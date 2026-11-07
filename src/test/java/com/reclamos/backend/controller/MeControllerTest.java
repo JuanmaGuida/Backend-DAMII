@@ -31,6 +31,9 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.hamcrest.Matchers.containsString;
 
 /**
  * GET /me/tickets (Entidades V1.49 §"Autenticación, roles y vistas"):
@@ -60,12 +63,55 @@ class MeControllerTest {
     private TicketService ticketService;
 
     @MockitoBean
+    private com.reclamos.backend.service.OwnerTrackingCodeService ownerTrackingCodeService;
+
+    @MockitoBean
     private AuthService authService;
 
     @Test
     void myTicketsRequiresAuthentication() throws Exception {
         mockMvc.perform(get("/api/me/tickets"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void recoveryRequiresAuthenticationAndDoesNotCacheUnauthorizedResponse() throws Exception {
+        mockMvc.perform(get("/api/me/tickets/" + UUID.randomUUID() + "/tracking-code"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(header().string("Cache-Control", containsString("no-store")));
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.EnumSource(ModuleRole.class)
+    void recoveryIsAuthenticatedForEveryRoleAndReturnsOnlyTheSecret(ModuleRole role) throws Exception {
+        UUID id = UUID.randomUUID();
+        var identity = new AuthenticatedIdentity("test", CITIZEN.citizenId(), "Test", null, role);
+        var authentication = new UsernamePasswordAuthenticationToken(identity, null,
+                List.of(new SimpleGrantedAuthority("ROLE_" + role)));
+        when(ownerTrackingCodeService.get(id, identity)).thenReturn(
+                new com.reclamos.backend.dto.response.TrackingCodeResponse("original-code"));
+        mockMvc.perform(get("/api/me/tickets/" + id + "/tracking-code").with(authentication(authentication)))
+                .andExpect(status().isOk()).andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(content().json("{\"trackingCode\":\"original-code\"}"));
+        verify(ownerTrackingCodeService).get(id, identity);
+    }
+
+    @Test
+    void recoveryErrorsAreControlledAndNonCacheable() throws Exception {
+        UUID id = UUID.randomUUID(); String path = "/api/me/tickets/" + id + "/tracking-code";
+        when(ownerTrackingCodeService.get(id, CITIZEN))
+                .thenThrow(new com.reclamos.backend.exception.OwnerTrackingCodeNotFoundException())
+                .thenThrow(new com.reclamos.backend.exception.TrackingCodeNotRecoverableException())
+                .thenThrow(new com.reclamos.backend.exception.TrackingCodeUnavailableException());
+        int[] statuses = {404, 409, 503};
+        String[] codes = {"NOT_FOUND", "TRACKING_CODE_NOT_RECOVERABLE", "TRACKING_CODE_UNAVAILABLE"};
+        for (int i = 0; i < statuses.length; i++) {
+            mockMvc.perform(get(path).with(authentication(CITIZEN_AUTHENTICATION)))
+                    .andExpect(status().is(statuses[i])).andExpect(header().string("Cache-Control", "no-store"))
+                    .andExpect(jsonPath("$.code").value(codes[i])).andExpect(jsonPath("$.trackingCode").doesNotExist());
+        }
+        mockMvc.perform(get("/api/me/tickets/invalid/tracking-code").with(authentication(CITIZEN_AUTHENTICATION)))
+                .andExpect(status().isBadRequest()).andExpect(header().string("Cache-Control", containsString("no-store")));
     }
 
     @Test

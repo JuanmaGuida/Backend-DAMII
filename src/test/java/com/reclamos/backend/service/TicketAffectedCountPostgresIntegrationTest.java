@@ -271,7 +271,8 @@ class TicketAffectedCountPostgresIntegrationTest {
     }
 
     private Map<String, Object> ticket(UUID id) {
-        return db.queryForMap("SELECT * FROM tickets WHERE id=?", id);
+        return com.reclamos.backend.support.JdbcSnapshot.comparableRow(
+                db.queryForMap("SELECT * FROM tickets WHERE id=?", id));
     }
 
     private List<Map<String, Object>> sla(UUID id) {

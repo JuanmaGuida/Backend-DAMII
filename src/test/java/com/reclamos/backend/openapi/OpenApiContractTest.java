@@ -75,6 +75,7 @@ class OpenApiContractTest {
             "GET /api/indicators/areas",
             "GET /api/indicators/sla",
             "GET /api/me/tickets",
+            "GET /api/me/tickets/{ticketId}/tracking-code",
             "GET /api/tickets",
             "POST /api/tickets",
             "GET /api/tickets/{ticketId}",
@@ -156,6 +157,7 @@ class OpenApiContractTest {
             "GET /api/indicators/areas",
             "GET /api/indicators/sla",
             "GET /api/me/tickets",
+            "GET /api/me/tickets/{ticketId}/tracking-code",
             "GET /api/tickets",
             "GET /api/tickets/{ticketId}",
             "POST /api/tickets/{ticketId}/attachments",
@@ -199,6 +201,7 @@ class OpenApiContractTest {
             "FormDefinitionResponse",
             "FormFieldResponse",
             "CreateTicketResponse",
+            "TrackingCodeResponse",
             "InformationRequestResponse",
             "TicketResolutionResponse",
             "TicketResolutionActionResponse",
@@ -264,10 +267,26 @@ class OpenApiContractTest {
     }
 
     @Test
+    void ownerTrackingRecoveryDocumentsMinimalPrivateNonCacheableContract() {
+        var operation = operation("GET /api/me/tickets/{ticketId}/tracking-code");
+        assertEquals(Set.of("200", "400", "401", "404", "409", "503"), map(operation, "responses").keySet());
+        assertEquals("no-store", list(map(operation, "responses", "200", "headers", "Cache-Control", "schema"), "enum").getFirst());
+        var schema = map(spec, "components", "schemas", "TrackingCodeResponse");
+        assertEquals(Set.of("trackingCode"), map(schema, "properties").keySet());
+        assertEquals(false, schema.get("additionalProperties"));
+        for (String name : Set.of("TicketResponse", "TicketDetailResponse", "StaffTicketDetailResponse", "TrackingTicketResponse")) {
+            // Staff detail uses allOf; inspect inline properties there as well as the base schemas above.
+            String definition = map(spec, "components", "schemas", name).toString();
+            for (String forbidden : Set.of("trackingCode", "trackingCodeCiphertext", "trackingCodeNonce", "trackingCodeKeyId"))
+                assertFalse(definition.contains(forbidden + "="), name + ": " + forbidden);
+        }
+    }
+
+    @Test
     void versionedFileIsAValidOpenApi3DocumentWithExactlyTheCurrentBusinessOperations() {
         assertTrue(string(spec.get("openapi")).startsWith("3."));
         assertEquals("3.0.3", parsedOpenApi.getOpenapi());
-        assertEquals(78, parsedOpenApi.getPaths().size());
+        assertEquals(79, parsedOpenApi.getPaths().size());
         assertNotNull(map(spec, "info").get("title"));
         assertNotNull(map(spec, "components").get("schemas"));
         assertEquals(EXPECTED_OPERATIONS, documentedOperations());

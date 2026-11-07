@@ -4,6 +4,11 @@ Backend del **Módulo 2 - Atención Ciudadana**, desarrollado con **Spring Boot*
 
 Este documento explica cómo configurar y ejecutar el proyecto en un entorno local.
 
+El arranque requiere una clave persistente de seguimiento y su ID, sin valores por defecto.
+Preparar `TRACKING_CODE_ENCRYPTION_KEY_BASE64` y `TRACKING_CODE_ENCRYPTION_KEY_ID` según
+[la guía de cifrado y configuración](docs/tracking-code-encryption.md) antes de ejecutar Backend
+o Compose. No utilizar material sintético de CI en un entorno persistente.
+
 ---
 
 # Requisitos previos

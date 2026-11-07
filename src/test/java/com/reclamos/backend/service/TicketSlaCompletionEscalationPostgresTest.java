@@ -288,7 +288,9 @@ class TicketSlaCompletionEscalationPostgresTest {
 
     private AuthenticatedIdentity staff() { return identity(agent, ModuleRole.AGENT); }
     private AuthenticatedIdentity identity(UUID id, ModuleRole role) { return new AuthenticatedIdentity(id.toString(), id, "QA02", "M2", role); }
-    private Map<String, Object> ticket(UUID id) { return db.queryForMap("SELECT * FROM tickets WHERE id=?", id); }
+    private Map<String, Object> ticket(UUID id) {
+        return com.reclamos.backend.support.JdbcSnapshot.comparableRow(db.queryForMap("SELECT * FROM tickets WHERE id=?", id));
+    }
     private long slaId(UUID id, SlaType type) { return db.queryForObject("SELECT id FROM ticket_sla WHERE ticket_id=? AND sla_type=?", Long.class, id, type.name()); }
     private int activities(UUID id, String action) { return db.queryForObject("SELECT count(*) FROM ticket_activities WHERE ticket_id=? AND action_type=?", Integer.class, id, action); }
     private int escalationEvents(UUID id) { return db.queryForObject("SELECT count(*) FROM outbox_events WHERE ticket_id=? AND update_type='ESCALATION_CHANGED'", Integer.class, id); }

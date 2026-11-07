@@ -24,6 +24,24 @@ import org.springframework.web.multipart.support.MissingServletRequestPartExcept
  */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+    @ExceptionHandler(OwnerTrackingCodeNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleOwnerTrackingNotFound(OwnerTrackingCodeNotFoundException exception) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).cacheControl(CacheControl.noStore())
+                .body(new ApiErrorResponse("NOT_FOUND", exception.getMessage()));
+    }
+
+    @ExceptionHandler(TrackingCodeNotRecoverableException.class)
+    public ResponseEntity<ApiErrorResponse> handleTrackingNotRecoverable(TrackingCodeNotRecoverableException exception) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).cacheControl(CacheControl.noStore())
+                .body(new ApiErrorResponse(TrackingCodeNotRecoverableException.CODE, exception.getMessage()));
+    }
+
+    @ExceptionHandler(TrackingCodeUnavailableException.class)
+    public ResponseEntity<ApiErrorResponse> handleTrackingUnavailable(TrackingCodeUnavailableException exception) {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).cacheControl(CacheControl.noStore())
+                .body(new ApiErrorResponse(TrackingCodeUnavailableException.CODE, exception.getMessage()));
+    }
+
     @ExceptionHandler(org.springframework.dao.PessimisticLockingFailureException.class)
     public ResponseEntity<ApiErrorResponse> handleConcurrentLifecycle(RuntimeException exception) {
         return response(HttpStatus.CONFLICT, "TICKET_STATE_CONFLICT",
