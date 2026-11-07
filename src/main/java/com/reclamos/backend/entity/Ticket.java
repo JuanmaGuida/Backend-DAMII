@@ -1,5 +1,6 @@
 package com.reclamos.backend.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -66,6 +67,21 @@ public class Ticket {
     @Column(name = "tracking_code_hash", nullable = false, length = 255)
     @ToString.Exclude
     private String trackingCodeHash;
+
+    @Column(name = "tracking_code_ciphertext", columnDefinition = "bytea")
+    @ToString.Exclude
+    @JsonIgnore
+    private byte[] trackingCodeCiphertext;
+
+    @Column(name = "tracking_code_nonce", columnDefinition = "bytea")
+    @ToString.Exclude
+    @JsonIgnore
+    private byte[] trackingCodeNonce;
+
+    @Column(name = "tracking_code_key_id", length = 64)
+    @ToString.Exclude
+    @JsonIgnore
+    private String trackingCodeKeyId;
 
     @Column(name = "anonymous_access_password_hash", length = 255)
     @ToString.Exclude

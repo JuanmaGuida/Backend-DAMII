@@ -59,6 +59,9 @@ jobs:
 
       - name: Test, generate coverage and package
         env:
+          # Synthetic fixture only; no runtime secret is needed by CI or image builds.
+          TRACKING_CODE_ENCRYPTION_KEY_BASE64: AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=
+          TRACKING_CODE_ENCRYPTION_KEY_ID: ci-v1
           MOCK_CITIZEN_PASSWORD: ci-citizen-password
           MOCK_AGENT_PASSWORD: ci-agent-password
           MOCK_AREA_RESPONSIBLE_PASSWORD: ci-area-password

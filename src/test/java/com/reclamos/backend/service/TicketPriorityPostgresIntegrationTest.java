@@ -427,7 +427,9 @@ class TicketPriorityPostgresIntegrationTest {
                 anonymous?null:identity(citizen,ModuleRole.CITIZEN),null).ticketId(); ids.add(id); return id;
     }
     private AuthenticatedIdentity identity(UUID id,ModuleRole role) { return new AuthenticatedIdentity("h0708",id,"H07","M6",role); }
-    private Map<String,Object> ticket(UUID id) { return db.queryForMap("SELECT * FROM tickets WHERE id=?",id); }
+    private Map<String,Object> ticket(UUID id) {
+        return com.reclamos.backend.support.JdbcSnapshot.comparableRow(db.queryForMap("SELECT * FROM tickets WHERE id=?",id));
+    }
     private List<Map<String,Object>> cycles(UUID id) { return db.queryForList("SELECT * FROM ticket_sla WHERE ticket_id=? ORDER BY id",id); }
     private List<Map<String,Object>> history(UUID id) { return db.queryForList("SELECT * FROM ticket_activities WHERE ticket_id=? ORDER BY sequence",id); }
     private Instant resolutionDue(UUID id) { return db.queryForObject("SELECT due_at FROM ticket_sla WHERE ticket_id=? AND sla_type='RESOLUTION' AND completed_at IS NULL",java.sql.Timestamp.class,id).toInstant(); }

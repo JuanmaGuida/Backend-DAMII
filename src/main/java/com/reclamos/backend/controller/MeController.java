@@ -1,17 +1,24 @@
 package com.reclamos.backend.controller;
 
 import com.reclamos.backend.dto.TicketResponse;
+import com.reclamos.backend.dto.response.TrackingCodeResponse;
 import com.reclamos.backend.identity.AuthenticatedIdentity;
+import com.reclamos.backend.service.OwnerTrackingCodeService;
 import com.reclamos.backend.service.TicketService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
+import org.springframework.http.CacheControl;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.UUID;
 
 /**
  * Entidades V1.49 §"Autenticación, roles y vistas": namespace /me para las
@@ -25,6 +32,14 @@ import org.springframework.web.bind.annotation.RestController;
 public class MeController {
 
     private final TicketService ticketService;
+    private final OwnerTrackingCodeService ownerTrackingCodeService;
+
+    @GetMapping("/tickets/{ticketId}/tracking-code")
+    public ResponseEntity<TrackingCodeResponse> trackingCode(
+            @PathVariable UUID ticketId, @AuthenticationPrincipal AuthenticatedIdentity identity) {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+                .body(ownerTrackingCodeService.get(ticketId, identity));
+    }
 
     /**
      * GET /me/tickets: listado de los tickets propios del ciudadano

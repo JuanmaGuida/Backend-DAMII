@@ -91,6 +91,7 @@ public class TicketService {
     private final TicketSlaMilestoneService milestoneService;
     private final TicketOutboxService ticketOutboxService;
     private final TrackingCodeService trackingCodeService;
+    private final TrackingCodeCipher trackingCodeCipher;
     private final TicketPublicIdGenerator publicIdGenerator;
     private final AttachmentService attachmentService;
     private final AttachmentReferenceService attachmentReferenceService;
@@ -173,6 +174,12 @@ public class TicketService {
         ticket.setPublic(false);
         ticket.setStatusChangedAt(now);
         ticket = ticketRepository.save(ticket);
+        if (!anonymous) {
+            var encrypted = trackingCodeCipher.encrypt(ticket.getId(), ticket.getCitizenId(), trackingCode);
+            ticket.setTrackingCodeCiphertext(encrypted.ciphertext());
+            ticket.setTrackingCodeNonce(encrypted.nonce());
+            ticket.setTrackingCodeKeyId(encrypted.keyId());
+        }
         ticketRepository.flush();
         ticketSlaService.startFirstResponseCycle(ticket, now);
         Optional<TicketSla> resolutionSla = ticketSlaService.startInitialResolutionCycle(ticket, now);

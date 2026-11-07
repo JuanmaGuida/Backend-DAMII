@@ -28,6 +28,8 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
 
     boolean existsByTrackingCodeHash(String trackingCodeHash);
 
+    Optional<Ticket> findByIdAndCitizenIdAndAnonymousFalse(UUID id, UUID citizenId);
+
     boolean existsByRequestType_Id(Long requestTypeId);
 
     boolean existsByMainTicket_Id(UUID mainTicketId);
