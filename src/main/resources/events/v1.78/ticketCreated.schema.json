@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://municipalidad-uade.example/m2/events/v1.78/ticketCreated.schema.json",
+  "title": "ticketCreated",
+  "description": "M2 → M1. Se publica una sola vez, sólo para tickets identificados, cuando el ticket acaba de quedar REGISTERED (Eventos v1.78 §6).",
+  "allOf": [
+    {
+      "$ref": "envelope.schema.json"
+    }
+  ],
+  "required": [
+    "data"
+  ],
+  "properties": {
+    "eventType": {
+      "const": "ticketCreated"
+    },
+    "eventVersion": {
+      "const": "1.0"
+    },
+    "data": {
+      "$ref": "ticketCreated.data.schema.json"
+    },
+    "sourceModule": {
+      "const": "atencion-ciudadana"
+    }
+  }
+}
