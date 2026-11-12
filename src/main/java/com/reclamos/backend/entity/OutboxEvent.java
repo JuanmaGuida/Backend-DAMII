@@ -25,9 +25,8 @@ import java.util.UUID;
 
 /**
  * Outbox transaccional (Entidades v1.3 §19.2). Se inserta en la MISMA
- * transacción que el cambio de negocio; todavía no existe un publisher
- * asíncrono real (Sprint 3: "sin consumidor real todavía"), así que los
- * eventos quedan en PENDING hasta que se implemente ese publisher.
+ * transacción que el cambio de negocio. El publicador Core sólo procesa
+ * eventId explícitamente aprobados; el historial permanece intacto.
  */
 @Entity
 @Table(
@@ -82,4 +81,10 @@ public class OutboxEvent {
 
     @Column(name = "published_at")
     private Instant publishedAt;
+
+    @Column(name = "next_attempt_at")
+    private Instant nextAttemptAt;
+
+    @Column(name = "last_failure_code", length = 40)
+    private String lastFailureCode;
 }

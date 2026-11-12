@@ -33,6 +33,10 @@
 	</properties>
 	<dependencies>
 		<dependency>
+			<groupId>com.rabbitmq</groupId>
+			<artifactId>amqp-client</artifactId>
+		</dependency>
+		<dependency>
 			<groupId>io.jsonwebtoken</groupId>
 			<artifactId>jjwt-api</artifactId>
 			<version>${jjwt.version}</version>
@@ -53,7 +57,6 @@
 			<groupId>com.networknt</groupId>
 			<artifactId>json-schema-validator</artifactId>
 			<version>1.5.9</version>
-			<scope>test</scope>
 		</dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
