@@ -46,7 +46,7 @@ public class InformationRequestService {
                                                          AuthenticatedIdentity identity) {
         requireInformationRequester(identity);
         Ticket ticket = lockedTicket(ticketId); // Se bloquea el ticket para evitar modificaciones concurrentes
-        if (Objects.equals(identity.citizenId(), ticket.getCitizenId())) {
+        if (identity.ownsCitizenId(ticket.getCitizenId())) {
             throw new UnauthorizedTicketOperationException();
         }
         Instant requestedAt = deadlineService.now();
@@ -54,7 +54,7 @@ public class InformationRequestService {
                 new InformationRequestApplication(
                         MODULE_ID,
                         identity.role() == ModuleRole.ADMIN ? ActorType.ADMIN : ActorType.AGENT,
-                        identity.citizenId().toString(), request.getMessageForCitizen(), request.getInternalMessage(),
+                        identity.actorId().toString(), request.getMessageForCitizen(), request.getInternalMessage(),
                         requestedAt, deadlineService.calculateDueAt(requestedAt), null));
         // Only this entry point originates the request in M2; external facts must not be echoed.
         ticketOutboxService.informationRequired(ticket, informationRequest.getMessageForCitizen(),
@@ -83,7 +83,7 @@ public class InformationRequestService {
         Instant now = deadlineService.now();
         InformationRequest request = createPending(ticket, new InformationRequestApplication(MODULE_ID,
                 actor.role() == ModuleRole.ADMIN ? ActorType.ADMIN : ActorType.AGENT,
-                actor.citizenId().toString(), message, null, now, deadlineService.calculateDueAt(now), null),
+                actor.actorId().toString(), message, null, now, deadlineService.calculateDueAt(now), null),
                 InformationRequestPurpose.RECLASSIFICATION);
         ticketOutboxService.reclassificationInformationRequired(ticket, message, request.getDueAt(), now);
         return request;
@@ -148,7 +148,7 @@ public class InformationRequestService {
                 || !ticket.getCitizenId().equals(identity.citizenId())) {
             throw new UnauthorizedTicketOperationException();
         }
-        return answerPending(ticket, request, normalizedMessage(request), identity.citizenId().toString(), identity, validated);
+        return answerPending(ticket, request, normalizedMessage(request), identity.actorId().toString(), identity, validated);
     }
 
     @Transactional
@@ -224,7 +224,7 @@ public class InformationRequestService {
                     !MODULE_ID.equalsIgnoreCase(informationRequest.getRequestedByModuleId()), answeredAt);
         }
         notificationService.queueAssignedAgent(ticket, NotificationType.INFORMATION_PROVIDED,
-                identity == null ? null : identity.citizenId());
+                identity == null ? null : identity.actorId());
         return response(informationRequest, storedAttachments);
     }
 

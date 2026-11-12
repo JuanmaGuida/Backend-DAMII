@@ -449,6 +449,12 @@ class TicketLabelPostgresIntegrationTest {
         ModuleUser user = new ModuleUser();
 
         user.setCitizenId(UUID.randomUUID());
+
+        user.setActorId(user.getCitizenId());
+
+        user.setActorType(com.reclamos.backend.identity.IdentityActorType.CIUDADANO);
+
+        user.setIdentitySource(com.reclamos.backend.identity.IdentitySource.MOCK);
         user.setFirstName("Label");
         user.setLastName("Integration " + suffix);
         user.setEmail(

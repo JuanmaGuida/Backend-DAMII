@@ -5,6 +5,7 @@ import com.reclamos.backend.identity.AuthenticatedIdentity;
 import com.reclamos.backend.identity.AuthenticatedSession;
 import com.reclamos.backend.identity.ExternalIdentityProfile;
 import com.reclamos.backend.identity.IdentityProvider;
+import com.reclamos.backend.exception.InvalidAuthenticationException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -28,14 +29,21 @@ public class AuthService {
     }
 
     private Optional<AuthenticatedIdentity> effectiveIdentity(ExternalIdentityProfile externalIdentity) {
-        ModuleUser moduleUser = moduleUserService.synchronize(externalIdentity);
+        ModuleUser moduleUser;
+        try {
+            moduleUser = moduleUserService.synchronize(externalIdentity);
+        } catch (InvalidAuthenticationException rejected) {
+            return Optional.empty();
+        }
         if (!moduleUser.isActive()) {
             return Optional.empty();
         }
         return Optional.of(new AuthenticatedIdentity(
                 externalIdentity.subjectId(),
-                externalIdentity.citizenId(),
-                externalIdentity.displayName(),
+                moduleUser.getActorId(),
+                moduleUser.getActorType(),
+                moduleUser.getCitizenId(),
+                moduleUser.getFirstName() + " " + moduleUser.getLastName(),
                 moduleUser.getAreaId(),
                 moduleUser.getRole()
         ));

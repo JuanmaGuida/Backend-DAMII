@@ -26,6 +26,9 @@ public class NotificationLog {
     @Column(name = "citizen_id")
     private java.util.UUID citizenId;
 
+    @Column(name = "recipient_actor_id")
+    private java.util.UUID recipientActorId;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 50)
     private NotificationType type;

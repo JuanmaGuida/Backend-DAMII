@@ -25,6 +25,9 @@ class DevModuleUserInitializerTest {
             ExternalIdentityProfile profile = invocation.getArgument(0);
             ModuleUser user = new ModuleUser();
             user.setCitizenId(profile.citizenId());
+            user.setActorId(user.getCitizenId());
+            user.setActorType(com.reclamos.backend.identity.IdentityActorType.CIUDADANO);
+            user.setIdentitySource(com.reclamos.backend.identity.IdentitySource.MOCK);
             user.setFirstName(profile.firstName());
             user.setLastName(profile.lastName());
             user.setRole(ModuleRole.CITIZEN);

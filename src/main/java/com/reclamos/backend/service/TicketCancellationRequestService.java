@@ -133,12 +133,12 @@ public class TicketCancellationRequestService {
 
     private void decide(TicketCancellationRequest r, CancellationRequestStatus status,
                         ReviewCancellationRequest input, AuthenticatedIdentity actor) {
-        r.setStatus(status); r.setReviewedAt(clock.instant()); r.setReviewedBy(actor.citizenId());
+        r.setStatus(status); r.setReviewedAt(clock.instant()); r.setReviewedBy(actor.actorId());
         r.setDecisionReason(input.decisionReason().strip()); r.setCancellationScope(input.cancellationScope());
         requests.save(r);
         audit(r, status == CancellationRequestStatus.APPROVED ? ActivityType.CANCELLATION_APPROVED
                 : ActivityType.CANCELLATION_REJECTED, actor.role() == ModuleRole.ADMIN ? ActorType.ADMIN
-                : ActorType.AGENT, actor.citizenId(), r.getDecisionReason());
+                : ActorType.AGENT, actor.actorId(), r.getDecisionReason());
     }
 
     private List<CancellationRequestResponse> history(UUID id, boolean staff) {
@@ -154,7 +154,7 @@ public class TicketCancellationRequestService {
         return tickets.findById(id).orElseThrow(() -> new ResourceNotFoundException("Ticket no encontrado"));
     }
     private void requireOwner(Ticket ticket, AuthenticatedIdentity actor) {
-        if (actor == null || ticket.isAnonymous() || !actor.citizenId().equals(ticket.getCitizenId()))
+        if (actor == null || ticket.isAnonymous() || !actor.ownsCitizenId(ticket.getCitizenId()))
             throw new UnauthorizedTicketOperationException();
     }
     private void requireAnonymous(Ticket ticket) {

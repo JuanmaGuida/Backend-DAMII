@@ -80,7 +80,10 @@ class Clase11SecurityAcceptanceTest {
         for (var p : List.of(a,b,area,admin)) {
             if (users.findByCitizenId(p.citizenId()).isEmpty()) {
                 ModuleUser u = new ModuleUser();
-                u.setCitizenId(p.citizenId()); u.setFirstName("Persona"); u.setLastName("Ficticia");
+                u.setCitizenId(p.citizenId());
+                u.setActorId(u.getCitizenId());
+                u.setActorType(com.reclamos.backend.identity.IdentityActorType.CIUDADANO);
+                u.setIdentitySource(com.reclamos.backend.identity.IdentitySource.MOCK); u.setFirstName("Persona"); u.setLastName("Ficticia");
                 u.setRole(p.role()); u.setAreaId(p.areaId()); u.setLastSyncedAt(Instant.now());
                 users.saveAndFlush(u);
             }

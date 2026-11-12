@@ -772,9 +772,9 @@ class TicketEventCorrectionsPostgresIntegrationTest {
             ticket.setAnonymous(anonymous);
             ticket.setCitizenId(anonymous ? null : UUID.randomUUID());
             if (!anonymous) {
-                db.update("INSERT INTO module_users (citizen_id,first_name,last_name,role,active,last_synced_at,created_at,updated_at) "
-                                + "VALUES (?, 'Event', 'Test', 'CITIZEN', true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
-                        ticket.getCitizenId());
+                db.update("INSERT INTO module_users (actor_id,actor_type,identity_source,citizen_id,first_name,last_name,role,active,last_synced_at,created_at,updated_at) "
+                                + "VALUES (?, 'CIUDADANO', 'MOCK', ?, 'Event', 'Test', 'CITIZEN', true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+                        ticket.getCitizenId(), ticket.getCitizenId());
                 citizenIds.add(ticket.getCitizenId());
             }
             if (anonymous) {

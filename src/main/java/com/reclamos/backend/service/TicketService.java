@@ -110,6 +110,9 @@ public class TicketService {
     public CreateTicketResponse create(CreateTicketRequest request, AuthenticatedIdentity identity,
                                        MultipartFile[] evidence) {
         boolean anonymous = identity == null;
+        if (!anonymous && !identity.hasCitizenIdentity()) {
+            throw new UnauthorizedTicketOperationException();
+        }
         if (!anonymous && request.containsAnonymousData()) {
             throw new InvalidTicketRequestException(
                     "Los datos de acceso o contacto anónimo no aplican a un ticket identificado");
@@ -198,7 +201,7 @@ public class TicketService {
         activity.setPreviousStatus(null);
         activity.setNewStatus(TicketStatus.REGISTERED);
         activity.setActorType(ActorType.CITIZEN);
-        activity.setActorId(anonymous ? null : identity.citizenId().toString());
+        activity.setActorId(anonymous ? null : identity.actorId().toString());
         activity.setOccurredAt(now);
         activityRepository.save(activity);
         activateCriticalEscalationIfNeeded(ticket, now);
@@ -233,17 +236,17 @@ public class TicketService {
         ticket.setCurrentStatus(TicketStatus.IN_REVIEW);
         ticket.setStatusChangedAt(reviewedAt);
         // Entidades V1.49 §"CONVENCIÓN DE IDENTIFICADORES DE ACTOR": a diferencia
-        // de la mayoría de los actorId (que guardan citizenId), Ticket.assignedAgentId
+        // de los identificadores externos de actor, Ticket.assignedAgentId
         // es una FK real a ModuleUser.id, reservada para relaciones puramente
         // internas de M2. Por eso acá se resuelve el ModuleUser del agente
-        // autenticado (por su citizenId) en lugar de guardar actor.subjectId()
+        // autenticado (por su actorId) en lugar de guardar actor.subjectId()
         // directamente. Decisión (a confirmar con el equipo): si el agente
         // autenticado no tiene un ModuleUser registrado, se corta con 404 en
         // lugar de dejar el ticket sin asignar silenciosamente — un agente
         // autenticado que no existe como ModuleUser es un estado inconsistente
         // que conviene visibilizar, no absorber.
         if (ticket.getAssignedAgent() == null) {
-            ModuleUser agent = moduleUserRepository.findByCitizenId(actor.citizenId())
+            ModuleUser agent = moduleUserRepository.findByActorId(actor.actorId())
                     .orElseThrow(() -> new ResourceNotFoundException(
                             "El agente autenticado no está registrado como ModuleUser"));
             ticket.setAssignedAgent(agent);
@@ -375,7 +378,7 @@ public class TicketService {
             cancelWithScope(ticket, request, actor);
             return toResponse(ticket, locationRepository.findByTicket_Id(ticketId).orElse(null));
         }
-        return cancelTicket(ticket, request, actorType, actor.citizenId().toString(), isOwnTicket, true);
+        return cancelTicket(ticket, request, actorType, actor.actorId().toString(), isOwnTicket, true);
     }
 
     @Transactional
@@ -444,11 +447,11 @@ public class TicketService {
             ticketOutboxService.cancelled(ticket, request.getReasonCode(), request.getPublicMessage(), true, now);
         }
 
-        UUID actorCitizenId = actorId == null ? null : UUID.fromString(actorId);
+        UUID actingActorId = actorId == null ? null : UUID.fromString(actorId);
         if (actorType != ActorType.CITIZEN) {
             notificationService.queueCitizen(ticket, NotificationType.CANCELLED);
         }
-        notificationService.queueAssignedAgent(ticket, NotificationType.CANCELLED, actorCitizenId);
+        notificationService.queueAssignedAgent(ticket, NotificationType.CANCELLED, actingActorId);
 
 
         return toResponse(ticket, locationRepository.findByTicket_Id(ticket.getId()).orElse(null));
@@ -482,7 +485,7 @@ public class TicketService {
         }
         Instant now = clock.instant();
         ActorType type = actor.role() == ModuleRole.ADMIN ? ActorType.ADMIN : ActorType.AGENT;
-        String actorId = actor.citizenId().toString();
+        String actorId = actor.actorId().toString();
         boolean notifyExternal = !main.isAnonymous() || main.getClassificationFinalizedAt() != null
                 && !SELF_MANAGED_AREA_ID.equalsIgnoreCase(main.getResponsibleAreaId());
         // Linking in older flows could retain a pending request on a DUPLICATE.
@@ -603,6 +606,9 @@ public class TicketService {
      */
     @Transactional(readOnly = true)
     public Page<TicketResponse> listMyTickets(AuthenticatedIdentity identity, Pageable pageable) {
+        if (identity == null || !identity.hasCitizenIdentity()) {
+            throw new UnauthorizedTicketOperationException();
+        }
         validateSort(pageable.getSort());
         Page<Ticket> page = ticketRepository.findByCitizenId(identity.citizenId(), pageable);
 
@@ -804,7 +810,7 @@ public class TicketService {
         activity.setPreviousStatus(previousStatus);
         activity.setNewStatus(newStatus);
         activity.setActorType(actor.role() == ModuleRole.ADMIN ? ActorType.ADMIN : ActorType.AGENT);
-        activity.setActorId(actor.citizenId().toString());
+        activity.setActorId(actor.actorId().toString());
         activity.setSourceModuleId(SELF_MANAGED_AREA_ID);
         activity.setPreviousPriority(previousPriority);
         activity.setNewPriority(newPriority);

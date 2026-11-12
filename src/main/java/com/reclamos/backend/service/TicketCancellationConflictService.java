@@ -66,7 +66,7 @@ public class TicketCancellationConflictService {
         decision.setSequence(activities.countByTicketId(ticketId)+1);
         decision.setActionType(input.decision()==CancellationRequestStatus.APPROVED?ActivityType.CANCELLATION_APPROVED:ActivityType.CANCELLATION_REJECTED);
         decision.setActorType(actor.role()==ModuleRole.ADMIN?ActorType.ADMIN:ActorType.AGENT);
-        decision.setActorId(actor.citizenId().toString());decision.setSourceModuleId("M2");decision.setOccurredAt(clock.instant());
+        decision.setActorId(actor.actorId().toString());decision.setSourceModuleId("M2");decision.setOccurredAt(clock.instant());
         decision.setPreviousStatus(ticket.getCurrentStatus());decision.setNewStatus(ticket.getCurrentStatus());
         decision.setMessage(input.decisionReason().strip());
         Map<String,Object> details=new LinkedHashMap<>();details.put("cancellationConflictId",conflictId.toString());

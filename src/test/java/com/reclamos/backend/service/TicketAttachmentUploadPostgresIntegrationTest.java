@@ -45,9 +45,9 @@ class TicketAttachmentUploadPostgresIntegrationTest {
         UUID ticketId = UUID.randomUUID();
         UUID citizenId = UUID.randomUUID();
         database.update("INSERT INTO module_users "
-                        + "(citizen_id,first_name,last_name,role,active,last_synced_at,created_at,updated_at) "
-                        + "VALUES (?, 'HU28', 'Owner', 'CITIZEN', TRUE, CURRENT_TIMESTAMP, "
-                        + "CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)", citizenId);
+                        + "(actor_id,actor_type,identity_source,citizen_id,first_name,last_name,role,active,last_synced_at,created_at,updated_at) "
+                        + "VALUES (?, 'CIUDADANO', 'MOCK', ?, 'HU28', 'Owner', 'CITIZEN', TRUE, CURRENT_TIMESTAMP, "
+                        + "CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)", citizenId, citizenId);
         database.update("INSERT INTO tickets "
                         + "(id,public_id,tracking_code_hash,citizen_id,is_anonymous,request_type_id,ticket_type,"
                         + "responsible_area_id,summary,description,form_data,current_status,current_priority,"

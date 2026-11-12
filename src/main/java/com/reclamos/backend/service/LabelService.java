@@ -78,7 +78,7 @@ public class LabelService {
         List<Label> labels = labelRepository.findAllById(request.getLabelIds());
         if (labels.size() != request.getLabelIds().size()) throw new ResourceNotFoundException("Una o más etiquetas no existen");
         if (labels.stream().anyMatch(label -> !label.isActive())) throw new LabelConflictException("No se pueden asignar etiquetas inactivas");
-        for (Label label : labels) ticketLabelRepository.insertManualIfAbsent(ticketId, label.getId(), actor.citizenId(), clock.instant());
+        for (Label label : labels) ticketLabelRepository.insertManualIfAbsent(ticketId, label.getId(), actor.actorId(), clock.instant());
     }
 
     @Transactional

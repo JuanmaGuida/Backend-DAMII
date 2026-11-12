@@ -144,6 +144,9 @@ class InformationProvidedNotificationIntegrationTest {
     private ModuleUser user(UUID id, ModuleRole role, String name) {
         ModuleUser user = new ModuleUser();
         user.setCitizenId(id);
+        user.setActorId(user.getCitizenId());
+        user.setActorType(com.reclamos.backend.identity.IdentityActorType.CIUDADANO);
+        user.setIdentitySource(com.reclamos.backend.identity.IdentitySource.MOCK);
         user.setFirstName(name);
         user.setLastName("Notification Test");
         user.setRole(role);

@@ -29,23 +29,23 @@ public class NotificationService {
             return Optional.empty();
         }
 
-        return persist(ticket, ticket.getCitizenId(), type, channel.get());
+        return persist(ticket, ticket.getCitizenId(), ticket.getCitizenId(), type, channel.get());
     }
 
     public Optional<NotificationLog> queueAssignedAgent(Ticket ticket, NotificationType type,
-                                                        java.util.UUID actorCitizenId) {
+                                                        java.util.UUID actorId) {
         ModuleUser agent = ticket.getAssignedAgent();
-        if (agent == null || !agent.isActive() || agent.getCitizenId().equals(actorCitizenId)) {
+        if (agent == null || !agent.isActive() || agent.getActorId().equals(actorId)) {
             return Optional.empty();
         }
         String channel = agent.getPreferredNotificationChannel();
         if (channel == null || channel.isBlank()) {
             channel = DEFAULT_IDENTIFIED_CHANNEL;
         }
-        return persist(ticket, agent.getCitizenId(), type, channel);
+        return persist(ticket, agent.getCitizenId(), agent.getActorId(), type, channel);
     }
 
-    private Optional<NotificationLog> persist(Ticket ticket, java.util.UUID recipientId,
+    private Optional<NotificationLog> persist(Ticket ticket, java.util.UUID citizenId, java.util.UUID actorId,
                                               NotificationType type, String channel) {
         if (channel.isEmpty()) {
             return Optional.empty();
@@ -53,7 +53,8 @@ public class NotificationService {
 
         NotificationLog notification = new NotificationLog();
         notification.setTicket(ticket);
-        notification.setCitizenId(recipientId);
+        notification.setCitizenId(citizenId);
+        notification.setRecipientActorId(actorId);
         notification.setType(type);
         notification.setChannel(channel);
         notification.setStatus(NotificationStatus.PENDING);

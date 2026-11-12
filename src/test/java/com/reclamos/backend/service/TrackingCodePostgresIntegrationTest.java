@@ -62,8 +62,8 @@ class TrackingCodePostgresIntegrationTest {
     @BeforeEach void setup() {
         assertThat(db.queryForObject("SELECT version()", String.class)).startsWith("PostgreSQL");
         for (UUID citizen : List.of(owner, stranger)) {
-            db.update("INSERT INTO module_users(citizen_id,first_name,last_name,role,active,last_synced_at,created_at,updated_at) "
-                    + "VALUES (?,'Tracking','Test','CITIZEN',TRUE,now(),now(),now())", citizen);
+            db.update("INSERT INTO module_users(actor_id,actor_type,identity_source,citizen_id,first_name,last_name,role,active,last_synced_at,created_at,updated_at) "
+                    + "VALUES (?, 'CIUDADANO', 'MOCK', ?,'Tracking','Test','CITIZEN',TRUE,now(),now(),now())", citizen, citizen);
         }
         category = db.queryForObject("INSERT INTO categories(name,description,active,created_at,updated_at) VALUES (?,?,true,now(),now()) RETURNING id", Long.class, marker, marker);
         subcategory = db.queryForObject("INSERT INTO subcategories(category_id,name,description,active) VALUES (?,?,?,true) RETURNING id", Long.class, category, marker, marker);

@@ -25,7 +25,7 @@ class ModuleUserServiceTest {
     @Test
     void firstLoginCreatesActiveCitizenWithExternalProfile() {
         ExternalIdentityProfile profile = profile("Agente", "de prueba", "agent@example.test", "+541100000000");
-        when(repository.findByCitizenId(CITIZEN_ID)).thenReturn(Optional.empty());
+        when(repository.findByActorId(CITIZEN_ID)).thenReturn(Optional.empty());
         when(repository.saveAndFlush(any(ModuleUser.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         ModuleUser user = service.synchronize(profile);
@@ -48,7 +48,7 @@ class ModuleUserServiceTest {
         Instant previousSync = Instant.parse("2026-09-01T12:00:00Z");
         ModuleUser existing = existingUser(previousSync);
         ExternalIdentityProfile profile = profile("Agente", "de prueba", "agent@example.test", null);
-        when(repository.findByCitizenId(CITIZEN_ID)).thenReturn(Optional.of(existing));
+        when(repository.findByActorId(CITIZEN_ID)).thenReturn(Optional.of(existing));
 
         ModuleUser result = service.synchronize(profile);
 
@@ -65,8 +65,16 @@ class ModuleUserServiceTest {
         existing.setActive(false);
         existing.setPreferredNotificationChannel("EMAIL");
         ExternalIdentityProfile changed = profile("Nombre nuevo", "Apellido nuevo", "new@example.test", "+54911");
-        when(repository.findByCitizenId(CITIZEN_ID)).thenReturn(Optional.of(existing));
-        when(repository.save(existing)).thenReturn(existing);
+        when(repository.findByActorId(CITIZEN_ID)).thenReturn(Optional.of(existing));
+        when(repository.updateExternalProfile(eq(CITIZEN_ID), any(), any(), any(), any(), any(), any(), any()))
+                .thenAnswer(invocation -> {
+                    existing.setFirstName(invocation.getArgument(2));
+                    existing.setLastName(invocation.getArgument(3));
+                    existing.setEmail(invocation.getArgument(4));
+                    existing.setPhone(invocation.getArgument(5));
+                    existing.setLastSyncedAt(invocation.getArgument(7));
+                    return 1;
+                });
 
         ModuleUser result = service.synchronize(changed);
 
@@ -79,12 +87,15 @@ class ModuleUserServiceTest {
         assertFalse(result.isActive());
         assertEquals("EMAIL", result.getPreferredNotificationChannel());
         assertEquals(NOW, result.getLastSyncedAt());
-        verify(repository).save(existing);
+        verify(repository).updateExternalProfile(eq(CITIZEN_ID), any(), any(), any(), any(), any(), any(), any());
     }
 
     private static ModuleUser existingUser(Instant lastSyncedAt) {
         ModuleUser user = new ModuleUser();
         user.setCitizenId(CITIZEN_ID);
+        user.setActorId(user.getCitizenId());
+        user.setActorType(com.reclamos.backend.identity.IdentityActorType.CIUDADANO);
+        user.setIdentitySource(com.reclamos.backend.identity.IdentitySource.MOCK);
         user.setFirstName("Agente");
         user.setLastName("de prueba");
         user.setEmail("agent@example.test");

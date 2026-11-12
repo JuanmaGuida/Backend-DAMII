@@ -54,8 +54,8 @@ class TicketReclassificationPostgresIntegrationTest {
 
     @BeforeEach void setup() {
         assertThat(db.queryForObject("SELECT version()", String.class)).startsWith("PostgreSQL");
-        for (UUID id : List.of(owner, agent)) db.update("INSERT INTO module_users(citizen_id,first_name,last_name,role,active,last_synced_at,created_at,updated_at) "
-                + "VALUES (?,'H03','H04',?,TRUE,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)", id, id.equals(agent) ? "AGENT" : "CITIZEN");
+        for (UUID id : List.of(owner, agent)) db.update("INSERT INTO module_users(actor_id,actor_type,identity_source,citizen_id,first_name,last_name,role,active,last_synced_at,created_at,updated_at) "
+                + "VALUES (?, 'CIUDADANO', 'MOCK', ?,'H03','H04',?,TRUE,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)", id, id, id.equals(agent) ? "AGENT" : "CITIZEN");
     }
 
     @AfterEach void cleanup() {

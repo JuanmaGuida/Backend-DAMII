@@ -439,6 +439,9 @@ class IndicatorRepositoryIntegrationTest {
 
         ModuleUser citizen = new ModuleUser();
         citizen.setCitizenId(citizenId);
+        citizen.setActorId(citizen.getCitizenId());
+        citizen.setActorType(com.reclamos.backend.identity.IdentityActorType.CIUDADANO);
+        citizen.setIdentitySource(com.reclamos.backend.identity.IdentitySource.MOCK);
         citizen.setFirstName("Test");
         citizen.setLastName("Citizen");
         citizen.setRole(ModuleRole.CITIZEN);

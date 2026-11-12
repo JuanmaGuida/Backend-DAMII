@@ -5,6 +5,9 @@ import java.util.UUID;
 
 public record ExternalIdentityProfile(
         String subjectId,
+        UUID actorId,
+        IdentityActorType actorType,
+        IdentitySource identitySource,
         UUID citizenId,
         String firstName,
         String lastName,
@@ -15,15 +18,14 @@ public record ExternalIdentityProfile(
 ) {
     public ExternalIdentityProfile {
         Objects.requireNonNull(subjectId, "subjectId is required");
-        Objects.requireNonNull(citizenId, "citizenId is required");
-        requireText(firstName, "firstName");
-        requireText(lastName, "lastName");
-        requireText(displayName, "displayName");
+        Objects.requireNonNull(actorType, "actorType is required").validate(actorId, citizenId);
+        Objects.requireNonNull(identitySource, "identitySource is required");
     }
 
-    private static void requireText(String value, String field) {
-        if (value == null || value.isBlank()) {
-            throw new IllegalArgumentException(field + " is required");
-        }
+    /** Legacy local mock fixtures. Real providers must supply the full external identity. */
+    public ExternalIdentityProfile(String subjectId, UUID citizenId, String firstName, String lastName,
+                                   String displayName, String email, String phone, String profileImageUrl) {
+        this(subjectId, citizenId, IdentityActorType.CIUDADANO, IdentitySource.MOCK, citizenId,
+                firstName, lastName, displayName, email, phone, profileImageUrl);
     }
 }

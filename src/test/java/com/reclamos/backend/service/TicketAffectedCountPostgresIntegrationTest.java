@@ -56,10 +56,10 @@ class TicketAffectedCountPostgresIntegrationTest {
     void setUp() {
         assertThat(db.queryForObject("SELECT version()", String.class)).startsWith("PostgreSQL");
         db.update("INSERT INTO neighborhood(id,name,population) VALUES (?,?,13912)", neighborhoodId, marker);
-        db.update("INSERT INTO module_users(citizen_id,first_name,last_name,role,active,last_synced_at,created_at,updated_at) "
-                + "VALUES (?,'H07','Agent','AGENT',TRUE,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)", agentId);
-        db.update("INSERT INTO module_users(citizen_id,first_name,last_name,role,active,last_synced_at,created_at,updated_at) "
-                + "VALUES (?,'H07','Owner','CITIZEN',TRUE,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)", ownerId);
+        db.update("INSERT INTO module_users(actor_id,actor_type,identity_source,citizen_id,first_name,last_name,role,active,last_synced_at,created_at,updated_at) "
+                + "VALUES (?, 'CIUDADANO', 'MOCK', ?,'H07','Agent','AGENT',TRUE,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)", agentId, agentId);
+        db.update("INSERT INTO module_users(actor_id,actor_type,identity_source,citizen_id,first_name,last_name,role,active,last_synced_at,created_at,updated_at) "
+                + "VALUES (?, 'CIUDADANO', 'MOCK', ?,'H07','Owner','CITIZEN',TRUE,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)", ownerId, ownerId);
         selectedType = type("0.2500");
     }
 

@@ -3,6 +3,8 @@ package com.reclamos.backend.identity.mock;
 import com.reclamos.backend.identity.ExternalAuthenticatedSession;
 import com.reclamos.backend.identity.ExternalIdentityProfile;
 import com.reclamos.backend.identity.IdentityProvider;
+import com.reclamos.backend.identity.IdentityActorType;
+import com.reclamos.backend.identity.IdentitySource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
@@ -141,8 +143,9 @@ public class MockIdentityProvider implements IdentityProvider {
 
     private static ExternalIdentityProfile profile(String subjectId, String citizenId, String firstName,
                                                    String lastName, String displayName, String email) {
-        return new ExternalIdentityProfile(subjectId, UUID.fromString(citizenId), firstName, lastName,
-                displayName, email, null, null);
+        UUID id = UUID.fromString(citizenId);
+        return new ExternalIdentityProfile(subjectId, id, IdentityActorType.CIUDADANO, IdentitySource.MOCK,
+                id, firstName, lastName, displayName, email, null, null);
     }
 
     private static MockUser user(String password, ExternalIdentityProfile identity) {

@@ -88,7 +88,7 @@ public class DuplicateTicketService {
         ticketRepository.save(duplicate);
         saveActivity(duplicate, ActivityType.DUPLICATE_LINKED, previous, TicketStatus.DUPLICATE,
                 actor.role() == com.reclamos.backend.identity.ModuleRole.ADMIN ? ActorType.ADMIN : ActorType.AGENT,
-                actor.citizenId().toString(), "Vinculado al ticket principal " + mainId, now);
+                actor.actorId().toString(), "Vinculado al ticket principal " + mainId, now);
         // estimatedAffectedCount del principal es deliberadamente inmutable: deriva de barrio x factor.
         ticketOutboxService.duplicateLinked(duplicate, now);
         return response(duplicate);

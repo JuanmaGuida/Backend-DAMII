@@ -65,8 +65,8 @@ class AttachmentUploadContentPostgresIntegrationTest {
     @BeforeEach
     void fixture() {
         owner = UUID.randomUUID();
-        db.update("INSERT INTO module_users (citizen_id,first_name,last_name,role,active,last_synced_at,created_at,updated_at) "
-                + "VALUES (?, 'H31', 'Owner', 'CITIZEN', true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)", owner);
+        db.update("INSERT INTO module_users (actor_id,actor_type,identity_source,citizen_id,first_name,last_name,role,active,last_synced_at,created_at,updated_at) "
+                + "VALUES (?, 'CIUDADANO', 'MOCK', ?, 'H31', 'Owner', 'CITIZEN', true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)", owner, owner);
         requestType = db.queryForObject("SELECT id FROM request_types WHERE code='INFORMAR_UN_BACHE'", Long.class);
         // A valid optional-evidence request, isolated by the test transaction.
         db.update("UPDATE request_types SET requires_location=false,allows_anonymous=true,base_risk='LOW',"

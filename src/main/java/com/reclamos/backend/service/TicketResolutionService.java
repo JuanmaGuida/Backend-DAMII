@@ -74,7 +74,7 @@ public class TicketResolutionService {
         requireAgent(identity);
         Ticket ticket = ticketRepository.findByIdForUpdate(ticketId)
                 .orElseThrow(() -> new ResourceNotFoundException("Ticket no encontrado"));
-        if (Objects.equals(identity.citizenId(), ticket.getCitizenId())) {
+        if (identity.ownsCitizenId(ticket.getCitizenId())) {
             throw new UnauthorizedTicketOperationException();
         }
         if (!MODULE_ID.equals(ticket.getResponsibleAreaId())) {
@@ -88,7 +88,7 @@ public class TicketResolutionService {
 
         Instant now = clock.instant();
         ActorType actorType = identity.role() == ModuleRole.ADMIN ? ActorType.ADMIN : ActorType.AGENT;
-        String actorId = identity.citizenId().toString();
+        String actorId = identity.actorId().toString();
         TicketResolution resolution = applyValidatedResolution(ticket, new ResolutionApplication(
                 request.getType(), request.getPublicMessage(), request.getInternalMessage(),
                 actorType, actorId, MODULE_ID, now, null));
@@ -144,7 +144,7 @@ public class TicketResolutionService {
     public TicketResolutionActionResponse confirm(UUID ticketId, AuthenticatedIdentity identity) {
         Ticket ticket = lockedTicket(ticketId);
         requireOwner(ticket, identity);
-        return confirm(ticket, identity.citizenId().toString());
+        return confirm(ticket, identity.actorId().toString());
     }
 
     @Transactional
@@ -177,7 +177,7 @@ public class TicketResolutionService {
                                                  AuthenticatedIdentity identity) {
         Ticket ticket = lockedTicket(ticketId);
         requireOwner(ticket, identity);
-        return reopen(ticket, request, identity.citizenId().toString());
+        return reopen(ticket, request, identity.actorId().toString());
     }
 
     @Transactional

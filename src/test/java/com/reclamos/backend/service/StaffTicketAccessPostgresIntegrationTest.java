@@ -39,7 +39,7 @@ class StaffTicketAccessPostgresIntegrationTest {
     @BeforeEach void setup() {
         assertThat(db.queryForObject("SELECT version()", String.class)).startsWith("PostgreSQL");
         for (UUID citizen : List.of(owner, staff)) {
-            db.update("INSERT INTO module_users(citizen_id,first_name,last_name,role,active,last_synced_at,created_at,updated_at) VALUES (?,'H21','Test','CITIZEN',TRUE,now(),now(),now())", citizen);
+            db.update("INSERT INTO module_users(actor_id,actor_type,identity_source,citizen_id,first_name,last_name,role,active,last_synced_at,created_at,updated_at) VALUES (?, 'CIUDADANO', 'MOCK', ?,'H21','Test','CITIZEN',TRUE,now(),now(),now())", citizen, citizen);
         }
         type = db.queryForObject("INSERT INTO request_types(code,subcategory_id,name,description,ticket_type,responsible_area_id,minimum_priority,base_risk,affected_population_factor,allows_anonymous,requires_location,active) SELECT ?,id,?,?,'REQUEST','M6','LOW','LOW',0,TRUE,FALSE,TRUE FROM subcategories ORDER BY id LIMIT 1 RETURNING id",
                 Long.class, marker, marker, marker);

@@ -747,7 +747,7 @@ class TicketServiceTest {
         when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
         when(activities.countByTicketId(ticketId)).thenReturn(0);
         when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
-        when(moduleUsers.findByCitizenId(actor.citizenId())).thenReturn(Optional.of(agentUser));
+        when(moduleUsers.findByActorId(actor.actorId())).thenReturn(Optional.of(agentUser));
 
         TicketResponse response = service.startReview(ticketId, actor);
 
@@ -782,7 +782,7 @@ class TicketServiceTest {
         when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
         when(activities.countByTicketId(ticketId)).thenReturn(0);
         when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
-        when(moduleUsers.findByCitizenId(admin.citizenId())).thenReturn(Optional.of(adminUser));
+        when(moduleUsers.findByActorId(admin.actorId())).thenReturn(Optional.of(adminUser));
 
         service.startReview(ticketId, admin);
 
@@ -803,7 +803,7 @@ class TicketServiceTest {
         agentUser.setId(42L);
         when(tickets.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
         when(locations.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
-        when(moduleUsers.findByCitizenId(actor.citizenId())).thenReturn(Optional.of(agentUser));
+        when(moduleUsers.findByActorId(actor.actorId())).thenReturn(Optional.of(agentUser));
 
         TicketResponse response = service.startReview(ticketId, actor);
 
