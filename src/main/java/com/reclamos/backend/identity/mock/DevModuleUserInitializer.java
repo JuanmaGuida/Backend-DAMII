@@ -8,6 +8,7 @@ import com.reclamos.backend.service.ModuleUserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
@@ -15,6 +16,7 @@ import java.util.Objects;
 
 @Component
 @Profile("dev")
+@ConditionalOnProperty(name = "app.identity.provider", havingValue = "MOCK", matchIfMissing = true)
 @RequiredArgsConstructor
 public class DevModuleUserInitializer implements ApplicationRunner {
     private final ModuleUserService moduleUserService;

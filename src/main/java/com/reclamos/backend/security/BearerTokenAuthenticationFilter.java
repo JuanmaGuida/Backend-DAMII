@@ -2,6 +2,7 @@ package com.reclamos.backend.security;
 
 import com.reclamos.backend.identity.AuthenticatedIdentity;
 import com.reclamos.backend.service.AuthService;
+import com.reclamos.backend.exception.IdentityAccessDeniedException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -28,6 +29,13 @@ public class BearerTokenAuthenticationFilter extends OncePerRequestFilter {
     }
 
     @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        String path = request.getRequestURI().substring(request.getContextPath().length());
+        return "POST".equals(request.getMethod()) && (path.equals("/api/auth/login")
+                || path.equals("/api/auth/refresh") || path.equals("/api/auth/logout"));
+    }
+
+    @Override
     protected void doFilterInternal(
             HttpServletRequest request,
             HttpServletResponse response,
@@ -36,7 +44,16 @@ public class BearerTokenAuthenticationFilter extends OncePerRequestFilter {
         if (SecurityContextHolder.getContext().getAuthentication() == null) {
             String token = bearerToken(request);
             if (token != null) {
-                authService.resolve(token).ifPresent(this::authenticate);
+                try {
+                    authService.resolve(token).ifPresent(this::authenticate);
+                } catch (IdentityAccessDeniedException denied) {
+                    response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                    response.setContentType("application/json");
+                    response.setCharacterEncoding("UTF-8");
+                    response.setHeader("Cache-Control", "no-store");
+                    response.getWriter().write("{\"code\":\"FORBIDDEN\",\"message\":\"La cuenta no tiene acceso habilitado a M2\"}");
+                    return;
+                }
             }
         }
 

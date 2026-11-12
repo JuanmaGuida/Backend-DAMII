@@ -7,6 +7,7 @@ import com.reclamos.backend.identity.IdentityActorType;
 import com.reclamos.backend.identity.IdentitySource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
@@ -24,6 +25,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @Component
 @Profile("dev")
+@ConditionalOnProperty(name = "app.identity.provider", havingValue = "MOCK", matchIfMissing = true)
 public class MockIdentityProvider implements IdentityProvider {
     static final String CITIZEN_USERNAME = "citizen@example.test";
     static final String AGENT_USERNAME = "agent@example.test";
