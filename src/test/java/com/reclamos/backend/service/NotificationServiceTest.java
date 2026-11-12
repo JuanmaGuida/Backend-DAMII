@@ -54,6 +54,9 @@ class NotificationServiceTest {
         Ticket ticket = ticket(false);
         ModuleUser agent = new ModuleUser();
         agent.setCitizenId(UUID.randomUUID());
+        agent.setActorId(agent.getCitizenId());
+        agent.setActorType(com.reclamos.backend.identity.IdentityActorType.CIUDADANO);
+        agent.setIdentitySource(com.reclamos.backend.identity.IdentitySource.MOCK);
         agent.setActive(true);
         agent.setPreferredNotificationChannel("PHONE");
         ticket.setAssignedAgent(agent);
@@ -72,6 +75,9 @@ class NotificationServiceTest {
         Ticket ticket = ticket(false);
         ModuleUser agent = new ModuleUser();
         agent.setCitizenId(UUID.randomUUID());
+        agent.setActorId(agent.getCitizenId());
+        agent.setActorType(com.reclamos.backend.identity.IdentityActorType.CIUDADANO);
+        agent.setIdentitySource(com.reclamos.backend.identity.IdentitySource.MOCK);
         agent.setActive(true);
         ticket.setAssignedAgent(agent);
 

@@ -89,7 +89,7 @@ public class AttachmentService {
                                            List<ValidatedAttachment> validated, Instant createdAt) {
         return storeForTicket(ticket,
                 new UploadActor(ActorType.CITIZEN,
-                        identity == null ? null : identity.citizenId().toString()),
+                        identity == null ? null : identity.actorId().toString()),
                 MessageVisibility.PUBLIC, validated, createdAt);
     }
 

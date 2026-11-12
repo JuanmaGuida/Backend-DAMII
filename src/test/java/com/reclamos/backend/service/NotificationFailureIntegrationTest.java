@@ -217,7 +217,7 @@ class NotificationFailureIntegrationTest {
 
         database.update("""
                 INSERT INTO module_users (
-                    citizen_id,
+                    actor_id,actor_type,identity_source,citizen_id,
                     first_name,
                     last_name,
                     role,
@@ -226,8 +226,7 @@ class NotificationFailureIntegrationTest {
                     created_at,
                     updated_at
                 )
-                VALUES (
-                    ?,
+                VALUES (?, 'CIUDADANO', 'MOCK', ?,
                     'Notification',
                     'Test',
                     'CITIZEN',
@@ -237,7 +236,7 @@ class NotificationFailureIntegrationTest {
                     CURRENT_TIMESTAMP
                 )
                 """,
-                citizenId
+                citizenId, citizenId
         );
 
         Instant now = Instant.now();

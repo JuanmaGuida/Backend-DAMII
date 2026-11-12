@@ -25,6 +25,10 @@ public class OwnerTrackingCodeService {
     @Transactional(readOnly = true)
     public TrackingCodeResponse get(UUID ticketId, AuthenticatedIdentity identity) {
         if (identity == null) throw new InvalidAuthenticationException();
+        if (!identity.hasCitizenIdentity()) {
+            audit(identity, ticketId, "denied");
+            throw new OwnerTrackingCodeNotFoundException();
+        }
         var ticket = tickets.findByIdAndCitizenIdAndAnonymousFalse(ticketId, identity.citizenId())
                 .orElseThrow(() -> {
                     audit(identity, ticketId, "denied");
@@ -49,6 +53,6 @@ public class OwnerTrackingCodeService {
 
     private void audit(AuthenticatedIdentity identity, UUID ticketId, String outcome) {
         AUDIT.info("operation=recover_tracking_code actor={} ticket={} outcome={}",
-                identity.citizenId(), ticketId, outcome);
+                identity.actorId(), ticketId, outcome);
     }
 }

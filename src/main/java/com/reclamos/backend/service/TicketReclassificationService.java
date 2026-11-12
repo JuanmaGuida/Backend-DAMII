@@ -53,7 +53,7 @@ public class TicketReclassificationService {
         p.setStatus(ReclassificationProposalStatus.PROPOSED);
         p.setProposedData(data.initialData(ticket, request.formData()));
         p.setPreviousClassificationSnapshot(data.snapshot(ticket));
-        p.setProposedBy(actor.citizenId().toString()); p.setCreatedAt(now); p.setUpdatedAt(now);
+        p.setProposedBy(actor.actorId().toString()); p.setCreatedAt(now); p.setUpdatedAt(now);
         data.form(p, p.getProposedData(), false);
         proposals.saveAndFlush(p);
         audit(p, actor, "RECLASSIFICATION_PROPOSED", "Propuesta de cambio al tipo " + target.getCode(),
@@ -132,7 +132,7 @@ public class TicketReclassificationService {
         milestones.reconcileReclassificationEscalation(ticket, now);
         audit(p, actor, "RECLASSIFICATION_CONFIRMED", "Clasificación confirmada: " + target.getCode(), previous, oldPriority, now,
                 previousProgress);
-        p.setStatus(ReclassificationProposalStatus.CONFIRMED); p.setConfirmedBy(actor.citizenId().toString());
+        p.setStatus(ReclassificationProposalStatus.CONFIRMED); p.setConfirmedBy(actor.actorId().toString());
         p.setResolvedAt(now); p.setUpdatedAt(now); proposals.save(p);
         Instant due = cycle.map(TicketSla::getDueAt).orElse(null);
         if (ticket.getCurrentStatus() == TicketStatus.ROUTED) outbox.routed(ticket, location, due, now, exceptional);
@@ -200,7 +200,7 @@ public class TicketReclassificationService {
         if (actor == null || actor.role() != ModuleRole.AGENT && actor.role() != ModuleRole.ADMIN) throw new UnauthorizedTicketOperationException();
         Ticket ticket = tickets.findByIdForUpdate(ticketId).orElseThrow(() -> new ResourceNotFoundException("Ticket no encontrado"));
         requireStaff(actor);
-        if (Objects.equals(ticket.getCitizenId(), actor.citizenId())) throw new UnauthorizedTicketOperationException();
+        if (actor.ownsCitizenId(ticket.getCitizenId())) throw new UnauthorizedTicketOperationException();
         return ticket;
     }
 
@@ -240,7 +240,7 @@ public class TicketReclassificationService {
         });
         a.setPreviousStatus(previous); a.setNewStatus(ticket.getCurrentStatus());
         a.setActorType(actor.role() == ModuleRole.ADMIN ? ActorType.ADMIN : ActorType.AGENT);
-        a.setActorId(actor.citizenId().toString()); a.setSourceModuleId("M2");
+        a.setActorId(actor.actorId().toString()); a.setSourceModuleId("M2");
         a.setReasonCode(reason); a.setMessage(message); a.setOccurredAt(now);
         a.setPreviousPriority(oldPriority); a.setNewPriority(oldPriority == null ? null : ticket.getCurrentPriority());
         Map<String, Object> metadata = new LinkedHashMap<>();

@@ -45,6 +45,9 @@ class TicketReopenTimelineIntegrationTest {
 
         ModuleUser user = new ModuleUser();
         user.setCitizenId(citizenId);
+        user.setActorId(user.getCitizenId());
+        user.setActorType(com.reclamos.backend.identity.IdentityActorType.CIUDADANO);
+        user.setIdentitySource(com.reclamos.backend.identity.IdentitySource.MOCK);
         user.setFirstName("Vecino");
         user.setLastName("Test");
         user.setRole(ModuleRole.CITIZEN);

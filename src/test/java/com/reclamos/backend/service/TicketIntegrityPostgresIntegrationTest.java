@@ -308,8 +308,8 @@ class TicketIntegrityPostgresIntegrationTest {
 
     private AuthenticatedIdentity identity(ModuleRole role) {
         UUID id = UUID.randomUUID();
-        database.update("INSERT INTO module_users (citizen_id,first_name,last_name,role,active,last_synced_at,created_at,updated_at) "
-                + "VALUES (?, 'H06H25', 'Test', ?, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)", id, role.name());
+        database.update("INSERT INTO module_users (actor_id,actor_type,identity_source,citizen_id,first_name,last_name,role,active,last_synced_at,created_at,updated_at) "
+                + "VALUES (?, 'CIUDADANO', 'MOCK', ?, 'H06H25', 'Test', ?, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)", id, id, role.name());
         userIds.add(id);
         return new AuthenticatedIdentity("test-" + id, id, "H06H25", "M2", role);
     }

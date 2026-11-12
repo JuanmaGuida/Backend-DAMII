@@ -56,8 +56,8 @@ class TicketCancellationPostgresIntegrationTest {
 
     @BeforeEach void setup() {
         assertThat(db.queryForObject("SELECT version()", String.class)).startsWith("PostgreSQL");
-        db.update("INSERT INTO module_users(citizen_id,first_name,last_name,role,active,last_synced_at,created_at,updated_at) "
-                + "VALUES (?,'H05','Agent','AGENT',TRUE,now(),now(),now())", agent);
+        db.update("INSERT INTO module_users(actor_id,actor_type,identity_source,citizen_id,first_name,last_name,role,active,last_synced_at,created_at,updated_at) "
+                + "VALUES (?, 'CIUDADANO', 'MOCK', ?,'H05','Agent','AGENT',TRUE,now(),now(),now())", agent, agent);
     }
     @AfterEach void cleanup() {
         for (UUID id : ids) db.update("UPDATE tickets SET main_ticket_id=NULL WHERE id=?", id);
@@ -451,7 +451,7 @@ class TicketCancellationPostgresIntegrationTest {
         return main;
     }
     UUID create(boolean anonymous,UUID citizen,String priority) {
-        if (!anonymous && !citizen.equals(agent) && citizens.add(citizen)) db.update("INSERT INTO module_users(citizen_id,first_name,last_name,role,active,last_synced_at,created_at,updated_at) VALUES (?,'H05','Citizen','CITIZEN',TRUE,now(),now(),now())",citizen);
+        if (!anonymous && !citizen.equals(agent) && citizens.add(citizen)) db.update("INSERT INTO module_users(actor_id,actor_type,identity_source,citizen_id,first_name,last_name,role,active,last_synced_at,created_at,updated_at) VALUES (?, 'CIUDADANO', 'MOCK', ?,'H05','Citizen','CITIZEN',TRUE,now(),now(),now())",citizen, citizen);
         var c=tickets.create(new CreateTicketRequest(type(priority),"H05","Cancelación",Map.of(),null),anonymous?null:identity(citizen,ModuleRole.CITIZEN),null);
         ids.add(c.ticketId()); credentials.put(c.ticketId(),c); return c.ticketId();
     }

@@ -139,6 +139,9 @@ class DuplicateCandidateRepositoryIntegrationTest {
     private ModuleUser moduleUser(String suffix) {
         ModuleUser moduleUser = new ModuleUser();
         moduleUser.setCitizenId(UUID.randomUUID());
+        moduleUser.setActorId(moduleUser.getCitizenId());
+        moduleUser.setActorType(com.reclamos.backend.identity.IdentityActorType.CIUDADANO);
+        moduleUser.setIdentitySource(com.reclamos.backend.identity.IdentitySource.MOCK);
         moduleUser.setFirstName("Duplicate");
         moduleUser.setLastName("Candidate " + suffix);
         moduleUser.setEmail("duplicate-candidate-" + suffix + "@example.test");

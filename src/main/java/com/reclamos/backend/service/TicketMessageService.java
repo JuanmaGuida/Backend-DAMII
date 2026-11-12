@@ -66,14 +66,14 @@ public class TicketMessageService {
         TicketMessage message = new TicketMessage();
         message.setTicket(ticket);
         message.setAuthorType(authorType);
-        message.setAuthorId(actor.citizenId().toString());
+        message.setAuthorId(actor.actorId().toString());
         message.setSourceModuleId(SOURCE_MODULE_ID);
         message.setVisibility(request.getVisibility());
         message.setText(request.getText().trim());
         message = messageRepository.save(message);
 
-        recordActivity(ticket, authorType, actor.citizenId().toString(), request.getVisibility(), message.getText());
-        notifyRecipients(ticket, authorType, actor.citizenId(), request.getVisibility());
+        recordActivity(ticket, authorType, actor.actorId().toString(), request.getVisibility(), message.getText());
+        notifyRecipients(ticket, authorType, actor.actorId(), request.getVisibility());
 
         return toResponse(message);
     }
@@ -166,7 +166,7 @@ public class TicketMessageService {
      * Carga el mensaje y valida que sea editable/borrable por este actor:
      * tiene que pertenecer al ticket indicado, ser un mensaje propio de M2
      * (nunca uno recibido por integración) y tener este actor como autor
-     * (authorId siempre es actor.citizenId().toString(), independientemente
+     * (authorId siempre es actor.actorId().toString(), independientemente
      * del role — ver create()). AREA_RESPONSIBLE debe conservar acceso al
      * ticket en el área actual; la autoría no permite eludir un cambio de área.
      * El propietario conserva la edición de sus mensajes ciudadanos.
@@ -182,7 +182,7 @@ public class TicketMessageService {
         }
         boolean isOwnMessage = SOURCE_MODULE_ID.equals(message.getSourceModuleId())
                 && message.getAuthorId() != null
-                && message.getAuthorId().equals(actor.citizenId().toString());
+                && message.getAuthorId().equals(actor.actorId().toString());
         if (!isOwnMessage) {
             throw new UnauthorizedTicketOperationException();
         }

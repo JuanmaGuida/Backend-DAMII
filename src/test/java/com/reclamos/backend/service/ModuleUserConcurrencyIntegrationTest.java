@@ -45,7 +45,7 @@ class ModuleUserConcurrencyIntegrationTest {
 
     @Test
     void concurrentFirstSynchronizationReturnsTheSinglePersistedModuleUserToBothCallers() throws Exception {
-        repository.findByCitizenId(CITIZEN_ID).ifPresent(repository::delete);
+        repository.findByActorId(CITIZEN_ID).ifPresent(repository::delete);
         CyclicBarrier initialReads = new CyclicBarrier(2);
         AtomicInteger reads = new AtomicInteger();
         ModuleUserRepository coordinatedRepository = mock(
@@ -55,8 +55,8 @@ class ModuleUserConcurrencyIntegrationTest {
                 initialReads.await(10, TimeUnit.SECONDS);
                 return Optional.empty();
             }
-            return repository.findByCitizenId(CITIZEN_ID);
-        }).when(coordinatedRepository).findByCitizenId(CITIZEN_ID);
+            return repository.findByActorId(CITIZEN_ID);
+        }).when(coordinatedRepository).findByActorId(CITIZEN_ID);
         ModuleUserService service = new ModuleUserService(coordinatedRepository, clock);
         ExecutorService executor = Executors.newFixedThreadPool(2);
 
@@ -78,10 +78,53 @@ class ModuleUserConcurrencyIntegrationTest {
             assertEquals("+541155555555", firstResult.getPhone());
             assertEquals(1, jdbcTemplate.queryForObject(
                     "SELECT COUNT(*) FROM module_users WHERE citizen_id=?", Integer.class, CITIZEN_ID));
-            assertEquals(firstResult.getId(), repository.findByCitizenId(CITIZEN_ID).orElseThrow().getId());
+            assertEquals(firstResult.getId(), repository.findByActorId(CITIZEN_ID).orElseThrow().getId());
         } finally {
             executor.shutdownNow();
-            repository.findByCitizenId(CITIZEN_ID).ifPresent(repository::delete);
+            repository.findByActorId(CITIZEN_ID).ifPresent(repository::delete);
+        }
+    }
+
+    @Test
+    void concurrentPartialUpdatesPreserveBothProfileChangesAndLocalAuthorization() throws Exception {
+        UUID id = UUID.randomUUID();
+        ModuleUserService initial = new ModuleUserService(repository, clock);
+        ModuleUser user = initial.synchronize(new ExternalIdentityProfile("same-sub", id,
+                "Original", "Name", null, "old@example.test", null, null));
+        user.setRole(ModuleRole.AREA_RESPONSIBLE);
+        user.setAreaId("M6");
+        user.setActive(false);
+        user.setPreferredNotificationChannel("EMAIL");
+        repository.saveAndFlush(user);
+        CyclicBarrier initialReads = new CyclicBarrier(2);
+        AtomicInteger reads = new AtomicInteger();
+        ModuleUserRepository coordinated = mock(ModuleUserRepository.class, delegatesTo(repository));
+        doAnswer(invocation -> {
+            Optional<ModuleUser> result = repository.findByActorId(id);
+            if (reads.getAndIncrement() < 2) initialReads.await(10, TimeUnit.SECONDS);
+            return result;
+        }).when(coordinated).findByActorId(id);
+        ModuleUserService service = new ModuleUserService(coordinated, clock);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<ModuleUser> first = executor.submit(() -> service.synchronize(new ExternalIdentityProfile(
+                    "same-sub", id, "Updated", null, null, null, null, null)));
+            Future<ModuleUser> second = executor.submit(() -> service.synchronize(new ExternalIdentityProfile(
+                    "same-sub", id, null, null, null, "new@example.test", null, null)));
+            first.get(15, TimeUnit.SECONDS);
+            second.get(15, TimeUnit.SECONDS);
+            ModuleUser result = repository.findByActorId(id).orElseThrow();
+            assertEquals("Updated", result.getFirstName());
+            assertEquals("Name", result.getLastName());
+            assertEquals("new@example.test", result.getEmail());
+            assertEquals(user.getId(), result.getId());
+            assertEquals(ModuleRole.AREA_RESPONSIBLE, result.getRole());
+            assertEquals("M6", result.getAreaId());
+            assertEquals("EMAIL", result.getPreferredNotificationChannel());
+            org.junit.jupiter.api.Assertions.assertFalse(result.isActive());
+        } finally {
+            executor.shutdownNow();
+            repository.findByActorId(id).ifPresent(repository::delete);
         }
     }
 }

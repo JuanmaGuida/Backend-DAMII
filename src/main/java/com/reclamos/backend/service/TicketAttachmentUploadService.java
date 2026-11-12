@@ -67,7 +67,7 @@ public class TicketAttachmentUploadService {
                 throw new UnauthorizedTicketOperationException();
             }
             return new UploadAuthorization(new AttachmentService.UploadActor(
-                    ActorType.CITIZEN, identity.citizenId().toString()));
+                    ActorType.CITIZEN, identity.actorId().toString()));
         }
         if (identity.role() == ModuleRole.CITIZEN) {
             throw new UnauthorizedTicketOperationException();
@@ -83,7 +83,7 @@ public class TicketAttachmentUploadService {
             case CITIZEN -> throw new UnauthorizedTicketOperationException();
         };
         return new UploadAuthorization(new AttachmentService.UploadActor(
-                actorType, identity.citizenId().toString()));
+                actorType, identity.actorId().toString()));
     }
 
     private List<TicketAttachmentResponse> store(Ticket ticket, AttachmentService.UploadActor actor,
