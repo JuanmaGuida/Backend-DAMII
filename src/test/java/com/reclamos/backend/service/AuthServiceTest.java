@@ -9,6 +9,7 @@ import com.reclamos.backend.identity.ModuleRole;
 import com.reclamos.backend.identity.IdentityActorType;
 import com.reclamos.backend.identity.IdentitySource;
 import com.reclamos.backend.exception.InvalidAuthenticationException;
+import com.reclamos.backend.exception.IdentityAccessDeniedException;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
@@ -87,8 +88,8 @@ class AuthServiceTest {
         when(identityProvider.resolve("employee-token")).thenReturn(Optional.of(employee));
         when(moduleUserService.synchronize(employee)).thenThrow(new InvalidAuthenticationException());
 
-        assertTrue(authService.authenticate("employee@example.test", "synthetic").isEmpty());
-        assertTrue(authService.resolve("employee-token").isEmpty());
+        assertThrows(IdentityAccessDeniedException.class, () -> authService.authenticate("employee@example.test", "synthetic"));
+        assertThrows(IdentityAccessDeniedException.class, () -> authService.resolve("employee-token"));
     }
 
     @Test

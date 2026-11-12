@@ -50,7 +50,7 @@ public class SecurityConfiguration {
                                 response, objectMapper, HttpServletResponse.SC_FORBIDDEN, FORBIDDEN_RESPONSE)))
                 .authorizeHttpRequests(authorize -> authorize
                         .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/auth/login", "/api/auth/refresh", "/api/auth/logout").permitAll()
                         .requestMatchers(HttpMethod.GET,
                                 "/swagger-ui.html",
                                 "/swagger-ui/**",

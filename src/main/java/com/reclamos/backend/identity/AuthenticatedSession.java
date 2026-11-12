@@ -6,12 +6,17 @@ import java.util.Objects;
 public record AuthenticatedSession(
         String token,
         Instant expiresAt,
-        AuthenticatedIdentity identity
+        AuthenticatedIdentity identity,
+        String refreshToken
 ) {
     public AuthenticatedSession {
         Objects.requireNonNull(token, "token is required");
         Objects.requireNonNull(expiresAt, "expiresAt is required");
         Objects.requireNonNull(identity, "identity is required");
+    }
+
+    public AuthenticatedSession(String token, Instant expiresAt, AuthenticatedIdentity identity) {
+        this(token, expiresAt, identity, null);
     }
 
     @Override
