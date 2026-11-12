@@ -52,7 +52,8 @@ class TicketOutboxServiceTest {
             mock(AttachmentRepository.class);
     private final FormValidationService formValidationService = mock(FormValidationService.class);
     private final TicketOutboxService service = new TicketOutboxService(
-            repository, Clock.fixed(NOW, ZoneOffset.UTC), attachmentReferenceService, attachmentRepository, formValidationService);
+            repository, Clock.fixed(NOW, ZoneOffset.UTC), attachmentReferenceService, attachmentRepository, formValidationService,
+            mock(com.reclamos.backend.outbox.CorePublicationPolicy.class));
 
     @BeforeEach
     void setUp() {
