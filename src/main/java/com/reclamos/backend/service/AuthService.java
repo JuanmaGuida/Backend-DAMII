@@ -45,7 +45,8 @@ public class AuthService {
             if (externalIdentity.identitySource() == IdentitySource.M1) throw new IdentityAccessDeniedException();
             return Optional.empty();
         }
-        if (!moduleUser.isActive()) {
+        if (!moduleUser.isActive() || (moduleUser.getIdentitySource() == IdentitySource.M1
+                && (moduleUser.getExternalStatus().restricted() || moduleUser.getFirstName() == null || moduleUser.getLastName() == null))) {
             if (externalIdentity.identitySource() == IdentitySource.M1) throw new IdentityAccessDeniedException();
             return Optional.empty();
         }

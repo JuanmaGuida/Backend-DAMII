@@ -1,0 +1,325 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://municipalidad-uade.example/m2/events/v1.78/updateTicketStatus.data.schema.json",
+  "title": "updateTicketStatus · data",
+  "description": "Sólo el objeto data de updateTicketStatus. Sirve para registrarlo como jsonSchema del tipo de evento en el Core (si el Core valida data) y para validar el payload por separado. Ver updateTicketStatus.schema.json para el evento completo.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "ticketId",
+    "updateType",
+    "updatedBy",
+    "updateOccurredAt"
+  ],
+  "properties": {
+    "ticketId": {
+      "$ref": "common.schema.json#/$defs/uuid"
+    },
+    "updateType": {
+      "enum": [
+        "STARTED",
+        "PROGRESS",
+        "INFORMATION_REQUIRED",
+        "RETURNED",
+        "RESOLVED",
+        "REJECTED"
+      ]
+    },
+    "publicMessage": {
+      "$ref": "common.schema.json#/$defs/textOrNull",
+      "description": "Apto para el ciudadano."
+    },
+    "internalMessage": {
+      "$ref": "common.schema.json#/$defs/textOrNull",
+      "description": "Nota privada para M2. Nunca se republica ni se muestra al ciudadano."
+    },
+    "progress": {
+      "$ref": "common.schema.json#/$defs/progress"
+    },
+    "details": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Objeto específico de cada updateType; ver allOf."
+    },
+    "attachments": {
+      "$ref": "common.schema.json#/$defs/attachments"
+    },
+    "updatedBy": {
+      "$ref": "common.schema.json#/$defs/externalActor"
+    },
+    "updateOccurredAt": {
+      "$ref": "common.schema.json#/$defs/dateTime"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "updateType": {
+            "enum": [
+              "STARTED",
+              "PROGRESS"
+            ]
+          }
+        },
+        "required": [
+          "updateType"
+        ]
+      },
+      "then": {
+        "properties": {
+          "details": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "updateType": {
+            "const": "PROGRESS"
+          }
+        },
+        "required": [
+          "updateType"
+        ]
+      },
+      "then": {
+        "description": "PROGRESS debe aportar al menos algún contenido útil: progress, publicMessage, internalMessage o attachments.",
+        "anyOf": [
+          {
+            "required": [
+              "progress"
+            ],
+            "properties": {
+              "progress": {
+                "type": "integer"
+              }
+            }
+          },
+          {
+            "required": [
+              "publicMessage"
+            ],
+            "properties": {
+              "publicMessage": {
+                "$ref": "common.schema.json#/$defs/text"
+              }
+            }
+          },
+          {
+            "required": [
+              "internalMessage"
+            ],
+            "properties": {
+              "internalMessage": {
+                "$ref": "common.schema.json#/$defs/text"
+              }
+            }
+          },
+          {
+            "required": [
+              "attachments"
+            ],
+            "properties": {
+              "attachments": {
+                "minItems": 1
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "updateType": {
+            "const": "INFORMATION_REQUIRED"
+          }
+        },
+        "required": [
+          "updateType"
+        ]
+      },
+      "then": {
+        "required": [
+          "details"
+        ],
+        "properties": {
+          "details": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "informationRequest"
+            ],
+            "properties": {
+              "informationRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "messageForCitizen"
+                ],
+                "properties": {
+                  "messageForCitizen": {
+                    "$ref": "common.schema.json#/$defs/text"
+                  },
+                  "requiredBy": {
+                    "$ref": "common.schema.json#/$defs/dateTimeOrNull"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "updateType": {
+            "const": "RETURNED"
+          }
+        },
+        "required": [
+          "updateType"
+        ]
+      },
+      "then": {
+        "required": [
+          "details"
+        ],
+        "$ref": "common.schema.json#/$defs/messageRequired",
+        "properties": {
+          "details": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "returnInfo"
+            ],
+            "properties": {
+              "returnInfo": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "reasonCode"
+                ],
+                "properties": {
+                  "reasonCode": {
+                    "enum": [
+                      "INVALID_INFORMATION",
+                      "REQUEST_TYPE_MISMATCH",
+                      "INSUFFICIENT_CONTEXT",
+                      "OTHER"
+                    ],
+                    "description": "Motivo estructurado de la devolución (guía v1.78 §8.4). Enum cerrado: INVALID_INFORMATION (datos inválidos o inconsistentes), REQUEST_TYPE_MISMATCH (el RequestType no corresponde a la gestión del área), INSUFFICIENT_CONTEXT (falta contexto para gestionar), OTHER (otro motivo, explicado en publicMessage o internalMessage)."
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "updateType": {
+            "const": "RESOLVED"
+          }
+        },
+        "required": [
+          "updateType"
+        ]
+      },
+      "then": {
+        "required": [
+          "details",
+          "publicMessage"
+        ],
+        "properties": {
+          "publicMessage": {
+            "$ref": "common.schema.json#/$defs/text"
+          },
+          "details": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "resolution"
+            ],
+            "properties": {
+              "resolution": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "type"
+                ],
+                "properties": {
+                  "type": {
+                    "enum": [
+                      "ACTION_COMPLETED",
+                      "REQUEST_FULFILLED",
+                      "INQUIRY_ANSWERED",
+                      "ACKNOWLEDGED",
+                      "NO_FURTHER_ACTION_REQUIRED"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "updateType": {
+            "const": "REJECTED"
+          }
+        },
+        "required": [
+          "updateType"
+        ]
+      },
+      "then": {
+        "required": [
+          "details"
+        ],
+        "$ref": "common.schema.json#/$defs/messageRequired",
+        "properties": {
+          "details": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "cancellation"
+            ],
+            "properties": {
+              "cancellation": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "reasonCode"
+                ],
+                "properties": {
+                  "reasonCode": {
+                    "enum": [
+                      "OUT_OF_SCOPE",
+                      "DOES_NOT_APPLY",
+                      "INVALID_REQUEST_TYPE",
+                      "INVALID_DATA",
+                      "REJECTED_BY_AREA",
+                      "OTHER"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 package com.reclamos.backend.outbox;
 
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
@@ -11,7 +11,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Component
-@ConditionalOnProperty(name = "app.core.outbox.enabled", havingValue = "true")
+@ConditionalOnExpression("${app.core.outbox.enabled:false} or ${app.core.inbox.enabled:false}")
 public final class CoreOutboxSettings {
     private final String host;
     private final int port;

@@ -2,7 +2,7 @@ package com.reclamos.backend.outbox;
 
 import com.rabbitmq.client.ConnectionFactory;
 import com.rabbitmq.client.impl.nio.NioParams;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -10,7 +10,7 @@ import javax.net.ssl.SSLContext;
 import java.security.GeneralSecurityException;
 
 @Configuration(proxyBeanMethods = false)
-@ConditionalOnProperty(name = "app.core.outbox.enabled", havingValue = "true")
+@ConditionalOnExpression("${app.core.outbox.enabled:false} or ${app.core.inbox.enabled:false}")
 public class CoreRabbitConfiguration {
     @Bean("coreOutboxConnectionFactory")
     ConnectionFactory coreOutboxConnectionFactory(CoreOutboxSettings settings) throws GeneralSecurityException {
