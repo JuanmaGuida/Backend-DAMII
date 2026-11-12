@@ -34,6 +34,7 @@ public class TicketOutboxService {
     private final AttachmentReferenceService attachmentReferenceService;
     private final AttachmentRepository attachmentRepository;
     private final FormValidationService formValidationService;
+    private final com.reclamos.backend.outbox.CorePublicationPolicy corePublicationPolicy;
 
     @Transactional(propagation = Propagation.MANDATORY)
     public void ticketCreated(Ticket ticket, TicketLocation location, List<Attachment> attachments,
@@ -260,6 +261,7 @@ public class TicketOutboxService {
         event.setPayload(payload);
         event.setStatus(OutboxStatus.PENDING);
         event.setRetryCount(0);
+        event.setAutoPublishEligible(corePublicationPolicy.eligibleNewEvent(ticket));
         outboxEventRepository.save(event);
     }
 

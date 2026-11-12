@@ -24,7 +24,8 @@ class TicketEscalationPrecedenceTest {
     private final OutboxEventRepository outbox = mock(OutboxEventRepository.class);
     private final NotificationService notifications = mock(NotificationService.class);
     private final TicketSlaMilestoneService service = new TicketSlaMilestoneService(
-            tickets, slas, activities, outbox, Clock.fixed(NOW, ZoneOffset.UTC));
+            tickets, slas, activities, outbox, Clock.fixed(NOW, ZoneOffset.UTC),
+            mock(com.reclamos.backend.outbox.CorePublicationPolicy.class));
     private Ticket ticket;
     private TicketSla sla;
 

@@ -26,6 +26,16 @@ class CoreOutboxProcessorTest {
         assertThat(processor(Set.of()).processNextApproved()).isFalse();
         verifyNoInteractions(repository, validator, publisher);
     }
+    @Test void automaticModeUsesOnlyTheDurableEligibilityQueryWithoutManualUuidSelection() {
+        var event=event("ticketCreated"); event.setAutoPublishEligible(true);
+        var policy=mock(CorePublicationPolicy.class); when(policy.automatic()).thenReturn(true);
+        when(repository.findNextAutomaticForUpdate(NOW)).thenReturn(Optional.of(event));
+        when(validator.prepare(event)).thenReturn(new byte[]{1});
+        var automatic=new CoreOutboxProcessor(repository,validator,publisher,settings(Set.of()),clock,policy);
+        assertThat(automatic.processNextApproved()).isTrue();
+        assertThat(event.getStatus()).isEqualTo(OutboxStatus.PUBLISHED);
+        verify(repository,never()).findNextApprovedForUpdate(any(),any());
+    }
     @Test void selectedButUnavailableEventDoesNothing() {
         var id = java.util.UUID.randomUUID();
         when(repository.findNextApprovedForUpdate(any(), any())).thenReturn(Optional.empty());
@@ -92,6 +102,7 @@ class CoreOutboxProcessorTest {
         return processor(Set.of(event.getEventId()));
     }
     private CoreOutboxProcessor processor(Set<java.util.UUID> approved) {
-        return new CoreOutboxProcessor(repository, validator, publisher, settings(approved), clock);
+        return new CoreOutboxProcessor(repository, validator, publisher, settings(approved), clock,
+                mock(CorePublicationPolicy.class));
     }
 }

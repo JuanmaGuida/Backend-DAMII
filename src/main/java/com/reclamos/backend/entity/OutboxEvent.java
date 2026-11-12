@@ -25,8 +25,8 @@ import java.util.UUID;
 
 /**
  * Outbox transaccional (Entidades v1.3 §19.2). Se inserta en la MISMA
- * transacción que el cambio de negocio. El publicador Core sólo procesa
- * eventId explícitamente aprobados; el historial permanece intacto.
+ * transacción que el cambio de negocio. La publicación requiere aprobación
+ * manual o elegibilidad automática persistida al crear el evento.
  */
 @Entity
 @Table(
@@ -74,6 +74,9 @@ public class OutboxEvent {
 
     @Column(name = "retry_count", nullable = false)
     private int retryCount = 0;
+
+    @Column(name = "auto_publish_eligible", nullable = false, updatable = false)
+    private boolean autoPublishEligible;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)

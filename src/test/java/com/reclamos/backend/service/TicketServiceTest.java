@@ -137,6 +137,8 @@ class TicketServiceTest {
     @InjectMocks
     private TicketService service;
 
+    @Mock private com.reclamos.backend.outbox.CorePublicationPolicy corePublicationPolicy;
+
     private RequestType requestType;
 
     private final UUID ticketId = UUID.randomUUID();
@@ -152,7 +154,7 @@ class TicketServiceTest {
                         new SlaCalculationService(mock(SlaPolicyRepository.class))));
         org.springframework.test.util.ReflectionTestUtils.setField(service, "milestoneService",
                 new TicketSlaMilestoneService(tickets, mock(TicketSlaRepository.class), activities,
-                        mock(OutboxEventRepository.class), Clock.fixed(NOW, java.time.ZoneOffset.UTC)));
+                        mock(OutboxEventRepository.class), Clock.fixed(NOW, java.time.ZoneOffset.UTC), corePublicationPolicy));
         lenient().when(risks.calculateRisk(any(Ticket.class))).thenAnswer(invocation -> {
             Ticket t = invocation.getArgument(0);
             Risk base = t.getRequestType().getBaseRisk();

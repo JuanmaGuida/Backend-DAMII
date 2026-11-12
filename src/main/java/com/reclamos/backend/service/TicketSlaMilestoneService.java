@@ -27,6 +27,7 @@ public class TicketSlaMilestoneService {
     private final TicketActivityRepository activityRepository;
     private final OutboxEventRepository outboxEventRepository;
     private final Clock clock;
+    private final com.reclamos.backend.outbox.CorePublicationPolicy corePublicationPolicy;
     private NotificationService notificationService;
 
     @Autowired
@@ -216,6 +217,7 @@ public class TicketSlaMilestoneService {
         Map<String, Object> payload = OutgoingEventEnvelope.create(eventId, "ticketUpdated", updatedAt, data);
 
         OutboxEvent event = new OutboxEvent();
+        event.setAutoPublishEligible(corePublicationPolicy.eligibleNewEvent(ticket));
         event.setEventId(eventId);
         event.setEventType("ticketUpdated");
         event.setUpdateType(TicketUpdatedType.ESCALATION_CHANGED);

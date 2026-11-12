@@ -26,7 +26,8 @@ class TicketClosedContractTest {
         var now = Instant.parse("2026-10-20T12:00:00Z");
         var service = new TicketOutboxService(repository, Clock.fixed(now, ZoneOffset.UTC),
                 mock(AttachmentReferenceService.class),
-                mock(AttachmentRepository.class), mock(FormValidationService.class));
+                mock(AttachmentRepository.class), mock(FormValidationService.class),
+                mock(com.reclamos.backend.outbox.CorePublicationPolicy.class));
         var ticket = new Ticket();
         ticket.setId(UUID.randomUUID());
         ticket.setPublicId("TK-2026-000123");

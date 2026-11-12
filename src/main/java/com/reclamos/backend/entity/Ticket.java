@@ -102,6 +102,9 @@ public class Ticket {
     @Column(name = "is_anonymous", nullable = false)
     private boolean anonymous;
 
+    @Column(name = "core_origin_verified", nullable = false, updatable = false)
+    private boolean coreOriginVerified;
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(
             name = "request_type_id",

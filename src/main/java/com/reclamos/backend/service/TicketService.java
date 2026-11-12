@@ -90,6 +90,7 @@ public class TicketService {
     private final PriorityCalculationService priorityCalculationService;
     private final TicketSlaMilestoneService milestoneService;
     private final TicketOutboxService ticketOutboxService;
+    private final com.reclamos.backend.outbox.CorePublicationPolicy corePublicationPolicy;
     private final TrackingCodeService trackingCodeService;
     private final TrackingCodeCipher trackingCodeCipher;
     private final TicketPublicIdGenerator publicIdGenerator;
@@ -155,6 +156,7 @@ public class TicketService {
         ticket.setTrackingCodeHash(trackingHash);
         ticket.setCitizenId(anonymous ? null : identity.citizenId());
         ticket.setAnonymous(anonymous);
+        ticket.setCoreOriginVerified(corePublicationPolicy.realOriginForNewTicket(ticket));
         ticket.setAnonymousAccessPasswordHash(anonymous ? anonymousCredential.passwordHash() : null);
         ticket.setAnonymousContactChannel(anonymousContact == null ? null : anonymousContact.channel());
         ticket.setAnonymousContactValue(anonymousContact == null ? null : anonymousContact.value());

@@ -29,7 +29,8 @@ class ResolutionSlaMilestoneServiceTest {
     private final TicketActivityRepository activities = mock(TicketActivityRepository.class);
     private final OutboxEventRepository outbox = mock(OutboxEventRepository.class);
     private final TicketSlaMilestoneService service = new TicketSlaMilestoneService(
-            tickets, slas, activities, outbox, Clock.fixed(PROCESSED, ZoneOffset.UTC));
+            tickets, slas, activities, outbox, Clock.fixed(PROCESSED, ZoneOffset.UTC),
+            mock(com.reclamos.backend.outbox.CorePublicationPolicy.class));
     private Ticket ticket;
     private TicketSla sla;
 

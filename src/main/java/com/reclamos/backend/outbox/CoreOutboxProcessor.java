@@ -20,16 +20,19 @@ public class CoreOutboxProcessor {
     private final CoreEventPublisher publisher;
     private final CoreOutboxSettings settings;
     private final Clock clock;
+    private final CorePublicationPolicy policy;
 
     public CoreOutboxProcessor(OutboxEventRepository events, OutgoingEventValidator validator,
-                              CoreEventPublisher publisher, CoreOutboxSettings settings, Clock clock) {
+                              CoreEventPublisher publisher, CoreOutboxSettings settings, Clock clock, CorePublicationPolicy policy) {
         this.events = events; this.validator = validator; this.publisher = publisher; this.settings = settings; this.clock = clock;
+        this.policy = policy;
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW, timeout = 60)
     public boolean processNextApproved() {
-        if (settings.approvedEventIds().isEmpty()) return false;
-        var event = events.findNextApprovedForUpdate(settings.approvedEventIds(), clock.instant()).orElse(null);
+        if (!policy.automatic() && settings.approvedEventIds().isEmpty()) return false;
+        var event = (policy.automatic() ? events.findNextAutomaticForUpdate(clock.instant())
+                : events.findNextApprovedForUpdate(settings.approvedEventIds(), clock.instant())).orElse(null);
         if (event == null) return false;
         if (event.getRetryCount() >= settings.maxAttempts()) {
             event.setStatus(OutboxStatus.FAILED);
