@@ -41,41 +41,11 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
-/**
- * Story 3.4 / DDA2-62: aplica la MISMA lógica de transición canónica que va
- * a usar la integración real de updateTicketStatus (Eventos §8), a partir
- * de un envelope ya deserializado. Hoy la única forma de llegar a este
- * service es el simulador interno ({@code TicketSimulationController});
- * cuando exista un consumidor real de bus de eventos, va a llamar a este
- * mismo método sin tener que tocar la lógica de negocio.
- * <p>
- * {@code applyUpdate} valida el {@link UpdateTicketStatusEnvelope} completo
- * ANTES de tocar el Ticket (§23.3 paso 1), deduplica por eventId contra
- * {@link InboxEventRepository} (§19.1) y valida producer.moduleId contra
- * responsibleAreaId (§23.3 paso 2) antes de aplicar cualquier transición.
- * <p>
- * La resolución delega sus efectos de dominio en {@link TicketResolutionService}
- * para que el simulador y un futuro consumer real compartan exactamente el
- * mismo caso de uso. Los hechos externos no se replican como ticketUpdated
- * (Eventos v1.76 §10, NO-ECHO); se conservan todos sus efectos locales.
- * <p>
- * NO IMPLEMENTADO A PROPÓSITO: si el envelope es válido pero el payload de
- * negocio no lo es para ese updateType (ej. falta details.returnInfo), la
- * excepción revierte toda la transacción — incluida cualquier fila de
- * InboxEvent que se hubiera intentado insertar en el medio — así que no
- * queda un registro FAILED auditable de ese intento. Un reintento con el
- * mismo eventId ya corregido simplemente se vuelve a procesar de cero, lo
- * cual es el comportamiento correcto para un productor que corrige y
- * reenvía; lo que no existe es un historial de los intentos rechazados con
- * ese eventId. Habría que persistir el InboxEvent(FAILED) en una
- * transacción separada (REQUIRES_NEW) para lograr eso.
- */
+/** Shared canonical transitions. Simulator and Core adapt their own envelopes before entry. */
 @Service
 @RequiredArgsConstructor
 public class TicketStatusUpdateService {
 
-    private static final String SUPPORTED_SPEC_VERSION = "1.0";
-    private static final String SUPPORTED_EVENT_TYPE = "updateTicketStatus";
     private static final String LOCAL_MODULE_ID = "M2";
     private static final Set<String> RETURN_REASON_CODES = Set.of(
             "INVALID_INFORMATION", "REQUEST_TYPE_MISMATCH", "INSUFFICIENT_CONTEXT", "OTHER");
@@ -99,15 +69,17 @@ public class TicketStatusUpdateService {
     }
     @Transactional(noRollbackFor = com.reclamos.backend.exception.CancellationScopeReviewRequiredException.class)
     public TicketResponse applyUpdate(UUID ticketId, UpdateTicketStatusEnvelope envelope) {
-        validateEnvelope(ticketId, envelope);
-        // The DEV input contract has no correlationId. Preserve its absence while
-        // identifying the real cause of independent M2 facts (for example SLA escalation).
-        try (var ignored = OutgoingEventEnvelope.incoming(null, envelope.eventId())) {
-            return applyValidatedUpdate(ticketId, envelope);
+        return applyCoreUpdate(SimulatorStatusUpdateAdapter.adapt(ticketId, envelope));
+    }
+
+    @Transactional(noRollbackFor = com.reclamos.backend.exception.CancellationScopeReviewRequiredException.class)
+    public TicketResponse applyCoreUpdate(TicketStatusUpdateCommand command) {
+        try (var ignored = OutgoingEventEnvelope.incoming(command.correlationId(), command.eventId())) {
+            return applyValidatedUpdate(command.ticketId(), command);
         }
     }
 
-    private TicketResponse applyValidatedUpdate(UUID ticketId, UpdateTicketStatusEnvelope envelope) {
+    private TicketResponse applyValidatedUpdate(UUID ticketId, TicketStatusUpdateCommand envelope) {
         Optional<InboxEvent> existing = inboxEventRepository.findById(envelope.eventId());
         if (existing.isPresent()) {
             return handleDuplicateEvent(ticketId, existing.get());
@@ -133,9 +105,9 @@ public class TicketStatusUpdateService {
             return handleDuplicateEvent(ticketId, committedWhileWaiting.get());
         }
 
-        if (!envelope.producer().moduleId().equalsIgnoreCase(ticket.getResponsibleAreaId())) {
+        if (!envelope.producerModuleId().equalsIgnoreCase(ticket.getResponsibleAreaId())) {
             throw new InvalidTicketRequestException(
-                    "producer.moduleId ('" + envelope.producer().moduleId()
+                    "producer.moduleId ('" + envelope.producerModuleId()
                             + "') no coincide con el área responsable del ticket ('"
                             + ticket.getResponsibleAreaId() + "')");
         }
@@ -266,11 +238,11 @@ public class TicketStatusUpdateService {
             ticketResolutionService.applyValidatedResolution(ticket,
                     new TicketResolutionService.ResolutionApplication(
                             resolutionType, request.publicMessage(), request.internalMessage(),
-                            actorType, request.updatedBy().id(), envelope.producer().moduleId(),
+                            actorType, request.updatedBy().id(), envelope.producerModuleId(),
                             request.updateOccurredAt(), envelope.eventId()));
         } else if (request.updateType() == UpdateTicketStatusType.INFORMATION_REQUIRED) {
             UpdateTicketStatusRequest.InformationRequest informationRequest = request.details().informationRequest();
-            informationRequestService.requestInformationFromExternal(ticket, envelope.producer().moduleId(),
+            informationRequestService.requestInformationFromExternal(ticket, envelope.producerModuleId(),
                     actorType, request.updatedBy().id(), informationRequest.messageForCitizen(),
                     request.internalMessage(), request.updateOccurredAt(), informationRequest.requiredBy(),
                     envelope.eventId());
@@ -289,7 +261,7 @@ public class TicketStatusUpdateService {
             cancellation.setInternalMessage(request.internalMessage());
             cancellation.setCancelledByType(actorType);
             cancellation.setCancelledById(request.updatedBy().id());
-            cancellation.setCancelledByModuleId(envelope.producer().moduleId());
+            cancellation.setCancelledByModuleId(envelope.producerModuleId());
             cancellation.setCancelledAt(request.updateOccurredAt());
             cancellationRepository.save(cancellation);
         } else {
@@ -302,7 +274,7 @@ public class TicketStatusUpdateService {
             ticketRepository.save(ticket);
         }
 
-        String sourceModuleId = envelope.producer().moduleId();
+        String sourceModuleId = envelope.producerModuleId();
         if (!isBlank(request.publicMessage())) {
             messageRepository.save(buildMessage(ticket, MessageVisibility.PUBLIC, request.publicMessage(),
                     actorType, request.updatedBy().id(), sourceModuleId));
@@ -335,28 +307,6 @@ public class TicketStatusUpdateService {
     }
 
     /**
-     * Eventos §23.3 paso 1: valida el envelope común ANTES de tocar el
-     * Ticket. specVersion/eventType/subject inválidos son rechazo puro de
-     * request (400), sin ningún efecto de negocio.
-     */
-    private void validateEnvelope(UUID ticketId, UpdateTicketStatusEnvelope envelope) {
-        if (!SUPPORTED_SPEC_VERSION.equals(envelope.specVersion())) {
-            throw new InvalidTicketRequestException(
-                    "specVersion no soportado: " + envelope.specVersion() + " (se espera " + SUPPORTED_SPEC_VERSION + ")");
-        }
-        if (!SUPPORTED_EVENT_TYPE.equals(envelope.eventType())) {
-            throw new InvalidTicketRequestException(
-                    "eventType inválido: se esperaba '" + SUPPORTED_EVENT_TYPE + "'");
-        }
-        String expectedSubject = "tickets/" + ticketId;
-        if (!expectedSubject.equals(envelope.subject())) {
-            throw new InvalidTicketRequestException(
-                    "subject ('" + envelope.subject() + "') no coincide con el ticket de la URL ('"
-                            + expectedSubject + "')");
-        }
-    }
-
-    /**
      * Eventos v1.6 §12 "Errores y reintentos": eventId ya procesado se
      * confirma como éxito idempotente sin repetir efectos. Un eventId que ya
      * falló antes se rechaza de nuevo con el mismo motivo, en vez de
@@ -374,11 +324,11 @@ public class TicketStatusUpdateService {
         return toResponse(ticket, location);
     }
 
-    private InboxEvent toInboxEvent(UpdateTicketStatusEnvelope envelope) {
+    private InboxEvent toInboxEvent(TicketStatusUpdateCommand envelope) {
         InboxEvent event = new InboxEvent();
         event.setEventId(envelope.eventId());
         event.setEventType(envelope.eventType());
-        event.setProducerModuleId(envelope.producer().moduleId());
+        event.setProducerModuleId(envelope.producerModuleId());
         Instant now = Instant.now();
         event.setReceivedAt(now);
         event.setProcessedAt(now);

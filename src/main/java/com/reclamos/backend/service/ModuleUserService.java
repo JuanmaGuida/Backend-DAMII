@@ -19,7 +19,10 @@ public class ModuleUserService {
     private final ModuleUserRepository moduleUserRepository;
     private final Clock clock;
 
+    @org.springframework.transaction.annotation.Transactional
     public ModuleUser synchronize(ExternalIdentityProfile externalIdentity) {
+        // Also serialize MOCK first logins, since creation now shares the synchronization transaction.
+        moduleUserRepository.lockActorIdentity(externalIdentity.actorId());
         return moduleUserRepository.findByActorId(externalIdentity.actorId())
                 .map(user -> updateProfileIfChanged(user, externalIdentity))
                 .orElseGet(() -> createOrFind(externalIdentity));
@@ -42,6 +45,9 @@ public class ModuleUserService {
         user.setAreaId(null);
         user.setActive(true);
         user.setLastSyncedAt(clock.instant());
+        if (externalIdentity.identitySource() == com.reclamos.backend.identity.IdentitySource.M1) {
+            user.setExternalProfileUpdatedAt(clock.instant());
+        }
         try {
             return moduleUserRepository.saveAndFlush(user);
         } catch (DataIntegrityViolationException exception) {
@@ -65,7 +71,10 @@ public class ModuleUserService {
                 || changed(user.getEmail(), externalIdentity.email())
                 || changed(user.getPhone(), externalIdentity.phone())
                 || changed(user.getProfileImageUrl(), externalIdentity.profileImageUrl());
-        if (!changed) {
+        boolean m1ProfileObservation = externalIdentity.identitySource() == com.reclamos.backend.identity.IdentitySource.M1
+                && (!missing(externalIdentity.firstName()) || !missing(externalIdentity.lastName())
+                    || !missing(externalIdentity.email()) || !missing(externalIdentity.phone()) || !missing(externalIdentity.profileImageUrl()));
+        if (!changed && !m1ProfileObservation) {
             return user;
         }
         moduleUserRepository.updateExternalProfile(user.getActorId(), user.getIdentitySource(),

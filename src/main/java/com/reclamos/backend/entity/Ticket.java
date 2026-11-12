@@ -180,6 +180,9 @@ public class Ticket {
     @Column(name = "status_changed_at", nullable = false)
     private Instant statusChangedAt;
 
+    @Column(name = "external_update_at")
+    private Instant externalUpdateAt;
+
     @Column(name = "resolution_confirmation_due_at")
     private Instant resolutionConfirmationDueAt;
 

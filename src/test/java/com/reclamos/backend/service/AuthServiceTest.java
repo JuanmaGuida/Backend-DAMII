@@ -117,4 +117,29 @@ class AuthServiceTest {
         assertEquals(ModuleRole.AREA_RESPONSIBLE, identity.role());
         assertEquals("M6", identity.areaId());
     }
+
+    @Test
+    void m1ExternalRestrictionsRejectLoginRefreshAndExistingBearerWithoutDisablingLocalUser() {
+        var profile = new ExternalIdentityProfile("14", CITIZEN_ID, IdentityActorType.CIUDADANO,
+                IdentitySource.M1, CITIZEN_ID, null, null, null, null, null, null);
+        var session = new ExternalAuthenticatedSession("token", Instant.now(), profile);
+        when(identityProvider.authenticate("m1", "synthetic")).thenReturn(Optional.of(session));
+        when(identityProvider.refresh("refresh")).thenReturn(Optional.of(session));
+        when(identityProvider.resolve("token")).thenReturn(Optional.of(profile));
+        ModuleUser local = localUser(true); local.setIdentitySource(IdentitySource.M1);
+        when(moduleUserService.synchronize(profile)).thenReturn(local);
+        for (var status : new com.reclamos.backend.identity.ExternalCitizenStatus[]{
+                com.reclamos.backend.identity.ExternalCitizenStatus.BLOCKED,
+                com.reclamos.backend.identity.ExternalCitizenStatus.DECEASED}) {
+            local.setExternalStatus(status);
+            assertThrows(IdentityAccessDeniedException.class, () -> authService.authenticate("m1", "synthetic"));
+            assertThrows(IdentityAccessDeniedException.class, () -> authService.refresh("refresh"));
+            assertThrows(IdentityAccessDeniedException.class, () -> authService.resolve("token"));
+            assertTrue(local.isActive());
+        }
+        local.setExternalStatus(com.reclamos.backend.identity.ExternalCitizenStatus.UNKNOWN);
+        assertTrue(authService.resolve("token").isPresent());
+        local.setFirstName(null);
+        assertThrows(IdentityAccessDeniedException.class, () -> authService.resolve("token"));
+    }
 }

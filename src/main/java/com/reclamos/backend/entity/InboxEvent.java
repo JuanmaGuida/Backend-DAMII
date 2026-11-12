@@ -54,4 +54,7 @@ public class InboxEvent {
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb")
     private Map<String, Object> payload;
+
+    @Column(name = "payload_hash", length = 64)
+    private String payloadHash;
 }

@@ -39,10 +39,10 @@ public class ModuleUser {
     @Column(name = "citizen_id", updatable = false, unique = true)
     private UUID citizenId;
 
-    @Column(name = "first_name", nullable = false, length = 100)
+    @Column(name = "first_name", length = 100)
     private String firstName;
 
-    @Column(name = "last_name", nullable = false, length = 100)
+    @Column(name = "last_name", length = 100)
     private String lastName;
 
     @Column(length = 254)
@@ -67,6 +67,19 @@ public class ModuleUser {
     @Column(nullable = false)
     private boolean active = true;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "external_status", nullable = false, length = 20)
+    private com.reclamos.backend.identity.ExternalCitizenStatus externalStatus = com.reclamos.backend.identity.ExternalCitizenStatus.UNKNOWN;
+
+    @Column(name = "external_profile_updated_at")
+    private Instant externalProfileUpdatedAt;
+
+    @Column(name = "external_status_updated_at")
+    private Instant externalStatusUpdatedAt;
+
+    @Column(name = "external_address_updated_at")
+    private Instant externalAddressUpdatedAt;
+
     @Column(name = "last_synced_at", nullable = false)
     private Instant lastSyncedAt;
 
@@ -85,7 +98,9 @@ public class ModuleUser {
             throw new IllegalArgumentException("El tipo y origen de la identidad son obligatorios");
         }
         actorType.validate(actorId, citizenId);
-        if (firstName == null || firstName.isBlank() || lastName == null || lastName.isBlank()) {
+        boolean partialM1Citizen = identitySource == IdentitySource.M1 && actorType == IdentityActorType.CIUDADANO;
+        if ((!partialM1Citizen && (firstName == null || lastName == null))
+                || (firstName != null && firstName.isBlank()) || (lastName != null && lastName.isBlank())) {
             throw new IllegalArgumentException("El nombre y apellido del usuario son obligatorios");
         }
         if (role == null) {

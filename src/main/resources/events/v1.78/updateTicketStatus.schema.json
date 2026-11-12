@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://municipalidad-uade.example/m2/events/v1.78/updateTicketStatus.schema.json",
+  "title": "updateTicketStatus",
+  "description": "Módulo operativo → M2 (y M1 para ticketId ya conocidos). El productor informa un HECHO operativo; M2 lo consume, valida y decide la transición canónica. No contiene newStatus ni previousStatus (Eventos v1.78 §8).",
+  "allOf": [
+    {
+      "$ref": "envelope.schema.json"
+    }
+  ],
+  "required": [
+    "data"
+  ],
+  "properties": {
+    "eventType": {
+      "const": "updateTicketStatus"
+    },
+    "eventVersion": {
+      "const": "1.0"
+    },
+    "data": {
+      "$ref": "updateTicketStatus.data.schema.json"
+    },
+    "sourceModule": {
+      "not": {
+        "const": "atencion-ciudadana"
+      },
+      "description": "Lo publica un módulo operativo, nunca M2. Debe corresponder al responsibleAreaId del ticket (lo valida M2 contra su base)."
+    }
+  }
+}
