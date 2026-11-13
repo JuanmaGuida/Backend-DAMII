@@ -10,6 +10,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataAccessResourceFailureException;
@@ -117,10 +118,10 @@ class CoreInboxPostgresIntegrationTest {
         var wrong=track(status(ticket.getId(),"STARTED")); wrong.put("sourceModule","ciudadanos");
         processAndAssert(wrong,"IGNORED_PRODUCER"); assertThat(count("ticket_activities",ticket)).isZero();
     }
-    @ParameterizedTest @ValueSource(strings={"STARTED","PROGRESS","INFORMATION_REQUIRED","RETURNED","RESOLVED","REJECTED"})
-    void m3FactsWithEvidenceCommitAtomicallyWithoutEchoOrDuplicateReferences(String type) {
-        Ticket ticket=m3Ticket(type.equals("PROGRESS")?TicketStatus.IN_PROGRESS:TicketStatus.ROUTED);
-        var event=m3Event(ticket,type);
+    @ParameterizedTest @CsvSource({"M3,STARTED","M3,PROGRESS","M3,INFORMATION_REQUIRED","M3,RETURNED","M3,RESOLVED","M3,REJECTED","M4,STARTED","M4,PROGRESS","M4,INFORMATION_REQUIRED","M4,RETURNED","M4,RESOLVED","M4,REJECTED"})
+    void externalFactsWithEvidenceCommitAtomicallyWithoutEchoOrDuplicateReferences(String area,String type) {
+        Ticket ticket=externalTicket(area,type.equals("PROGRESS")?TicketStatus.IN_PROGRESS:TicketStatus.ROUTED);
+        var event=externalEvent(area,ticket,type);
         if(type.equals("PROGRESS")) data(event).remove("progress"); // evidence alone is meaningful
         evidence(event);
         processor.process(bytes(event)); processor.process(bytes(event));
@@ -133,7 +134,7 @@ class CoreInboxPostgresIntegrationTest {
         };
         assertThat(tickets.findById(ticket.getId()).orElseThrow().getCurrentStatus()).isEqualTo(expected);
         var ref=db.queryForMap("SELECT * FROM external_attachment_references WHERE ticket_id=?",ticket.getId());
-        assertThat(ref).containsEntry("external_event_id",id(event)).containsEntry("source_module_id","M3")
+        assertThat(ref).containsEntry("external_event_id",id(event)).containsEntry("source_module_id",area)
                 .containsEntry("update_type",type).containsEntry("visibility","INTERNAL").containsEntry("size_bytes",null);
         assertThat(count("attachments",ticket)).isZero(); // never masquerades as a local file
         assertThat(count("ticket_activities",ticket)).isEqualTo(1);
@@ -141,16 +142,18 @@ class CoreInboxPostgresIntegrationTest {
         if(type.equals("RESOLVED")) assertThat(count("ticket_resolutions",ticket)).isEqualTo(1);
         assertThat(inbox.findById(id(event)).orElseThrow().getPayload().toString()).doesNotContain("external.invalid");
     }
-    @Test void m3CanResolveDirectlyFromInProgressWithPhotoAndPreservePublicMessage() {
-        Ticket ticket=m3Ticket(TicketStatus.IN_PROGRESS); var event=m3Event(ticket,"RESOLVED"); evidence(event);
+    @ParameterizedTest @ValueSource(strings={"M3","M4"})
+    void externalCanResolveDirectlyFromInProgressWithPhotoAndPreservePublicMessage(String area) {
+        Ticket ticket=externalTicket(area,TicketStatus.IN_PROGRESS); var event=externalEvent(area,ticket,"RESOLVED"); evidence(event);
         processor.process(bytes(event));
         assertThat(tickets.findById(ticket.getId()).orElseThrow().getCurrentStatus()).isEqualTo(TicketStatus.RESOLVED);
         assertThat(count("external_attachment_references",ticket)).isEqualTo(1);
         assertThat(db.queryForObject("SELECT text FROM ticket_messages WHERE ticket_id=? AND visibility='PUBLIC'",String.class,ticket.getId()))
                 .isEqualTo("Trabajo terminado");
     }
-    @Test void invalidExternalReferenceRollsBackAndPermanentBusinessRejectionIsAcked() throws Exception {
-        Ticket ticket=m3Ticket(TicketStatus.ROUTED); var event=m3Event(ticket,"RESOLVED"); evidence(event);
+    @ParameterizedTest @ValueSource(strings={"M3","M4"})
+    void invalidExternalReferenceRollsBackAndPermanentBusinessRejectionIsAcked(String area) throws Exception {
+        Ticket ticket=externalTicket(area,TicketStatus.ROUTED); var event=externalEvent(area,ticket,"RESOLVED"); evidence(event);
         ((ObjectNode)data(event).path("attachments").get(0)).put("url","file:///etc/passwd");
         Channel channel=mock(Channel.class);
         new CoreEventConsumer(mock(ConnectionFactory.class),processor,1).receive(channel,mock(Connection.class),
@@ -162,8 +165,9 @@ class CoreInboxPostgresIntegrationTest {
         assertThat(count("ticket_resolutions",ticket)).isZero();
         assertThat(tickets.findById(ticket.getId()).orElseThrow().getCurrentStatus()).isEqualTo(TicketStatus.ROUTED);
     }
-    @Test void m3EvidenceAndBusinessEffectsRollbackTogetherWhenInboxCommitFails() {
-        Ticket ticket=m3Ticket(TicketStatus.ROUTED); var event=m3Event(ticket,"RESOLVED"); evidence(event);
+    @ParameterizedTest @ValueSource(strings={"M3","M4"})
+    void externalEvidenceAndBusinessEffectsRollbackTogetherWhenInboxCommitFails(String area) {
+        Ticket ticket=externalTicket(area,TicketStatus.ROUTED); var event=externalEvent(area,ticket,"RESOLVED"); evidence(event);
         InboxEventRepository failing=mock(InboxEventRepository.class,delegatesTo(inbox));
         doThrow(new DataAccessResourceFailureException("synthetic")).when(failing).saveAndFlush(any());
         var failed=new CoreInboxProcessor(validator,failing,tickets,updates,projection,clock);
@@ -173,19 +177,21 @@ class CoreInboxPostgresIntegrationTest {
         assertThat(count("ticket_resolutions",ticket)).isZero();
         processor.process(bytes(event)); assertThat(count("external_attachment_references",ticket)).isEqualTo(1);
     }
-    @Test void otherAreaAndOldRoutingEpochCannotModifyM3Ticket() {
-        Ticket ticket=m3Ticket(TicketStatus.ROUTED);
+    @ParameterizedTest @ValueSource(strings={"M3","M4"})
+    void otherAreaAndOldRoutingEpochCannotModifyExternalTicket(String area) {
+        Ticket ticket=externalTicket(area,TicketStatus.ROUTED);
         processAndAssert(track(status(ticket.getId(),"STARTED")),"IGNORED_OTHER_AREA");
-        var old=m3Event(ticket,"STARTED"); data(old).put("updateOccurredAt","2026-09-01T00:00:00Z");
+        var old=externalEvent(area,ticket,"STARTED"); data(old).put("updateOccurredAt","2026-09-01T00:00:00Z");
         processAndAssert(old,"IGNORED_OLD_UPDATE");
         assertThat(count("ticket_activities",ticket)).isZero();
     }
-    @Test void m3InformationRequestPausesSlaAndCitizenAnswerPublishesInformationProvided() {
-        Ticket ticket=m3Ticket(TicketStatus.IN_PROGRESS);
+    @ParameterizedTest @ValueSource(strings={"M3","M4"})
+    void externalInformationRequestPausesSlaAndCitizenAnswerPublishesInformationProvided(String area) {
+        Ticket ticket=externalTicket(area,TicketStatus.IN_PROGRESS);
         Instant now=clock.instant();
         transactions.executeWithoutResult(tx -> sla.startInitialResolutionCycle(
                 tickets.findById(ticket.getId()).orElseThrow(),now.minusSeconds(60)).orElseThrow());
-        var event=m3Event(ticket,"INFORMATION_REQUIRED"); data(event).put("updateOccurredAt",now.toString());
+        var event=externalEvent(area,ticket,"INFORMATION_REQUIRED"); data(event).put("updateOccurredAt",now.toString());
         details(event).withObject("/informationRequest").put("requiredBy",now.plusSeconds(3600).toString());
         processor.process(bytes(event)); processor.process(bytes(event));
         assertThat(count("information_requests",ticket)).isEqualTo(1);
@@ -197,13 +203,61 @@ class CoreInboxPostgresIntegrationTest {
         assertThat(db.queryForObject("SELECT paused_at IS NULL FROM ticket_sla WHERE ticket_id=?",Boolean.class,ticket.getId())).isTrue();
         assertThat(db.queryForObject("SELECT update_type FROM outbox_events WHERE ticket_id=?",String.class,ticket.getId()))
                 .isEqualTo("INFORMATION_PROVIDED");
-        assertThat(db.queryForObject("SELECT payload->'data'->>'responsibleAreaId' FROM outbox_events WHERE ticket_id=?",String.class,ticket.getId())).isEqualTo("M3");
+        assertThat(db.queryForObject("SELECT payload->'data'->>'responsibleAreaId' FROM outbox_events WHERE ticket_id=?",String.class,ticket.getId())).isEqualTo(area);
     }
-    private Ticket m3Ticket(TicketStatus state) {
-        Ticket ticket=ticket(state); ticket.setResponsibleAreaId("M3"); return tickets.saveAndFlush(ticket);
+    @Test void m4OriginalResolvedFixtureCommitsContractualMessageAndActor() throws Exception {
+        Ticket ticket=externalTicket("M4",TicketStatus.ROUTED);
+        var event=(ObjectNode)JSON.readTree(java.nio.file.Files.readAllBytes(java.nio.file.Path.of(
+                "docs/integrations/examples/m4/resolved-original.json")));
+        event.put("eventId",UUID.randomUUID().toString());
+        data(event).put("ticketId",ticket.getId().toString());
+        // Original contractual date is later than this disposable ticket's routing epoch.
+        track(event); processor.process(bytes(event)); processor.process(bytes(event));
+        assertThat(tickets.findById(ticket.getId()).orElseThrow().getCurrentStatus()).isEqualTo(TicketStatus.RESOLVED);
+        assertThat(count("ticket_resolutions",ticket)).isEqualTo(1);
+        assertThat(count("external_attachment_references",ticket)).isZero();
+        assertThat(count("outbox_events",ticket)).isZero();
+        assertThat(db.queryForObject("SELECT text FROM ticket_messages WHERE ticket_id=? AND visibility='PUBLIC'",String.class,ticket.getId()))
+                .isEqualTo(data(event).get("publicMessage").asText());
+        assertThat(db.queryForObject("SELECT actor_id FROM ticket_activities WHERE ticket_id=?",String.class,ticket.getId()))
+                .isEqualTo(data(event).path("updatedBy").path("id").asText());
     }
-    private ObjectNode m3Event(Ticket ticket,String type) {
-        var event=track(status(ticket.getId(),type)); event.put("sourceModule","obras"); return event;
+    @Test void m4AckObservesCommittedEvidenceAndPrematureProgressNacks() throws Exception {
+        Ticket ticket=externalTicket("M4",TicketStatus.ROUTED);
+        var event=externalEvent("M4",ticket,"RESOLVED"); evidence(event);
+        Channel channel=mock(Channel.class);
+        var consumer=new CoreEventConsumer(mock(ConnectionFactory.class),processor,1);
+        doAnswer(i -> {
+            assertThat(inbox.existsById(id(event))).isTrue();
+            assertThat(count("external_attachment_references",ticket)).isEqualTo(1);
+            assertThat(tickets.findById(ticket.getId()).orElseThrow().getCurrentStatus()).isEqualTo(TicketStatus.RESOLVED);
+            return null;
+        }).when(channel).basicAck(17,false);
+        consumer.receive(channel,mock(Connection.class),new Delivery(new Envelope(17,false,"",""),new AMQP.BasicProperties(),bytes(event)));
+        verify(channel).basicAck(17,false);
+        var premature=externalEvent("M4",externalTicket("M4",TicketStatus.ROUTED),"PROGRESS");
+        consumer.receive(channel,mock(Connection.class),new Delivery(new Envelope(18,false,"",""),new AMQP.BasicProperties(),bytes(premature)));
+        verify(channel).basicNack(18,false,false);
+        assertThat(inbox.existsById(id(premature))).isFalse();
+    }
+    @Test void m4EventCollisionAndOldProgressCannotOverwriteCommittedFact() {
+        Ticket ticket=externalTicket("M4",TicketStatus.ROUTED);
+        var event=externalEvent("M4",ticket,"STARTED"); processor.process(bytes(event));
+        data(event).put("publicMessage","Changed");
+        assertThatThrownBy(() -> processor.process(bytes(event))).hasMessage("EVENT_ID_COLLISION");
+        var old=externalEvent("M4",ticket,"PROGRESS"); data(old).put("updateOccurredAt","2026-09-30T12:00:00Z");
+        processAndAssert(old,"IGNORED_OLD_UPDATE");
+        processAndAssert(externalEvent("M4",ticket,"STARTED"),"IGNORED_STATE_CONFLICT");
+        Ticket other=ticket(TicketStatus.ROUTED);
+        processAndAssert(externalEvent("M4",other,"STARTED"),"IGNORED_OTHER_AREA");
+        assertThat(count("ticket_activities",ticket)).isEqualTo(1);
+        assertThat(count("outbox_events",ticket)).isZero();
+    }
+    private Ticket externalTicket(String area,TicketStatus state) {
+        Ticket ticket=ticket(state); ticket.setResponsibleAreaId(area); return tickets.saveAndFlush(ticket);
+    }
+    private ObjectNode externalEvent(String area,Ticket ticket,String type) {
+        var event=track(status(ticket.getId(),type)); event.put("sourceModule",area.equals("M4")?"habilitaciones":"obras"); return event;
     }
     private void evidence(ObjectNode event) {
         data(event).putArray("attachments").addObject().put("fileName","obra.jpg")

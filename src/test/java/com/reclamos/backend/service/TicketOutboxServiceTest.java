@@ -24,6 +24,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.ArgumentCaptor;
 
 import java.math.BigDecimal;
@@ -103,10 +104,10 @@ class TicketOutboxServiceTest {
         });
     }
 
-    @ParameterizedTest @ValueSource(booleans={false,true})
+    @ParameterizedTest @CsvSource({"M3,false","M3,true","M4,false","M4,true"})
     @SuppressWarnings("unchecked")
-    void m3RoutingHasContractSnapshotAndReassignmentWithoutCreatingATicketEvent(boolean reassignment) {
-        Ticket ticket=ticket(false,"M3",TicketStatus.ROUTED);
+    void externalRoutingHasContractSnapshotAndReassignmentWithoutCreatingATicketEvent(String area,boolean reassignment) {
+        Ticket ticket=ticket(false,area,TicketStatus.ROUTED);
         service.routed(ticket,null,RESOLUTION_DUE,NOW,reassignment);
         var captor=ArgumentCaptor.forClass(OutboxEvent.class); verify(repository).save(captor.capture());
         var event=captor.getValue(); EventEnvelopeContractAssertions.assertFullEventValid(event.getPayload());
@@ -114,9 +115,35 @@ class TicketOutboxServiceTest {
         assertThat(event.getPayload()).containsEntry("sourceModule","atencion-ciudadana").containsEntry("eventVersion","1.0");
         var data=(Map<String,Object>)event.getPayload().get("data");
         assertThat(data).containsEntry("ticketId",ticket.getId()).containsEntry("publicId",ticket.getPublicId())
-                .containsEntry("responsibleAreaId","M3").containsEntry("updateType","ROUTED");
+                .containsEntry("responsibleAreaId",area).containsEntry("updateType","ROUTED");
         var routing=(Map<String,Object>)((Map<String,Object>)data.get("details")).get("routing");
         assertThat(routing).containsEntry("reassignment",reassignment).containsEntry("resolutionDueAt",RESOLUTION_DUE.toString());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void m4RoutedSnapshotPreservesOriginalPdfBusinessFields() throws Exception {
+        var json=new com.fasterxml.jackson.databind.ObjectMapper();
+        var original=json.readTree(java.nio.file.Path.of("docs/integrations/examples/m4/routed-original.json").toFile());
+        var expected=original.path("data"); var routing=expected.path("details").path("routing");
+        Ticket ticket=ticket(false,"M4",TicketStatus.ROUTED);
+        ticket.setId(UUID.fromString(expected.path("ticketId").asText()));
+        ticket.setPublicId(expected.path("publicId").asText());
+        ticket.setCitizenId(UUID.fromString(expected.path("citizenId").asText()));
+        ticket.setCurrentPriority(Priority.HIGH);
+        ticket.setSummary(routing.path("summary").asText()); ticket.setDescription(routing.path("description").asText());
+        ticket.getRequestType().setName(routing.path("requestType").asText());
+        ticket.getRequestType().getSubcategory().setName(routing.path("subcategory").asText());
+        ticket.getRequestType().getSubcategory().getCategory().setName(routing.path("category").asText());
+        org.mockito.Mockito.when(formValidationService.snapshotAnswers(ticket)).thenReturn(Map.of());
+        service.routed(ticket,null,RESOLUTION_DUE,Instant.parse("2026-10-20T12:10:00Z"));
+        var captor=ArgumentCaptor.forClass(OutboxEvent.class); verify(repository).save(captor.capture());
+        var payload=captor.getValue().getPayload(); EventEnvelopeContractAssertions.assertFullEventValid(payload);
+        var actual=json.valueToTree(payload).path("data");
+        for(String field:List.of("ticketId","publicId","citizenId","isAnonymous","responsibleAreaId","updateType","currentStatus","currentPriority"))
+            assertThat(actual.path(field)).isEqualTo(expected.path(field));
+        routing.fields().forEachRemaining(entry -> assertThat(actual.path("details").path("routing").path(entry.getKey())).isEqualTo(entry.getValue()));
+        assertThat(captor.getValue().getEventType()).isEqualTo("ticketUpdated");
     }
 
     @Test
@@ -165,10 +192,10 @@ class TicketOutboxServiceTest {
         });
     }
 
-    @Test
+    @ParameterizedTest @ValueSource(strings={"M6","M4"})
     @SuppressWarnings("unchecked")
-    void routedContainsCompleteAuthorizedSnapshotAndIncrementalEventsDoNotReplayEvidence() {
-        Ticket ticket = ticket(true, "M6", TicketStatus.ROUTED);
+    void routedContainsCompleteAuthorizedSnapshotAndIncrementalEventsDoNotReplayEvidence(String area) {
+        Ticket ticket = ticket(true, area, TicketStatus.ROUTED);
         ticket.setFormTemplateId(999L);
         ticket.setTrackingCodeHash("private-tracking");
         ticket.setAnonymousContactValue("private@example.test");
@@ -222,7 +249,7 @@ class TicketOutboxServiceTest {
         var routing = (Map<String, Object>) ((Map<String, Object>) data.get("details")).get("routing");
         assertThat(data).containsEntry("isAnonymous", true).containsEntry("citizenId", null)
                 .containsEntry("currentStatus", "ROUTED").containsEntry("currentPriority", "CRITICAL")
-                .containsEntry("progress", (short) 25).containsEntry("responsibleAreaId", "M6");
+                .containsEntry("progress", (short) 25).containsEntry("responsibleAreaId", area);
         assertThat(routing).containsOnlyKeys("requestType", "category", "subcategory", "ticketType",
                         "summary", "description", "formData", "location", "resolutionDueAt", "escalation", "reassignment")
                 .containsEntry("ticketType", "COMPLAINT").containsEntry("summary", ticket.getSummary())
@@ -303,12 +330,12 @@ class TicketOutboxServiceTest {
         });
     }
 
-    @Test
-    void informationProvidedPublishesForIdentifiedAndForAnonymousExternalRequestOnly() {
+    @ParameterizedTest @ValueSource(strings={"M6","M4"})
+    void informationProvidedPublishesForIdentifiedAndForAnonymousExternalRequestOnly(String area) {
         service.informationProvided(ticket(false, "M2", TicketStatus.IN_PROGRESS), "Dato", false, NOW);
-        service.informationProvided(ticket(false, "M6", TicketStatus.IN_PROGRESS), "Dato", true, NOW);
-        service.informationProvided(ticket(true, "M6", TicketStatus.IN_PROGRESS), "Dato", true, NOW);
-        service.informationProvided(ticket(true, "M6", TicketStatus.IN_PROGRESS), "Dato", false, NOW);
+        service.informationProvided(ticket(false, area, TicketStatus.IN_PROGRESS), "Dato", true, NOW);
+        service.informationProvided(ticket(true, area, TicketStatus.IN_PROGRESS), "Dato", true, NOW);
+        service.informationProvided(ticket(true, area, TicketStatus.IN_PROGRESS), "Dato", false, NOW);
         service.informationProvided(ticket(true, "M2", TicketStatus.IN_PROGRESS), "Dato", false, NOW);
 
         var captor = ArgumentCaptor.forClass(OutboxEvent.class);
@@ -316,9 +343,9 @@ class TicketOutboxServiceTest {
         captor.getAllValues().forEach(event -> EventEnvelopeContractAssertions.assertFullEventValid(event.getPayload()));
     }
 
-    @Test
-    void informationProvidedContainsRestoredTicketTextAndPublicAttachmentWithoutPrivateActorMetadata() {
-        Ticket ticket = ticket(true, "M6", TicketStatus.IN_PROGRESS);
+    @ParameterizedTest @ValueSource(strings={"M6","M4"})
+    void informationProvidedContainsRestoredTicketTextAndPublicAttachmentWithoutPrivateActorMetadata(String area) {
+        Ticket ticket = ticket(true, area, TicketStatus.IN_PROGRESS);
         Attachment attachment = new Attachment();
         attachment.setTicket(ticket);
         attachment.setFileName("proof.pdf");
@@ -345,7 +372,7 @@ class TicketOutboxServiceTest {
         Map<String, Object> data = (Map<String, Object>) event.getPayload().get("data");
         assertThat(data).containsEntry("citizenId", null)
                 .containsEntry("isAnonymous", true)
-                .containsEntry("responsibleAreaId", "M6")
+                .containsEntry("responsibleAreaId", area)
                 .containsEntry("currentStatus", "IN_PROGRESS")
                 .containsEntry("currentPriority", "MEDIUM")
                 .containsEntry("updatedAt", NOW.toString());
@@ -368,25 +395,25 @@ class TicketOutboxServiceTest {
         EventEnvelopeContractAssertions.assertFullEventInvalid(event.getPayload());
     }
 
-    @Test
-    void reopenedPublishesForIdentifiedOrExternalAnonymous() {
+    @ParameterizedTest @ValueSource(strings={"M6","M4"})
+    void reopenedPublishesForIdentifiedOrExternalAnonymous(String area) {
         service.reopened(ticket(false, "M2", TicketStatus.IN_PROGRESS), "Sigue", NOW);
-        service.reopened(ticket(false, "M6", TicketStatus.IN_PROGRESS), "Sigue", NOW);
-        service.reopened(ticket(true, "M6", TicketStatus.IN_PROGRESS), "Sigue", NOW);
+        service.reopened(ticket(false, area, TicketStatus.IN_PROGRESS), "Sigue", NOW);
+        service.reopened(ticket(true, area, TicketStatus.IN_PROGRESS), "Sigue", NOW);
         service.reopened(ticket(true, "M2", TicketStatus.IN_PROGRESS), "Sigue", NOW);
 
         verify(repository, times(3)).save(any());
     }
 
-    @Test
-    void cancelledPublishesLegitimatePostRoutingExternalFactButSkipsEchoAndSelfManagedAnonymousFact() {
+    @ParameterizedTest @ValueSource(strings={"M6","M4"})
+    void cancelledPublishesLegitimatePostRoutingExternalFactButSkipsEchoAndSelfManagedAnonymousFact(String area) {
         service.cancelled(ticket(false, "M2", TicketStatus.CANCELLED),
                 CancellationReasonCode.INFO_TIMEOUT, "Cancelado", true, NOW);
-        service.cancelled(ticket(false, "M6", TicketStatus.CANCELLED),
+        service.cancelled(ticket(false, area, TicketStatus.CANCELLED),
                 CancellationReasonCode.OUT_OF_SCOPE, "Cancelado", false, NOW);
-        service.cancelled(ticket(true, "M6", TicketStatus.CANCELLED),
+        service.cancelled(ticket(true, area, TicketStatus.CANCELLED),
                 CancellationReasonCode.INFO_TIMEOUT, "Cancelado", true, NOW);
-        service.cancelled(ticket(true, "M6", TicketStatus.CANCELLED),
+        service.cancelled(ticket(true, area, TicketStatus.CANCELLED),
                 CancellationReasonCode.OUT_OF_SCOPE, "Cancelado", false, NOW);
         service.cancelled(ticket(true, "M2", TicketStatus.CANCELLED),
                 CancellationReasonCode.INFO_TIMEOUT, "Cancelado", true, NOW);
@@ -397,9 +424,9 @@ class TicketOutboxServiceTest {
                 assertThat(event.getUpdateType()).isEqualTo(TicketUpdatedType.CANCELLED));
     }
 
-    @Test
-    void resolvedNeverEchoesAnAnonymousExternalFact() {
-        service.resolved(ticket(true, "M6", TicketStatus.RESOLVED),
+    @ParameterizedTest @ValueSource(strings={"M6","M4"})
+    void resolvedNeverEchoesAnAnonymousExternalFact(String area) {
+        service.resolved(ticket(true, area, TicketStatus.RESOLVED),
                 ResolutionType.ACTION_COMPLETED, "Resuelto", NOW);
 
         verify(repository, never()).save(any());

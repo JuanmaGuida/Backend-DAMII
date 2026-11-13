@@ -78,7 +78,7 @@ class TicketReclassificationPostgresIntegrationTest {
         for (UUID id : List.of(owner, agent)) db.update("DELETE FROM module_users WHERE citizen_id=?", id);
     }
 
-    @ParameterizedTest @ValueSource(strings = {"M2", "M6"})
+    @ParameterizedTest @ValueSource(strings = {"M2", "M6", "M4"})
     void apiInitialReadyHasNoPrematureEffectsAndConfirmationIsIdempotent(String area) throws Exception {
         UUID id = create(false, "CRITICAL"); Long target = type(area, "LOW", true);
         var before = classification(id); var firstResponse = firstResponse(id);
@@ -104,8 +104,9 @@ class TicketReclassificationPostgresIntegrationTest {
         validateEvents(id);
     }
 
-    @Test void structuredApiPreservesFalseZeroAndExplicitUnknownAndRequiresStaffConfirmation() throws Exception {
-        UUID id = create(false, "LOW"); Long target = type("M6", "LOW", true); Long template = template(target);
+    @ParameterizedTest @ValueSource(strings={"M6","M4"})
+    void structuredApiPreservesFalseZeroAndExplicitUnknownAndRequiresStaffConfirmation(String area) throws Exception {
+        UUID id = create(false, "LOW"); Long target = type(area, "LOW", true); Long template = template(target);
         field(template, "flag", "BOOLEAN", false, "{}"); field(template, "number", "NUMBER", false, "{\"min\":0,\"max\":10}");
         field(template, "unknown", "SELECT", true, "{\"options\":[{\"value\":\"yes\",\"label\":\"Sí\"}]}");
         var before = classification(id);
@@ -129,7 +130,9 @@ class TicketReclassificationPostgresIntegrationTest {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("ANSWERED"));
         assertThat(ticketStatus(id)).isEqualTo("IN_REVIEW"); assertThat(classification(id)).isEqualTo(before);
         assertThat(db.queryForObject("SELECT paused_at IS NULL FROM ticket_sla WHERE ticket_id=? AND sla_type='RESOLUTION'", Boolean.class, id)).isTrue();
+        assertThat(events(id, "ROUTED")).isZero();
         proposals.confirm(id, p.id(), staff());
+        assertThat(events(id, "ROUTED")).isEqualTo(1);
         assertThat(db.queryForObject("SELECT form_data::text FROM tickets WHERE id=?", String.class, id))
                 .contains("false", "0", "null");
         var info = outbox.findAll().stream().filter(e -> e.getTicket().getId().equals(id))
@@ -142,7 +145,7 @@ class TicketReclassificationPostgresIntegrationTest {
         validateEvents(id);
     }
 
-    @ParameterizedTest @ValueSource(strings = {"M2", "M6"})
+    @ParameterizedTest @ValueSource(strings = {"M2", "M6", "M4"})
     void exceptionalReturnReplacesOnlyActiveCycleAndPublishesConfirmedSnapshot(String area) {
         UUID id = create(false, "LOW"); tickets.routeToArea(id, staff());
         var oldCycle = cycles(id).getFirst(); var first = firstResponse(id);
@@ -156,7 +159,7 @@ class TicketReclassificationPostgresIntegrationTest {
                 .containsEntry("due_at", oldCycle.get("due_at")).containsEntry("status", "STOPPED");
         assertThat(cycles.getLast().get("completed_at")).isNull(); assertThat(firstResponse(id)).isEqualTo(first);
         assertThat(ticketStatus(id)).isEqualTo(area.equals("M2") ? "IN_PROGRESS" : "ROUTED");
-        if (area.equals("M6")) assertThat(db.queryForObject("SELECT payload->'data'->'details'->'routing'->>'reassignment' FROM outbox_events WHERE ticket_id=? AND update_type='ROUTED' ORDER BY id DESC LIMIT 1", String.class, id)).isEqualTo("true");
+        if (!area.equals("M2")) assertThat(db.queryForObject("SELECT payload->'data'->'details'->'routing'->>'reassignment' FROM outbox_events WHERE ticket_id=? AND update_type='ROUTED' ORDER BY id DESC LIMIT 1", String.class, id)).isEqualTo("true");
         else assertThat(events(id, "ROUTED")).isEqualTo(1); // Only the original external assignment.
         validateEvents(id);
     }

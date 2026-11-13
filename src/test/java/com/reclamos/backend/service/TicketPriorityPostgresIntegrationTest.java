@@ -81,8 +81,10 @@ class TicketPriorityPostgresIntegrationTest {
         validateEvents(id);
     }
 
-    @Test void periodicIncreaseIsIdempotentDoesNotTouchDeadlinesOrPublishPriorityEvent() {
+    @ParameterizedTest @ValueSource(strings={"M6","M4"})
+    void periodicIncreaseIsIdempotentDoesNotTouchDeadlinesOrPublishPriorityEvent(String area) {
         UUID id=create(false,type("MEDIUM","LOW","1"));
+        db.update("UPDATE tickets SET responsible_area_id=? WHERE id=?",area,id);
         List<Map<String,Object>> before=cycles(id);
         // Catalog population/factor changes must not replace the persisted ticket estimate during a scan.
         db.update("UPDATE request_types SET affected_population_factor=0 WHERE id=(SELECT request_type_id FROM tickets WHERE id=?)",id);

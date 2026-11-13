@@ -30,13 +30,15 @@ class ExternalAttachmentServiceTest {
                 .isInstanceOf(InvalidTicketRequestException.class).hasMessage("Referencia de evidencia externa inválida");
         verifyNoInteractions(refs);
     }
-    @Test void preservesOptionalSizeAndRecordsEventProvenanceWithInternalVisibility() {
+    @ParameterizedTest @ValueSource(strings={"M3","M4"})
+    void preservesOptionalSizeAndRecordsEventProvenanceWithInternalVisibility(String area) {
+        ticket.setResponsibleAreaId(area);
         var attachments=List.of(new UpdateTicketStatusRequest.ExternalAttachment("photo.jpg","image/jpeg","https://example.test/photo",null));
         service.validate(attachments);
         UUID event=UUID.randomUUID(); var when=Instant.parse("2026-10-01T12:00:00Z");
         var request=new UpdateTicketStatusRequest(ticketId,UpdateTicketStatusType.PROGRESS,null,null,null,null,
                 new UpdateTicketStatusRequest.Actor("SYSTEM",null),when,attachments);
-        service.record(ticket,event,"M3",request);
+        service.record(ticket,event,area,request);
         var captor=org.mockito.ArgumentCaptor.forClass(ExternalAttachmentReference.class);
         verify(refs).save(captor.capture());
         var ref=captor.getValue(); assertThat(ref.getExternalEventId()).isEqualTo(event);
@@ -44,12 +46,14 @@ class ExternalAttachmentServiceTest {
         assertThat(ref.getUpdateType()).isEqualTo(UpdateTicketStatusType.PROGRESS);
         assertThat(ref.getOccurredAt()).isEqualTo(when);
     }
-    @Test void ownerSeesOnlyPublicReferencesAndStaffMustHaveTicketScope() {
+    @ParameterizedTest @ValueSource(strings={"M3","M4"})
+    void ownerSeesOnlyPublicReferencesAndStaffMustHaveTicketScope(String area) {
+        ticket.setResponsibleAreaId(area);
         var internal=reference(MessageVisibility.INTERNAL); var publicRef=reference(MessageVisibility.PUBLIC);
         when(refs.findAllByTicket_IdOrderByOccurredAtAscIdAsc(ticketId)).thenReturn(List.of(internal,publicRef));
         assertThat(service.list(ticketId,identity(owner,ModuleRole.CITIZEN,null))).hasSize(1);
         assertThat(service.list(ticketId,identity(UUID.randomUUID(),ModuleRole.AGENT,null))).hasSize(2);
-        assertThat(service.list(ticketId,identity(UUID.randomUUID(),ModuleRole.AREA_RESPONSIBLE,"M3"))).hasSize(2);
+        assertThat(service.list(ticketId,identity(UUID.randomUUID(),ModuleRole.AREA_RESPONSIBLE,area))).hasSize(2);
         assertThatThrownBy(() -> service.list(ticketId,identity(UUID.randomUUID(),ModuleRole.AREA_RESPONSIBLE,"M6")))
                 .isInstanceOf(UnauthorizedTicketOperationException.class);
         assertThatThrownBy(() -> service.list(ticketId,identity(UUID.randomUUID(),ModuleRole.CITIZEN,null)))
