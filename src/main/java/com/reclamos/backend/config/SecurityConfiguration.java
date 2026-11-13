@@ -101,6 +101,12 @@ public class SecurityConfiguration {
                         // alcanza con estar autenticado — el scoping por citizenId lo
                         // hace TicketService.listMyTickets, no un rol puntual acá.
                         .requestMatchers(HttpMethod.GET, "/api/me/tickets").authenticated()
+                        // Ayuda con IA: la clasificación es pública (el reclamo puede ser anónimo) y
+                        // limitada por cliente; el análisis de un ticket es sólo para staff y el acceso
+                        // real al ticket lo valida TicketService.requireStaffReadAccess.
+                        .requestMatchers(HttpMethod.POST, "/api/ai/classify").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/staff/tickets/*/ai-insights")
+                        .hasAnyRole("AGENT", "AREA_RESPONSIBLE", "ADMIN")
                         .requestMatchers(HttpMethod.POST, "/api/tickets").permitAll()
                         // La bandeja global y las acciones de triage son administrativas.
                         // AREA_RESPONSIBLE conserva lectura acotada en /api/staff/tickets/*,

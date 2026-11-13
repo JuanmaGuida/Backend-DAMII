@@ -78,6 +78,15 @@ public class GlobalExceptionHandler {
                 .body(new ApiErrorResponse(TooManyTrackingAttemptsException.CODE, exception.getMessage()));
     }
 
+    @ExceptionHandler(com.reclamos.backend.ai.TooManyAiRequestsException.class)
+    public ResponseEntity<ApiErrorResponse> handleTooManyAiRequests(
+            com.reclamos.backend.ai.TooManyAiRequestsException exception) {
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header(HttpHeaders.RETRY_AFTER, String.valueOf(exception.getRetryAfterSeconds()))
+                .cacheControl(CacheControl.noStore())
+                .body(new ApiErrorResponse(com.reclamos.backend.ai.TooManyAiRequestsException.CODE, exception.getMessage()));
+    }
+
     @ExceptionHandler(InvalidAnonymousTicketCredentialsException.class)
     public ResponseEntity<ApiErrorResponse> handleInvalidAnonymousCredentials(
             InvalidAnonymousTicketCredentialsException exception) {

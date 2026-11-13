@@ -27,6 +27,16 @@ public interface RequestTypeRepository extends JpaRepository<RequestType, Long> 
     @Query("select rt from RequestType rt where rt.subcategory.id = :subcategoryId order by rt.id")
     List<RequestType> findBySubcategoryIdOrderByIdAscForUpdate(@Param("subcategoryId") Long subcategoryId);
 
+    // Catálogo vigente con su clasificación, para ofrecérselo a la IA de sugerencia de tipo.
+    @Query("""
+            select rt from RequestType rt
+            join fetch rt.subcategory s
+            join fetch s.category c
+            where rt.active = true and s.active = true and c.active = true
+            order by rt.id
+            """)
+    List<RequestType> findAllActiveWithClassification();
+
     boolean existsByCodeIgnoreCase(String code);
 
     boolean existsByCodeIgnoreCaseAndIdNot(String code, Long id);
