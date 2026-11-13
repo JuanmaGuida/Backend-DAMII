@@ -9,6 +9,8 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -22,6 +24,8 @@ class GeminiLlmClientTest {
     final AtomicReference<String> requestPath = new AtomicReference<>();
     final AtomicReference<String> apiKeyHeader = new AtomicReference<>();
     final AtomicReference<String> requestBody = new AtomicReference<>();
+    // Un proveedor lento se simula reteniendo la respuesta hasta que termine el test, sin esperas de tiempo fijo.
+    final CountDownLatch release = new CountDownLatch(1);
 
     @BeforeEach
     void setUp() throws IOException {
@@ -35,18 +39,21 @@ class GeminiLlmClientTest {
 
     @AfterEach
     void tearDown() {
+        release.countDown();
         server.stop(0);
     }
 
-    void respond(int status, String body, long delayMillis) {
+    void respond(int status, String body, boolean hold) {
         server.createContext("/", exchange -> {
             requestPath.set(exchange.getRequestURI().toString());
             apiKeyHeader.set(exchange.getRequestHeaders().getFirst("x-goog-api-key"));
             requestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
-            try {
-                Thread.sleep(delayMillis);
-            } catch (InterruptedException interrupted) {
-                Thread.currentThread().interrupt();
+            if (hold) {
+                try {
+                    release.await(10, TimeUnit.SECONDS);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                }
             }
             byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().add("Content-Type", "application/json");
@@ -63,7 +70,7 @@ class GeminiLlmClientTest {
 
     @Test
     void sendsTheKeyInAHeaderAndReturnsTheModelText() {
-        respond(200, "{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"{\\\"ok\\\":true}\"}]}}]}", 0);
+        respond(200, "{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"{\\\"ok\\\":true}\"}]}}]}", false);
 
         String text = client.complete("instrucciones fijas", "contenido");
 
@@ -75,7 +82,7 @@ class GeminiLlmClientTest {
 
     @Test
     void providerErrorIsReportedWithoutLeakingTheKeyOrContent() {
-        respond(500, "{\"error\":\"boom\"}", 0);
+        respond(500, "{\"error\":\"boom\"}", false);
 
         assertThatThrownBy(() -> client.complete("s", "contenido secreto"))
                 .isInstanceOf(LlmUnavailableException.class)
@@ -86,14 +93,14 @@ class GeminiLlmClientTest {
 
     @Test
     void slowProviderTimesOut() {
-        respond(200, "{}", 1500);
+        respond(200, "{}", true);
 
         assertThatThrownBy(() -> client.complete("s", "u")).isInstanceOf(LlmUnavailableException.class);
     }
 
     @Test
     void answerWithoutTextIsUnavailable() {
-        respond(200, "{\"candidates\":[]}", 0);
+        respond(200, "{\"candidates\":[]}", false);
 
         assertThatThrownBy(() -> client.complete("s", "u")).isInstanceOf(LlmUnavailableException.class);
     }
