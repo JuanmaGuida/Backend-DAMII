@@ -11,6 +11,7 @@ tags:
   - name: Catalog
   - name: Catalog Admin
   - name: Tickets
+  - name: AI
   - name: Indicators
   - name: Information Requests
   - name: Tracking
@@ -1526,6 +1527,92 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+  /api/ai/classify:
+    post:
+      tags: [ AI ]
+      summary: Revisar un reclamo con IA y sugerir el tipo de trámite
+      description: |
+        Ayuda opcional para quien está cargando un reclamo: compara lo escrito con el catálogo vigente y
+        sugiere el tipo más adecuado. Es público porque el reclamo puede ser anónimo y está limitado por
+        cliente (429). Nunca modifica ni crea datos. El texto se envía al proveedor de IA sin mails,
+        teléfonos, documentos ni enlaces. El id sugerido siempre pertenece al catálogo vigente.
+        Si la IA está apagada, lenta o caída responde 200 con `source=UNAVAILABLE` y la pantalla usa su
+        búsqueda sin IA.
+      operationId: classifyTicketText
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AiClassifyRequest'
+      responses:
+        '200':
+          description: Sugerencia, o `source=UNAVAILABLE` si hay que usar la alternativa sin IA.
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [ no-store ] }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiClassifyResponse'
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '429':
+          description: Demasiadas consultas desde el mismo origen.
+          headers:
+            Retry-After:
+              description: Segundos hasta que se puede volver a intentar.
+              schema: { type: integer, minimum: 1 }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /api/staff/tickets/{ticketId}/ai-insights:
+    post:
+      tags: [ AI ]
+      summary: Resumen, pista de urgencia y duplicados probables de un ticket
+      description: |
+        Ayuda para quien revisa un ticket. AGENT y ADMIN acceden a cualquier ticket ajeno; AREA_RESPONSIBLE
+        sólo a los de su área (mismo criterio que el detalle staff) y no recibe candidatos a duplicado.
+        Es orientativo: la prioridad real la calcula el sistema y vincular un duplicado sigue siendo una
+        acción explícita. Los candidatos los decide el motor de duplicados existente; la IA sólo indica
+        cuáles describen el mismo problema. Es POST porque cada llamada consume cuota del proveedor de IA.
+        Si la IA no está disponible responde 200 con `source=UNAVAILABLE`, sin resumen y con los
+        candidatos por cercanía.
+      operationId: getTicketAiInsights
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - $ref: '#/components/parameters/TicketId'
+      responses:
+        '200':
+          description: Análisis del ticket, o `source=UNAVAILABLE` con los candidatos por cercanía.
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [ no-store ] }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiTicketInsightsResponse'
+        '401':
+          $ref: '#/components/responses/InvalidToken'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: El ticket no existe.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          description: Demasiadas consultas desde el mismo origen.
+          headers:
+            Retry-After:
+              description: Segundos hasta que se puede volver a intentar.
+              schema: { type: integer, minimum: 1 }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
   /api/staff/tickets/{ticketId}/duplicate-candidates:
     get:
       tags: [ Tickets ]
@@ -3401,6 +3488,66 @@ components:
       description: Identificador humano estable del ticket; no reemplaza al UUID ni al código secreto de tracking.
       pattern: '^TK-[0-9]{4}-[0-9]{6,}$'
       example: TK-2026-000123
+    AiClassifyRequest:
+      type: object
+      required: [ description ]
+      properties:
+        summary: { type: string, maxLength: 200 }
+        description: { type: string, minLength: 10, maxLength: 5000 }
+        requestTypeId:
+          type: integer
+          format: int64
+          nullable: true
+          description: Tipo de trámite que la persona ya eligió, si lo hizo.
+    AiClassifyResponse:
+      type: object
+      description: Sugerencia de la IA; nunca cambia el reclamo.
+      required: [ source, mismatch ]
+      properties:
+        source: { type: string, enum: [ AI, UNAVAILABLE ] }
+        quality:
+          type: string
+          nullable: true
+          enum: [ OK, TOO_VAGUE, OFF_TOPIC ]
+        suggestedRequestTypeId: { type: integer, format: int64, nullable: true }
+        suggestedRequestTypeName: { type: string, nullable: true }
+        suggestedCategoryName: { type: string, nullable: true }
+        confidence: { type: number, minimum: 0, maximum: 1, nullable: true }
+        mismatch:
+          type: boolean
+          description: Verdadero sólo si el tipo sugerido difiere del elegido con confianza suficiente.
+        reason: { type: string, nullable: true, maxLength: 201 }
+    AiTicketInsightsResponse:
+      type: object
+      required: [ source, duplicates ]
+      properties:
+        source: { type: string, enum: [ AI, UNAVAILABLE ] }
+        summary: { type: string, nullable: true }
+        urgencyHint:
+          type: string
+          nullable: true
+          enum: [ LOW, MEDIUM, HIGH, CRITICAL ]
+        urgencyReason: { type: string, nullable: true }
+        duplicates:
+          type: array
+          items:
+            $ref: '#/components/schemas/AiDuplicateHint'
+    AiDuplicateHint:
+      type: object
+      required: [ ticketId, publicId, summary, requestTypeName, currentStatus, distanceMeters ]
+      properties:
+        ticketId: { type: string, format: uuid }
+        publicId: { $ref: '#/components/schemas/TicketPublicId' }
+        summary: { type: string }
+        requestTypeName: { type: string }
+        currentStatus: { type: string }
+        distanceMeters: { type: number }
+        similarity:
+          type: string
+          nullable: true
+          enum: [ HIGH, MEDIUM, LOW ]
+          description: Nulo si el candidato sólo está listado por cercanía.
+        reason: { type: string, nullable: true }
     ApiError:
       type: object
       required: [code, message]

@@ -696,6 +696,18 @@ public class TicketService {
         return detail;
     }
 
+    /**
+     * Carga un ticket para consulta de staff aplicando la misma regla de acceso que el detalle
+     * ({@link #getStaffDetail}): 404 si no existe y 403 si el rol o el área no alcanzan.
+     */
+    @Transactional(readOnly = true)
+    public Ticket requireStaffReadAccess(UUID ticketId, AuthenticatedIdentity identity) {
+        Ticket ticket = ticketRepository.findById(ticketId)
+                .orElseThrow(() -> new ResourceNotFoundException("El ticket solicitado no existe"));
+        requireStaffAccess(ticket, identity);
+        return ticket;
+    }
+
     private void requireStaffAccess(Ticket ticket, AuthenticatedIdentity identity) {
         if (identity == null || (identity.role() != ModuleRole.AGENT
                 && identity.role() != ModuleRole.ADMIN
