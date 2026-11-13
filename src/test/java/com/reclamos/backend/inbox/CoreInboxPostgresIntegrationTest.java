@@ -40,6 +40,7 @@ class CoreInboxPostgresIntegrationTest {
     @Autowired CitizenEventProjection projection;
     @Autowired TicketStatusUpdateService updates;
     @Autowired TicketSlaService sla;
+    @Autowired InformationRequestService information;
     @Autowired ModuleUserService synchronization;
     @Autowired TicketRepository tickets;
     @Autowired RequestTypeRepository types;
@@ -116,14 +117,97 @@ class CoreInboxPostgresIntegrationTest {
         var wrong=track(status(ticket.getId(),"STARTED")); wrong.put("sourceModule","ciudadanos");
         processAndAssert(wrong,"IGNORED_PRODUCER"); assertThat(count("ticket_activities",ticket)).isZero();
     }
-    @Test void attachmentsAreNeverSilentlyDroppedAndLeaveNoPermanentInboxRecord() {
-        Ticket ticket=ticket(TicketStatus.ROUTED);
-        var event=track(status(ticket.getId(),"STARTED"));
-        data(event).putArray("attachments").addObject().put("fileName","evidence.pdf").put("contentType","application/pdf")
-                .put("url","https://external.invalid/api/files/1").put("sizeBytes",42);
-        assertThatThrownBy(() -> processor.process(bytes(event))).hasMessage("EXTERNAL_ATTACHMENTS_UNSUPPORTED");
-        assertThat(inbox.existsById(id(event))).isFalse(); assertThat(count("ticket_activities",ticket)).isZero();
+    @ParameterizedTest @ValueSource(strings={"STARTED","PROGRESS","INFORMATION_REQUIRED","RETURNED","RESOLVED","REJECTED"})
+    void m3FactsWithEvidenceCommitAtomicallyWithoutEchoOrDuplicateReferences(String type) {
+        Ticket ticket=m3Ticket(type.equals("PROGRESS")?TicketStatus.IN_PROGRESS:TicketStatus.ROUTED);
+        var event=m3Event(ticket,type);
+        if(type.equals("PROGRESS")) data(event).remove("progress"); // evidence alone is meaningful
+        evidence(event);
+        processor.process(bytes(event)); processor.process(bytes(event));
+        TicketStatus expected=switch(type) {
+            case "STARTED","PROGRESS" -> TicketStatus.IN_PROGRESS;
+            case "INFORMATION_REQUIRED" -> TicketStatus.PENDING_INFORMATION;
+            case "RETURNED" -> TicketStatus.IN_REVIEW;
+            case "RESOLVED" -> TicketStatus.RESOLVED;
+            default -> TicketStatus.CANCELLED;
+        };
+        assertThat(tickets.findById(ticket.getId()).orElseThrow().getCurrentStatus()).isEqualTo(expected);
+        var ref=db.queryForMap("SELECT * FROM external_attachment_references WHERE ticket_id=?",ticket.getId());
+        assertThat(ref).containsEntry("external_event_id",id(event)).containsEntry("source_module_id","M3")
+                .containsEntry("update_type",type).containsEntry("visibility","INTERNAL").containsEntry("size_bytes",null);
+        assertThat(count("attachments",ticket)).isZero(); // never masquerades as a local file
+        assertThat(count("ticket_activities",ticket)).isEqualTo(1);
+        assertThat(count("outbox_events",ticket)).isZero();
+        if(type.equals("RESOLVED")) assertThat(count("ticket_resolutions",ticket)).isEqualTo(1);
+        assertThat(inbox.findById(id(event)).orElseThrow().getPayload().toString()).doesNotContain("external.invalid");
+    }
+    @Test void m3CanResolveDirectlyFromInProgressWithPhotoAndPreservePublicMessage() {
+        Ticket ticket=m3Ticket(TicketStatus.IN_PROGRESS); var event=m3Event(ticket,"RESOLVED"); evidence(event);
+        processor.process(bytes(event));
+        assertThat(tickets.findById(ticket.getId()).orElseThrow().getCurrentStatus()).isEqualTo(TicketStatus.RESOLVED);
+        assertThat(count("external_attachment_references",ticket)).isEqualTo(1);
+        assertThat(db.queryForObject("SELECT text FROM ticket_messages WHERE ticket_id=? AND visibility='PUBLIC'",String.class,ticket.getId()))
+                .isEqualTo("Trabajo terminado");
+    }
+    @Test void invalidExternalReferenceRollsBackAndPermanentBusinessRejectionIsAcked() throws Exception {
+        Ticket ticket=m3Ticket(TicketStatus.ROUTED); var event=m3Event(ticket,"RESOLVED"); evidence(event);
+        ((ObjectNode)data(event).path("attachments").get(0)).put("url","file:///etc/passwd");
+        Channel channel=mock(Channel.class);
+        new CoreEventConsumer(mock(ConnectionFactory.class),processor,1).receive(channel,mock(Connection.class),
+                new Delivery(new Envelope(9,false,"",""),new AMQP.BasicProperties(),bytes(event)));
+        verify(channel).basicAck(9,false); verify(channel,never()).basicNack(anyLong(),anyBoolean(),anyBoolean());
+        assertThat(inbox.findById(id(event)).orElseThrow().getStatus()).isEqualTo(InboxStatus.FAILED);
+        processor.process(bytes(event)); // terminal rejection is also idempotent
+        assertThat(count("external_attachment_references",ticket)).isZero();
+        assertThat(count("ticket_resolutions",ticket)).isZero();
         assertThat(tickets.findById(ticket.getId()).orElseThrow().getCurrentStatus()).isEqualTo(TicketStatus.ROUTED);
+    }
+    @Test void m3EvidenceAndBusinessEffectsRollbackTogetherWhenInboxCommitFails() {
+        Ticket ticket=m3Ticket(TicketStatus.ROUTED); var event=m3Event(ticket,"RESOLVED"); evidence(event);
+        InboxEventRepository failing=mock(InboxEventRepository.class,delegatesTo(inbox));
+        doThrow(new DataAccessResourceFailureException("synthetic")).when(failing).saveAndFlush(any());
+        var failed=new CoreInboxProcessor(validator,failing,tickets,updates,projection,clock);
+        assertThatThrownBy(() -> transactions.executeWithoutResult(tx -> failed.process(bytes(event))))
+                .isInstanceOf(DataAccessResourceFailureException.class);
+        assertThat(count("external_attachment_references",ticket)).isZero();
+        assertThat(count("ticket_resolutions",ticket)).isZero();
+        processor.process(bytes(event)); assertThat(count("external_attachment_references",ticket)).isEqualTo(1);
+    }
+    @Test void otherAreaAndOldRoutingEpochCannotModifyM3Ticket() {
+        Ticket ticket=m3Ticket(TicketStatus.ROUTED);
+        processAndAssert(track(status(ticket.getId(),"STARTED")),"IGNORED_OTHER_AREA");
+        var old=m3Event(ticket,"STARTED"); data(old).put("updateOccurredAt","2026-09-01T00:00:00Z");
+        processAndAssert(old,"IGNORED_OLD_UPDATE");
+        assertThat(count("ticket_activities",ticket)).isZero();
+    }
+    @Test void m3InformationRequestPausesSlaAndCitizenAnswerPublishesInformationProvided() {
+        Ticket ticket=m3Ticket(TicketStatus.IN_PROGRESS);
+        Instant now=clock.instant();
+        transactions.executeWithoutResult(tx -> sla.startInitialResolutionCycle(
+                tickets.findById(ticket.getId()).orElseThrow(),now.minusSeconds(60)).orElseThrow());
+        var event=m3Event(ticket,"INFORMATION_REQUIRED"); data(event).put("updateOccurredAt",now.toString());
+        details(event).withObject("/informationRequest").put("requiredBy",now.plusSeconds(3600).toString());
+        processor.process(bytes(event)); processor.process(bytes(event));
+        assertThat(count("information_requests",ticket)).isEqualTo(1);
+        assertThat(db.queryForObject("SELECT paused_at IS NOT NULL FROM ticket_sla WHERE ticket_id=?",Boolean.class,ticket.getId())).isTrue();
+        assertThat(count("outbox_events",ticket)).isZero();
+        information.answerInformation(ticket.getId(),new com.reclamos.backend.dto.request.AnswerInformationRequest("Altura 123"),
+                new AuthenticatedIdentity("test",ticket.getCitizenId(),"Test",null,ModuleRole.CITIZEN));
+        assertThat(tickets.findById(ticket.getId()).orElseThrow().getCurrentStatus()).isEqualTo(TicketStatus.IN_PROGRESS);
+        assertThat(db.queryForObject("SELECT paused_at IS NULL FROM ticket_sla WHERE ticket_id=?",Boolean.class,ticket.getId())).isTrue();
+        assertThat(db.queryForObject("SELECT update_type FROM outbox_events WHERE ticket_id=?",String.class,ticket.getId()))
+                .isEqualTo("INFORMATION_PROVIDED");
+        assertThat(db.queryForObject("SELECT payload->'data'->>'responsibleAreaId' FROM outbox_events WHERE ticket_id=?",String.class,ticket.getId())).isEqualTo("M3");
+    }
+    private Ticket m3Ticket(TicketStatus state) {
+        Ticket ticket=ticket(state); ticket.setResponsibleAreaId("M3"); return tickets.saveAndFlush(ticket);
+    }
+    private ObjectNode m3Event(Ticket ticket,String type) {
+        var event=track(status(ticket.getId(),type)); event.put("sourceModule","obras"); return event;
+    }
+    private void evidence(ObjectNode event) {
+        data(event).putArray("attachments").addObject().put("fileName","obra.jpg")
+                .put("contentType","image/jpeg").put("url","https://external.invalid/photos/1");
     }
     @Test void sameEventIdWithDifferentContentIsRejectedWithoutChangingTheCommittedFact() {
         UUID citizen=citizenId(); var event=track(citizen(citizen,"REGISTERED")); details(event).put("name","Original");

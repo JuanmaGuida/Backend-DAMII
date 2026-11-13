@@ -38,6 +38,20 @@ class CoreEventConsumerTest {
         consumer.receive(channel,connection,delivery()); consumer.receive(channel,connection,delivery());
         verify(channel,times(2)).basicNack(17,false,false); verify(channel,never()).basicAck(anyLong(),anyBoolean());
     }
+    @Test void permanentBusinessFailuresAckAfterRollbackButSchemaAndVersionFailuresNack() throws Exception {
+        doThrow(new com.reclamos.backend.exception.InvalidTicketRequestException("synthetic"),
+                new com.reclamos.backend.exception.TicketStateConflictException("synthetic"),
+                new IncomingEventFailure(IncomingEventFailure.Code.INVALID_EVENT),
+                new IncomingEventFailure(IncomingEventFailure.Code.UNSUPPORTED_VERSION)).when(processor).process(body);
+        for (int i=0;i<4;i++) consumer.receive(channel,connection,delivery());
+        verify(channel,times(2)).basicAck(17,false); verify(channel,times(2)).basicNack(17,false,false);
+    }
+    @Test void rejectionAuditFailureNeverAcknowledgesAnUncommittedRejection() throws Exception {
+        doThrow(new com.reclamos.backend.exception.InvalidTicketRequestException("synthetic")).when(processor).process(body);
+        doThrow(new DataAccessResourceFailureException("synthetic")).when(processor).recordBusinessRejection(body);
+        consumer.receive(channel,connection,delivery());
+        verify(channel).basicNack(17,false,false); verify(channel,never()).basicAck(anyLong(),anyBoolean());
+    }
     @Test void uncertainAckClosesOnlyOwningConnectionAndRedeliveryCanBeDeduplicated() throws Exception {
         doThrow(new IOException("connection lost")).when(channel).basicAck(17,false);
         consumer.receive(channel,connection,delivery()); verify(connection).abort(1000);

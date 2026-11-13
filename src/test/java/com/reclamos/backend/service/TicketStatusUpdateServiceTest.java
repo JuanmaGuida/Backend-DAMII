@@ -127,7 +127,7 @@ class TicketStatusUpdateServiceTest {
                 attachmentService, attachmentReferenceService, informationRequestAttachmentRepository, mock(NotificationService.class), mock(ReclassificationDataService.class));
         service = new TicketStatusUpdateService(ticketRepository, activityRepository, locationRepository,
                 messageRepository, inboxEventRepository, resolutionService, ticketSlaService,
-                informationRequestService, cancellationRepository,
+                informationRequestService, cancellationRepository, mock(ExternalAttachmentService.class),
                 Clock.fixed(FIXED_NOW, ZoneOffset.UTC));
         // Default para los tests que no ejercitan dedupe en sí: "eventId nunca visto".
         // Los tests de dedupe pisan este stub explícitamente.

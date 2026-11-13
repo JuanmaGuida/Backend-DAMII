@@ -50,7 +50,8 @@ public class CoreInboxProcessor {
         if (existing != null) {
             if (!event.eventType().equals(existing.getEventType()) || (existing.getPayloadHash() != null
                     && !event.hash().equals(existing.getPayloadHash()))) throw new IncomingEventFailure(EVENT_ID_COLLISION);
-            if (existing.getStatus() == InboxStatus.PROCESSED) return;
+            if (existing.getStatus() == InboxStatus.PROCESSED
+                    || (existing.getStatus() == InboxStatus.FAILED && "REJECTED_BUSINESS_RULE".equals(existing.getError()))) return;
             throw new IncomingEventFailure(INVALID_EVENT);
         }
         String result;
@@ -70,14 +71,42 @@ public class CoreInboxProcessor {
         LOG.info("Core Inbox eventId={} code={}", event.eventId(), result);
     }
 
+    /** Persist a sanitized terminal rejection only AFTER the business transaction rolled back. */
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
+    public void recordBusinessRejection(byte[] body) {
+        CoreIncomingEvent event = validator.decode(body);
+        if (!"updateTicketStatus".equals(event.eventType())) throw new IncomingEventFailure(INVALID_EVENT);
+        inbox.lockEvent(event.eventId());
+        var existing = inbox.findById(event.eventId()).orElse(null);
+        if (existing != null) {
+            if (!event.eventType().equals(existing.getEventType()) || !event.hash().equals(existing.getPayloadHash()))
+                throw new IncomingEventFailure(EVENT_ID_COLLISION);
+            return;
+        }
+        InboxEvent record = new InboxEvent();
+        record.setEventId(event.eventId()); record.setEventType(event.eventType());
+        record.setProducerModuleId(MODULES.getOrDefault(event.sourceModule(), "UNKNOWN"));
+        record.setReceivedAt(clock.instant()); record.setProcessedAt(clock.instant());
+        record.setStatus(InboxStatus.FAILED); record.setPayloadHash(event.hash());
+        record.setError("REJECTED_BUSINESS_RULE");
+        record.setPayload(Map.of("sourceModule", event.sourceModule(), "occurredAt", event.occurredAt().toString(),
+                "disposition", "REJECTED_BUSINESS_RULE"));
+        inbox.saveAndFlush(record);
+    }
+
     private String statusUpdate(CoreIncomingEvent event) {
         String module = MODULES.get(event.sourceModule());
         if (module == null || module.equals("M1") || module.equals("M2") || module.equals("M9")) return "IGNORED_PRODUCER";
         var request = validator.statusRequest(event);
         Ticket ticket = tickets.findByIdForUpdate(request.ticketId()).orElse(null);
-        if (ticket == null) return "IGNORED_UNKNOWN_TICKET";
+        if (ticket == null) {
+            LOG.warn("Core Inbox eventId={} code=IGNORED_UNKNOWN_TICKET", event.eventId());
+            return "IGNORED_UNKNOWN_TICKET";
+        }
         if (!module.equals(ticket.getResponsibleAreaId())) return "IGNORED_OTHER_AREA";
-        if (ticket.getExternalUpdateAt() != null && request.updateOccurredAt().isBefore(ticket.getExternalUpdateAt())) return "IGNORED_OLD_UPDATE";
+        if ((ticket.getExternalUpdateAt() != null && request.updateOccurredAt().isBefore(ticket.getExternalUpdateAt()))
+                || (ticket.getStatusChangedAt() != null && request.updateOccurredAt().isBefore(ticket.getStatusChangedAt())))
+            return "IGNORED_OLD_UPDATE";
         if (request.updateType() == UpdateTicketStatusType.PROGRESS && ticket.getCurrentStatus() == TicketStatus.ROUTED)
             throw new IncomingEventFailure(PREMATURE_PROGRESS);
         boolean applicable = switch (request.updateType()) {
@@ -86,7 +115,6 @@ public class CoreInboxProcessor {
             default -> ticket.getCurrentStatus() == TicketStatus.ROUTED || ticket.getCurrentStatus() == TicketStatus.IN_PROGRESS;
         };
         if (!applicable) return "IGNORED_STATE_CONFLICT";
-        if (event.data().path("attachments").size() > 0) throw new IncomingEventFailure(EXTERNAL_ATTACHMENTS_UNSUPPORTED);
         try {
             updates.applyCoreUpdate(new TicketStatusUpdateCommand(request.ticketId(), event.eventId(), event.eventType(),
                     event.occurredAt(), module, event.correlationId(), request));

@@ -103,6 +103,22 @@ class TicketOutboxServiceTest {
         });
     }
 
+    @ParameterizedTest @ValueSource(booleans={false,true})
+    @SuppressWarnings("unchecked")
+    void m3RoutingHasContractSnapshotAndReassignmentWithoutCreatingATicketEvent(boolean reassignment) {
+        Ticket ticket=ticket(false,"M3",TicketStatus.ROUTED);
+        service.routed(ticket,null,RESOLUTION_DUE,NOW,reassignment);
+        var captor=ArgumentCaptor.forClass(OutboxEvent.class); verify(repository).save(captor.capture());
+        var event=captor.getValue(); EventEnvelopeContractAssertions.assertFullEventValid(event.getPayload());
+        assertThat(event.getEventType()).isEqualTo("ticketUpdated");
+        assertThat(event.getPayload()).containsEntry("sourceModule","atencion-ciudadana").containsEntry("eventVersion","1.0");
+        var data=(Map<String,Object>)event.getPayload().get("data");
+        assertThat(data).containsEntry("ticketId",ticket.getId()).containsEntry("publicId",ticket.getPublicId())
+                .containsEntry("responsibleAreaId","M3").containsEntry("updateType","ROUTED");
+        var routing=(Map<String,Object>)((Map<String,Object>)data.get("details")).get("routing");
+        assertThat(routing).containsEntry("reassignment",reassignment).containsEntry("resolutionDueAt",RESOLUTION_DUE.toString());
+    }
+
     @Test
     void internalProjectionEventsPublishOnlyForIdentifiedTickets() {
         Ticket identified = ticket(false, "M2", TicketStatus.IN_PROGRESS);
