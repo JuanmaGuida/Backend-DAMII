@@ -131,6 +131,58 @@ class M1AuthenticationPostgresIntegrationTest {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.actorType").value("EMPLEADO"));
         mvc.perform(get("/api/me/tickets").header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
                 .andExpect(status().isForbidden());
+        mvc.perform(get("/api/tickets").header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isOk());
+        mvc.perform(post("/api/tickets").header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON).content("""
+                                {"requestTypeId":1,"summary":"Synthetic","description":"Employee without citizen identity","formData":{}}
+                                """))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void twoCitizensWithTheSameContactRemainDistinctAndCannotManageEachOthersTickets() throws Exception {
+        UUID secondId = UUID.fromString("d04cbd7f-1952-47ae-81b9-977654f70103");
+        String firstToken = citizenToken();
+        String secondToken = M1TestTokens.token(secondId, IdentityActorType.CIUDADANO);
+        expectLogin(firstToken, M1IdentityProviderTest.citizenBody());
+        expectLogin(firstToken, M1IdentityProviderTest.citizenBody().replace("Citizen", "Updated"));
+        expectLogin(secondToken, M1IdentityProviderTest.citizenBody()
+                .replace(M1TestTokens.CITIZEN.toString(), secondId.toString()));
+        login().andExpect(status().isOk());
+        ModuleUser first = users.findByActorId(M1TestTokens.CITIZEN).orElseThrow();
+        first.setPreferredNotificationChannel("PHONE");
+        users.saveAndFlush(first);
+        login().andExpect(status().isOk());
+        login().andExpect(status().isOk());
+        ModuleUser updated = users.findByActorId(M1TestTokens.CITIZEN).orElseThrow();
+        ModuleUser second = users.findByActorId(secondId).orElseThrow();
+        assertThat(updated.getId()).isEqualTo(first.getId());
+        assertThat(updated.getFirstName()).isEqualTo("Updated");
+        assertThat(updated.getPreferredNotificationChannel()).isEqualTo("PHONE");
+        assertThat(second.getId()).isNotEqualTo(first.getId());
+        assertThat(second.getEmail()).isEqualTo(updated.getEmail());
+        assertThat(users.findAll().stream().filter(u -> u.getActorId().equals(M1TestTokens.CITIZEN))).hasSize(1);
+
+        String marker = "M1-OWN-" + UUID.randomUUID();
+        Long type = db.queryForObject("INSERT INTO request_types(code,subcategory_id,name,description,ticket_type,responsible_area_id,minimum_priority,base_risk,affected_population_factor,allows_anonymous,requires_location,active) "
+                + "SELECT ?,id,?,?,'COMPLAINT','M2','LOW','LOW',0,true,false,true FROM subcategories ORDER BY id LIMIT 1 RETURNING id", Long.class, marker, marker, marker);
+        String response = mvc.perform(post("/api/tickets").header(HttpHeaders.AUTHORIZATION, "Bearer " + firstToken)
+                        .contentType(MediaType.APPLICATION_JSON).content("""
+                                {"requestTypeId":%d,"summary":"Synthetic ownership","description":"Disposable local case","formData":{}}
+                                """.formatted(type)))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        UUID ticket = UUID.fromString(json.readTree(response).get("ticketId").asText());
+        entityManager.flush();
+        mvc.perform(get("/api/tickets/" + ticket).header(HttpHeaders.AUTHORIZATION, "Bearer " + firstToken))
+                .andExpect(status().isOk());
+        mvc.perform(get("/api/tickets/" + ticket).header(HttpHeaders.AUTHORIZATION, "Bearer " + secondToken))
+                .andExpect(status().isForbidden());
+        mvc.perform(post("/api/tickets/" + ticket + "/messages").header(HttpHeaders.AUTHORIZATION, "Bearer " + secondToken)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"visibility\":\"PUBLIC\",\"text\":\"Not the owner\"}"))
+                .andExpect(status().isForbidden());
+        mvc.perform(post("/api/tickets/" + ticket + "/review").header(HttpHeaders.AUTHORIZATION, "Bearer " + secondToken))
+                .andExpect(status().isForbidden());
     }
 
     @Test
