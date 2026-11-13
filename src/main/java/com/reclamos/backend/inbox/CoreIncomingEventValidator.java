@@ -61,10 +61,7 @@ public final class CoreIncomingEventValidator {
 
     public UpdateTicketStatusRequest statusRequest(CoreIncomingEvent event) {
         try {
-            // Attachments are checked separately by the dispatcher before any business effects.
-            var data = (com.fasterxml.jackson.databind.node.ObjectNode) event.data().deepCopy();
-            data.remove("attachments");
-            return json.treeToValue(data, UpdateTicketStatusRequest.class);
+            return json.treeToValue(event.data(), UpdateTicketStatusRequest.class);
         } catch (Exception failure) { throw invalid(); }
     }
 

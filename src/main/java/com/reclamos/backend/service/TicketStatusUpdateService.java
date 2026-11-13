@@ -60,6 +60,7 @@ public class TicketStatusUpdateService {
     private final InformationRequestService informationRequestService;
     private final TicketCancellationRepository cancellationRepository;
     private NotificationService notificationService;
+    private final ExternalAttachmentService externalAttachments;
     private final Clock clock;
 
     @Autowired
@@ -116,6 +117,7 @@ public class TicketStatusUpdateService {
                     "Los tickets gestionados por M2 deben utilizar el flujo de resolución manual");
         }
 
+        externalAttachments.validate(request.attachments());
         ActorType actorType = mapActorType(request.updatedBy().type());
         requireExternalActorType(actorType);
         String reasonCode = null;
@@ -133,9 +135,10 @@ public class TicketStatusUpdateService {
             }
             case PROGRESS -> {
                 requireCurrentStatus(ticket, TicketStatus.IN_PROGRESS, "PROGRESS sólo es válido con el ticket en IN_PROGRESS");
-                if (request.progress() == null && isBlank(request.publicMessage()) && isBlank(request.internalMessage())) {
+                if (request.progress() == null && isBlank(request.publicMessage()) && isBlank(request.internalMessage())
+                        && request.attachments().isEmpty()) {
                     throw new InvalidTicketRequestException(
-                            "PROGRESS debe aportar al menos progress, publicMessage o internalMessage");
+                            "PROGRESS debe aportar al menos progress, publicMessage, internalMessage o attachments");
                 }
                 newStatus = TicketStatus.IN_PROGRESS;
                 activityType = ActivityType.PROGRESS_REPORTED;
@@ -297,6 +300,7 @@ public class TicketStatusUpdateService {
         // mismo eventId ganándole ambos al chequeo de arriba), todo el
         // commit falla junto y ninguna de las dos aplica efectos duplicados.
         inboxEventRepository.save(toInboxEvent(envelope));
+        externalAttachments.record(ticket, envelope.eventId(), envelope.producerModuleId(), request);
 
         TicketLocation location = locationRepository.findByTicket_Id(ticketId).orElse(null);
         return toResponse(ticket, location);

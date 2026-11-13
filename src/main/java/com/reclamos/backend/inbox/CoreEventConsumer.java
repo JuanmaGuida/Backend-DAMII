@@ -53,6 +53,17 @@ public final class CoreEventConsumer {
         try {
             processor.process(delivery.getBody());
             processed = true; // Includes the DB commit, not just the business method's return.
+        } catch (com.reclamos.backend.exception.InvalidTicketRequestException
+                 | com.reclamos.backend.exception.TicketStateConflictException rejected) {
+            // The transaction has rolled back before the proxy propagates this permanent business rejection.
+            // No message content or exception text is safe to log.
+            LOG.warn("Core Inbox code=REJECTED_BUSINESS_RULE");
+            try {
+                processor.recordBusinessRejection(delivery.getBody());
+                processed = true; // ACK only after the separate rejection audit commits.
+            } catch (RuntimeException auditFailed) {
+                LOG.warn("Core Inbox code=REJECTION_AUDIT_FAILED");
+            }
         } catch (IncomingEventFailure rejected) {
             LOG.warn("Core Inbox code={}", rejected.code());
         } catch (RuntimeException failed) {

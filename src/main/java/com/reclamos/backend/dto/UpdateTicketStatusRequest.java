@@ -25,9 +25,7 @@ import java.util.UUID;
  * {@code envelope.subject}. {@code TicketStatusUpdateService} valida que
  * coincida con el ticket de la URL antes de tocar nada.
  * <p>
- * Simplificación consciente que sigue vigente: no incluye
- * {@code attachments} (el módulo todavía no persiste adjuntos, Sprint 5 /
- * Story 8.1).
+ * Los adjuntos son referencias externas; nunca contienen binarios ni storage keys locales.
  */
 public record UpdateTicketStatusRequest(
         @NotNull(message = "ticketId es obligatorio") UUID ticketId,
@@ -38,8 +36,22 @@ public record UpdateTicketStatusRequest(
         @Max(value = 100, message = "progress debe estar entre 0 y 100") Integer progress,
         @Valid Details details,
         @NotNull(message = "updatedBy es obligatorio") @Valid Actor updatedBy,
-        @NotNull(message = "updateOccurredAt es obligatorio") Instant updateOccurredAt
+        @NotNull(message = "updateOccurredAt es obligatorio") Instant updateOccurredAt,
+        java.util.List<ExternalAttachment> attachments
 ) implements StrictEventPayload {
+    public UpdateTicketStatusRequest {
+        attachments = attachments == null ? java.util.List.of() : java.util.List.copyOf(attachments);
+    }
+    /** Compatibility for existing simulator callers without evidence. */
+    public UpdateTicketStatusRequest(UUID ticketId, UpdateTicketStatusType updateType, String publicMessage,
+                                    String internalMessage, Integer progress, Details details, Actor updatedBy,
+                                    Instant updateOccurredAt) {
+        this(ticketId, updateType, publicMessage, internalMessage, progress, details, updatedBy, updateOccurredAt,
+                java.util.List.of());
+    }
+    public record ExternalAttachment(String fileName, String contentType, String url, Long sizeBytes)
+            implements StrictEventPayload { }
+
     public record Details(
             InformationRequest informationRequest,
             ReturnInfo returnInfo,

@@ -16,6 +16,53 @@ tags:
   - name: Information Requests
   - name: Tracking
 paths:
+  /api/tickets/{ticketId}/external-attachments:
+    get:
+      tags: [Tickets]
+      summary: Consultar referencias de evidencias externas autorizadas
+      description: >-
+        Devuelve metadatos, nunca binarios ni redirecciones. AGENT y ADMIN acceden al
+        ticket; AREA_RESPONSIBLE sólo a su área actual. El propietario identificado
+        sólo ve referencias PUBLIC. Las evidencias entrantes se conservan INTERNAL
+        al no existir clasificación de visibilidad en el contrato de eventos.
+      operationId: listExternalAttachmentReferences
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TicketId'
+      responses:
+        '200':
+          description: Referencias visibles para el solicitante, con Cache-Control no-store.
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [id, eventId, updateType, occurredAt, fileName, contentType, url, visibility]
+                  properties:
+                    id: { type: integer, format: int64 }
+                    eventId: { type: string, format: uuid }
+                    updateType:
+                      type: string
+                      enum: [STARTED, PROGRESS, INFORMATION_REQUIRED, RETURNED, RESOLVED, REJECTED]
+                    occurredAt: { type: string, format: date-time }
+                    fileName: { type: string }
+                    contentType: { type: string }
+                    url: { type: string, format: uri }
+                    sizeBytes: { type: integer, format: int64, minimum: 0, nullable: true }
+                    visibility: { type: string, enum: [PUBLIC, INTERNAL] }
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          description: Requiere autenticación.
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /api/auth/login:
     post:
       tags: [Authentication]
