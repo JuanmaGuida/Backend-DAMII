@@ -41,6 +41,8 @@ import com.reclamos.backend.repository.TicketRepository;
 import com.reclamos.backend.repository.TicketResolutionRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
@@ -224,15 +226,16 @@ class TicketStatusUpdateServiceTest {
                 .isInstanceOf(InvalidTicketRequestException.class);
     }
 
-    @Test
-    void progressUpdatesCurrentProgressAndStaysInProgress() {
-        Ticket ticket = ticket(TicketStatus.IN_PROGRESS);
+    @ParameterizedTest
+    @EnumSource(value = UpdateTicketStatusType.class, names = {"STARTED", "PROGRESS"})
+    void startedAndProgressPersistSuppliedProgress(UpdateTicketStatusType type) {
+        Ticket ticket = ticket(type == UpdateTicketStatusType.STARTED ? TicketStatus.ROUTED : TicketStatus.IN_PROGRESS);
         when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
         when(activityRepository.countByTicketId(ticketId)).thenReturn(1);
         when(locationRepository.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
 
         UpdateTicketStatusRequest data = new UpdateTicketStatusRequest(
-                ticketId, UpdateTicketStatusType.PROGRESS, null, null, 40, null, externalActor, Instant.now());
+                ticketId, type, null, null, 40, null, externalActor, Instant.now());
 
         TicketResponse response = service.applyUpdate(ticketId, envelope(data));
 
@@ -409,6 +412,7 @@ class TicketStatusUpdateServiceTest {
     @Test
     void resolvedIsAcceptedDirectlyFromRoutedWithoutAnyRequestTypeConfiguration() {
         Ticket ticket = ticket(TicketStatus.ROUTED);
+        ticket.setCurrentProgress((short) 45);
         when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
         when(activityRepository.countByTicketId(ticketId)).thenReturn(0);
         when(locationRepository.findByTicket_Id(ticketId)).thenReturn(Optional.empty());
@@ -421,6 +425,7 @@ class TicketStatusUpdateServiceTest {
         TicketResponse response = service.applyUpdate(ticketId, envelope(data));
 
         assertThat(response.getCurrentStatus()).isEqualTo(TicketStatus.RESOLVED);
+        assertThat(ticket.getCurrentProgress()).isEqualTo((short) 45);
         verify(resolutionRepository).save(any());
         verify(activityRepository).save(argThat(activity ->
                 activity.getPreviousStatus() == TicketStatus.ROUTED));

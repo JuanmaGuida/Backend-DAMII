@@ -105,7 +105,7 @@ class TicketOutboxServiceTest {
     }
 
     @ParameterizedTest @CsvSource({"M3,false,false","M3,false,true","M4,false,false","M4,false,true",
-            "M7,false,false","M7,false,true","M7,true,false","M7,true,true","M5,false,false","M5,false,true","M5,true,false","M5,true,true","M6,false,false","M6,false,true","M6,true,false","M6,true,true"})
+            "M7,false,false","M7,false,true","M7,true,false","M7,true,true","M5,false,false","M5,false,true","M5,true,false","M5,true,true","M6,false,false","M6,false,true","M6,true,false","M6,true,true","M8,false,false","M8,false,true","M8,true,false","M8,true,true"})
     @SuppressWarnings("unchecked")
     void externalRoutingHasContractSnapshotAndReassignmentWithoutCreatingATicketEvent(String area,boolean anonymous,boolean reassignment) {
         Ticket ticket=ticket(anonymous,area,TicketStatus.ROUTED);
@@ -193,7 +193,7 @@ class TicketOutboxServiceTest {
         });
     }
 
-    @ParameterizedTest @ValueSource(strings={"M6","M4","M7","M5"})
+    @ParameterizedTest @ValueSource(strings={"M6","M4","M7","M5","M8"})
     @SuppressWarnings("unchecked")
     void routedContainsCompleteAuthorizedSnapshotAndIncrementalEventsDoNotReplayEvidence(String area) {
         Ticket ticket = ticket(true, area, TicketStatus.ROUTED);
@@ -331,7 +331,7 @@ class TicketOutboxServiceTest {
         });
     }
 
-    @ParameterizedTest @ValueSource(strings={"M6","M4","M7","M5"})
+    @ParameterizedTest @ValueSource(strings={"M6","M4","M7","M5","M8"})
     void informationProvidedPublishesForIdentifiedAndForAnonymousExternalRequestOnly(String area) {
         service.informationProvided(ticket(false, "M2", TicketStatus.IN_PROGRESS), "Dato", false, NOW);
         service.informationProvided(ticket(false, area, TicketStatus.IN_PROGRESS), "Dato", true, NOW);
@@ -344,7 +344,7 @@ class TicketOutboxServiceTest {
         captor.getAllValues().forEach(event -> EventEnvelopeContractAssertions.assertFullEventValid(event.getPayload()));
     }
 
-    @ParameterizedTest @ValueSource(strings={"M6","M4","M7","M5"})
+    @ParameterizedTest @ValueSource(strings={"M6","M4","M7","M5","M8"})
     void informationProvidedContainsRestoredTicketTextAndPublicAttachmentWithoutPrivateActorMetadata(String area) {
         Ticket ticket = ticket(true, area, TicketStatus.IN_PROGRESS);
         Attachment attachment = new Attachment();
@@ -396,7 +396,7 @@ class TicketOutboxServiceTest {
         EventEnvelopeContractAssertions.assertFullEventInvalid(event.getPayload());
     }
 
-    @ParameterizedTest @ValueSource(strings={"M6","M4","M7","M5"})
+    @ParameterizedTest @ValueSource(strings={"M6","M4","M7","M5","M8"})
     void reopenedPublishesForIdentifiedOrExternalAnonymous(String area) {
         service.reopened(ticket(false, "M2", TicketStatus.IN_PROGRESS), "Sigue", NOW);
         service.reopened(ticket(false, area, TicketStatus.IN_PROGRESS), "Sigue", NOW);
@@ -406,7 +406,7 @@ class TicketOutboxServiceTest {
         verify(repository, times(3)).save(any());
     }
 
-    @ParameterizedTest @ValueSource(strings={"M6","M4","M7","M5"})
+    @ParameterizedTest @ValueSource(strings={"M6","M4","M7","M5","M8"})
     void cancelledPublishesLegitimatePostRoutingExternalFactButSkipsEchoAndSelfManagedAnonymousFact(String area) {
         service.cancelled(ticket(false, "M2", TicketStatus.CANCELLED),
                 CancellationReasonCode.INFO_TIMEOUT, "Cancelado", true, NOW);
@@ -425,7 +425,7 @@ class TicketOutboxServiceTest {
                 assertThat(event.getUpdateType()).isEqualTo(TicketUpdatedType.CANCELLED));
     }
 
-    @ParameterizedTest @ValueSource(strings={"M6","M4","M7","M5"})
+    @ParameterizedTest @ValueSource(strings={"M6","M4","M7","M5","M8"})
     void resolvedNeverEchoesAnAnonymousExternalFact(String area) {
         service.resolved(ticket(true, area, TicketStatus.RESOLVED),
                 ResolutionType.ACTION_COMPLETED, "Resuelto", NOW);

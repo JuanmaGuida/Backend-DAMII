@@ -1,0 +1,40 @@
+{
+  "eventId": "2f8b6d14-9c3e-4a71-b5d0-7e1a4c9f3b62",
+  "eventType": "ticketUpdated",
+  "eventVersion": "1.0",
+  "occurredAt": "2026-08-18T14:10:00-03:00",
+  "sourceModule": "atencion-ciudadana",
+  "correlationId": "e9d24b7a-1f5c-4a38-8b6e-0c7f3a9d5e21",
+  "data": {
+    "ticketId": "a7c3e915-4d2b-4f86-9e10-3b5d8f2c6a47",
+    "publicId": "TK-2026-000123",
+    "citizenId": "8f14e45f-ea5e-4e5d-bd3f-1c71f4f6a001",
+    "isAnonymous": false,
+    "responsibleAreaId": "M8",
+    "updateType": "ROUTED",
+    "currentStatus": "ROUTED",
+    "currentPriority": "HIGH",
+    "publicMessage": "El ticket fue derivado a Desarrollo Social.",
+    "details": {
+      "routing": {
+        "requestType": "Solicitar asistencia social",
+        "category": "Desarrollo social",
+        "subcategory": "Asistencia social",
+        "ticketType": "REQUEST",
+        "summary": "Solicitud de asistencia social",
+        "description": "El ciudadano solicita asistencia municipal.",
+        "formData": {},
+        "location": null,
+        "resolutionDueAt": null,
+        "escalation": {
+          "active": false,
+          "reasonCode": null,
+          "escalatedAt": null
+        },
+        "reassignment": false
+      }
+    },
+    "attachments": [],
+    "updatedAt": "2026-08-18T14:10:00-03:00"
+  }
+}
