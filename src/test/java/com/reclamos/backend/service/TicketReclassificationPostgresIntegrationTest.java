@@ -78,7 +78,7 @@ class TicketReclassificationPostgresIntegrationTest {
         for (UUID id : List.of(owner, agent)) db.update("DELETE FROM module_users WHERE citizen_id=?", id);
     }
 
-    @ParameterizedTest @ValueSource(strings = {"M2", "M6", "M4"})
+    @ParameterizedTest @ValueSource(strings = {"M2", "M6", "M4", "M7"})
     void apiInitialReadyHasNoPrematureEffectsAndConfirmationIsIdempotent(String area) throws Exception {
         UUID id = create(false, "CRITICAL"); Long target = type(area, "LOW", true);
         var before = classification(id); var firstResponse = firstResponse(id);
@@ -104,7 +104,7 @@ class TicketReclassificationPostgresIntegrationTest {
         validateEvents(id);
     }
 
-    @ParameterizedTest @ValueSource(strings={"M6","M4"})
+    @ParameterizedTest @ValueSource(strings={"M6","M4","M7"})
     void structuredApiPreservesFalseZeroAndExplicitUnknownAndRequiresStaffConfirmation(String area) throws Exception {
         UUID id = create(false, "LOW"); Long target = type(area, "LOW", true); Long template = template(target);
         field(template, "flag", "BOOLEAN", false, "{}"); field(template, "number", "NUMBER", false, "{\"min\":0,\"max\":10}");
@@ -145,7 +145,7 @@ class TicketReclassificationPostgresIntegrationTest {
         validateEvents(id);
     }
 
-    @ParameterizedTest @ValueSource(strings = {"M2", "M6", "M4"})
+    @ParameterizedTest @ValueSource(strings = {"M2", "M6", "M4", "M7"})
     void exceptionalReturnReplacesOnlyActiveCycleAndPublishesConfirmedSnapshot(String area) {
         UUID id = create(false, "LOW"); tickets.routeToArea(id, staff());
         var oldCycle = cycles(id).getFirst(); var first = firstResponse(id);

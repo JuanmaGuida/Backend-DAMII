@@ -81,7 +81,7 @@ class TicketPriorityPostgresIntegrationTest {
         validateEvents(id);
     }
 
-    @ParameterizedTest @ValueSource(strings={"M6","M4"})
+    @ParameterizedTest @ValueSource(strings={"M6","M4","M7"})
     void periodicIncreaseIsIdempotentDoesNotTouchDeadlinesOrPublishPriorityEvent(String area) {
         UUID id=create(false,type("MEDIUM","LOW","1"));
         db.update("UPDATE tickets SET responsible_area_id=? WHERE id=?",area,id);

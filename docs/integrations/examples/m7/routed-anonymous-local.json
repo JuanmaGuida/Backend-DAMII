@@ -1,0 +1,42 @@
+{
+  "eventId": "00000065-0000-4000-8000-000000000065",
+  "eventType": "ticketUpdated",
+  "eventVersion": "1.0",
+  "occurredAt": "2026-10-01T12:00:00Z",
+  "sourceModule": "atencion-ciudadana",
+  "correlationId": "00000384-0000-4000-8000-000000000384",
+  "causationId": null,
+  "data": {
+    "ticketId": "00000001-0000-4000-8000-000000000001",
+    "publicId": "TK-2026-000001",
+    "citizenId": null,
+    "isAnonymous": true,
+    "responsibleAreaId": "M7",
+    "updateType": "ROUTED",
+    "currentStatus": "ROUTED",
+    "currentPriority": "MEDIUM",
+    "progress": null,
+    "publicMessage": "Ejemplo local: derivación al área responsable.",
+    "details": {
+      "routing": {
+        "requestType": "Tipo de prueba local",
+        "category": "Categoría de prueba",
+        "subcategory": "Subcategoría de prueba",
+        "ticketType": "COMPLAINT",
+        "summary": "Ejemplo sintético de compatibilidad",
+        "description": "Datos ficticios para validar el contrato genérico de M2; sin homologación M7.",
+        "formData": {},
+        "location": null,
+        "resolutionDueAt": "2026-10-03T12:00:00Z",
+        "escalation": {
+          "active": false,
+          "reasonCode": null,
+          "escalatedAt": null
+        },
+        "reassignment": false
+      }
+    },
+    "attachments": [],
+    "updatedAt": "2026-10-01T12:00:00Z"
+  }
+}
