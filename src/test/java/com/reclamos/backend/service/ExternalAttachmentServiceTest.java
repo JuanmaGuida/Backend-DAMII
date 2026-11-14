@@ -30,7 +30,7 @@ class ExternalAttachmentServiceTest {
                 .isInstanceOf(InvalidTicketRequestException.class).hasMessage("Referencia de evidencia externa inválida");
         verifyNoInteractions(refs);
     }
-    @ParameterizedTest @ValueSource(strings={"M3","M4","M7","M5"})
+    @ParameterizedTest @ValueSource(strings={"M3","M4","M7","M5","M6"})
     void preservesOptionalSizeAndRecordsEventProvenanceWithInternalVisibility(String area) {
         ticket.setResponsibleAreaId(area);
         var attachments=List.of(new UpdateTicketStatusRequest.ExternalAttachment("photo.jpg","image/jpeg","https://example.test/photo",null));
@@ -46,7 +46,7 @@ class ExternalAttachmentServiceTest {
         assertThat(ref.getUpdateType()).isEqualTo(UpdateTicketStatusType.PROGRESS);
         assertThat(ref.getOccurredAt()).isEqualTo(when);
     }
-    @ParameterizedTest @ValueSource(strings={"M3","M4","M7","M5"})
+    @ParameterizedTest @ValueSource(strings={"M3","M4","M7","M5","M6"})
     void ownerSeesOnlyPublicReferencesAndStaffMustHaveTicketScope(String area) {
         ticket.setResponsibleAreaId(area);
         var internal=reference(MessageVisibility.INTERNAL); var publicRef=reference(MessageVisibility.PUBLIC);
@@ -54,7 +54,7 @@ class ExternalAttachmentServiceTest {
         assertThat(service.list(ticketId,identity(owner,ModuleRole.CITIZEN,null))).hasSize(1);
         assertThat(service.list(ticketId,identity(UUID.randomUUID(),ModuleRole.AGENT,null))).hasSize(2);
         assertThat(service.list(ticketId,identity(UUID.randomUUID(),ModuleRole.AREA_RESPONSIBLE,area))).hasSize(2);
-        assertThatThrownBy(() -> service.list(ticketId,identity(UUID.randomUUID(),ModuleRole.AREA_RESPONSIBLE,"M6")))
+        assertThatThrownBy(() -> service.list(ticketId,identity(UUID.randomUUID(),ModuleRole.AREA_RESPONSIBLE,area.equals("M6")?"M3":"M6")))
                 .isInstanceOf(UnauthorizedTicketOperationException.class);
         assertThatThrownBy(() -> service.list(ticketId,identity(UUID.randomUUID(),ModuleRole.CITIZEN,null)))
                 .isInstanceOf(UnauthorizedTicketOperationException.class);
