@@ -130,6 +130,9 @@ public class TicketStatusUpdateService {
         switch (request.updateType()) {
             case STARTED -> {
                 requireCurrentStatus(ticket, TicketStatus.ROUTED, "STARTED sólo es válido con el ticket en ROUTED");
+                if (request.progress() != null) {
+                    ticket.setCurrentProgress(request.progress().shortValue());
+                }
                 newStatus = TicketStatus.IN_PROGRESS;
                 activityType = ActivityType.STATE_CHANGED;
             }
@@ -192,6 +195,9 @@ public class TicketStatusUpdateService {
                 }
                 if (isBlank(request.publicMessage())) {
                     throw new InvalidTicketRequestException("RESOLVED requiere publicMessage");
+                }
+                if (request.progress() != null) {
+                    ticket.setCurrentProgress(request.progress().shortValue());
                 }
                 newStatus = TicketStatus.RESOLVED;
                 activityType = ActivityType.RESOLVED;

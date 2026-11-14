@@ -1,0 +1,44 @@
+{
+
+"eventId": "9a4d1e78-5c2b-4f36-b8e9-3d6a0f1c4e27",
+
+"eventType": "updateTicketStatus",
+
+"eventVersion": "1.0",
+
+"occurredAt": "2026-08-18T16:00:00-03:00",
+
+"sourceModule": "desarrollo-social",
+
+"correlationId": "e9d24b7a-1f5c-4a38-8b6e-0c7f3a9d5e21",
+
+ "causationId": "2f8b6d14-9c3e-4a71-b5d0-7e1a4c9f3b62",
+
+ "data": {
+
+    "ticketId": "a7c3e915-4d2b-4f86-9e10-3b5d8f2c6a47",
+
+    "updateType": "RETURNED",
+
+    "publicMessage": null,
+
+    "internalMessage": "El pedido corresponde a Rentas (plan de pagos), no a un programa
+social.",
+
+    "progress": null,
+
+    "details": {
+
+     "returnInfo": { "reasonCode": "REQUEST_TYPE_MISMATCH" }
+
+    },
+
+    "attachments": [],
+
+    "updatedBy": { "type": "EXTERNAL_USER", "id": null },
+
+    "updateOccurredAt": "2026-08-18T16:00:00-03:00"
+
+ }
+
+}
