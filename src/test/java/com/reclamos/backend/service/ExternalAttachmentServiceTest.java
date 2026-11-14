@@ -30,7 +30,7 @@ class ExternalAttachmentServiceTest {
                 .isInstanceOf(InvalidTicketRequestException.class).hasMessage("Referencia de evidencia externa inválida");
         verifyNoInteractions(refs);
     }
-    @ParameterizedTest @ValueSource(strings={"M3","M4"})
+    @ParameterizedTest @ValueSource(strings={"M3","M4","M7"})
     void preservesOptionalSizeAndRecordsEventProvenanceWithInternalVisibility(String area) {
         ticket.setResponsibleAreaId(area);
         var attachments=List.of(new UpdateTicketStatusRequest.ExternalAttachment("photo.jpg","image/jpeg","https://example.test/photo",null));
@@ -46,7 +46,7 @@ class ExternalAttachmentServiceTest {
         assertThat(ref.getUpdateType()).isEqualTo(UpdateTicketStatusType.PROGRESS);
         assertThat(ref.getOccurredAt()).isEqualTo(when);
     }
-    @ParameterizedTest @ValueSource(strings={"M3","M4"})
+    @ParameterizedTest @ValueSource(strings={"M3","M4","M7"})
     void ownerSeesOnlyPublicReferencesAndStaffMustHaveTicketScope(String area) {
         ticket.setResponsibleAreaId(area);
         var internal=reference(MessageVisibility.INTERNAL); var publicRef=reference(MessageVisibility.PUBLIC);
