@@ -120,7 +120,7 @@ class CoreInboxPostgresIntegrationTest {
         processAndAssert(wrong,"IGNORED_PRODUCER"); assertThat(count("ticket_activities",ticket)).isZero();
     }
     // Synthetic M2 compatibility scenarios: M5 has no bilateral contract or homologation.
-    @ParameterizedTest @CsvSource({"M3,STARTED","M3,PROGRESS","M3,INFORMATION_REQUIRED","M3,RETURNED","M3,RESOLVED","M3,REJECTED","M4,STARTED","M4,PROGRESS","M4,INFORMATION_REQUIRED","M4,RETURNED","M4,RESOLVED","M4,REJECTED","M7,STARTED","M7,PROGRESS","M7,INFORMATION_REQUIRED","M7,RETURNED","M7,RESOLVED","M7,REJECTED","M5,STARTED","M5,PROGRESS","M5,INFORMATION_REQUIRED","M5,RETURNED","M5,RESOLVED","M5,REJECTED"})
+    @ParameterizedTest @CsvSource({"M3,STARTED","M3,PROGRESS","M3,INFORMATION_REQUIRED","M3,RETURNED","M3,RESOLVED","M3,REJECTED","M4,STARTED","M4,PROGRESS","M4,INFORMATION_REQUIRED","M4,RETURNED","M4,RESOLVED","M4,REJECTED","M7,STARTED","M7,PROGRESS","M7,INFORMATION_REQUIRED","M7,RETURNED","M7,RESOLVED","M7,REJECTED","M5,STARTED","M5,PROGRESS","M5,INFORMATION_REQUIRED","M5,RETURNED","M5,RESOLVED","M5,REJECTED","M6,STARTED","M6,PROGRESS","M6,INFORMATION_REQUIRED","M6,RETURNED","M6,RESOLVED","M6,REJECTED"})
     void externalFactsWithEvidenceCommitAtomicallyWithoutEchoOrDuplicateReferences(String area,String type) {
         Ticket ticket=externalTicket(area,type.equals("PROGRESS")?TicketStatus.IN_PROGRESS:TicketStatus.ROUTED);
         var event=externalEvent(area,ticket,type);
@@ -144,7 +144,7 @@ class CoreInboxPostgresIntegrationTest {
         if(type.equals("RESOLVED")) assertThat(count("ticket_resolutions",ticket)).isEqualTo(1);
         assertThat(inbox.findById(id(event)).orElseThrow().getPayload().toString()).doesNotContain("external.invalid");
     }
-    @ParameterizedTest @ValueSource(strings={"M3","M4","M7","M5"})
+    @ParameterizedTest @ValueSource(strings={"M3","M4","M7","M5","M6"})
     void externalCanResolveDirectlyFromInProgressWithPhotoAndPreservePublicMessage(String area) {
         Ticket ticket=externalTicket(area,TicketStatus.IN_PROGRESS); var event=externalEvent(area,ticket,"RESOLVED"); evidence(event);
         processor.process(bytes(event));
@@ -153,7 +153,7 @@ class CoreInboxPostgresIntegrationTest {
         assertThat(db.queryForObject("SELECT text FROM ticket_messages WHERE ticket_id=? AND visibility='PUBLIC'",String.class,ticket.getId()))
                 .isEqualTo("Trabajo terminado");
     }
-    @ParameterizedTest @ValueSource(strings={"M3","M4","M7","M5"})
+    @ParameterizedTest @ValueSource(strings={"M3","M4","M7","M5","M6"})
     void invalidExternalReferenceRollsBackAndPermanentBusinessRejectionIsAcked(String area) throws Exception {
         Ticket ticket=externalTicket(area,TicketStatus.ROUTED); var event=externalEvent(area,ticket,"RESOLVED"); evidence(event);
         ((ObjectNode)data(event).path("attachments").get(0)).put("url","file:///etc/passwd");
@@ -167,7 +167,7 @@ class CoreInboxPostgresIntegrationTest {
         assertThat(count("ticket_resolutions",ticket)).isZero();
         assertThat(tickets.findById(ticket.getId()).orElseThrow().getCurrentStatus()).isEqualTo(TicketStatus.ROUTED);
     }
-    @ParameterizedTest @ValueSource(strings={"M3","M4","M7","M5"})
+    @ParameterizedTest @ValueSource(strings={"M3","M4","M7","M5","M6"})
     void externalEvidenceAndBusinessEffectsRollbackTogetherWhenInboxCommitFails(String area) {
         Ticket ticket=externalTicket(area,TicketStatus.ROUTED); var event=externalEvent(area,ticket,"RESOLVED"); evidence(event);
         InboxEventRepository failing=mock(InboxEventRepository.class,delegatesTo(inbox));
@@ -179,15 +179,16 @@ class CoreInboxPostgresIntegrationTest {
         assertThat(count("ticket_resolutions",ticket)).isZero();
         processor.process(bytes(event)); assertThat(count("external_attachment_references",ticket)).isEqualTo(1);
     }
-    @ParameterizedTest @ValueSource(strings={"M3","M4","M7","M5"})
+    @ParameterizedTest @ValueSource(strings={"M3","M4","M7","M5","M6"})
     void otherAreaAndOldRoutingEpochCannotModifyExternalTicket(String area) {
         Ticket ticket=externalTicket(area,TicketStatus.ROUTED);
-        processAndAssert(track(status(ticket.getId(),"STARTED")),"IGNORED_OTHER_AREA");
+        var wrongArea=track(status(ticket.getId(),"STARTED")); wrongArea.put("sourceModule",area.equals("M6")?"obras":"ambiente");
+        processAndAssert(wrongArea,"IGNORED_OTHER_AREA");
         var old=externalEvent(area,ticket,"STARTED"); data(old).put("updateOccurredAt","2026-09-01T00:00:00Z");
         processAndAssert(old,"IGNORED_OLD_UPDATE");
         assertThat(count("ticket_activities",ticket)).isZero();
     }
-    @ParameterizedTest @ValueSource(strings={"M3","M4","M7","M5"})
+    @ParameterizedTest @ValueSource(strings={"M3","M4","M7","M5","M6"})
     void externalInformationRequestPausesSlaAndCitizenAnswerPublishesInformationProvided(String area) {
         Ticket ticket=externalTicket(area,TicketStatus.IN_PROGRESS);
         Instant now=clock.instant();
@@ -224,7 +225,7 @@ class CoreInboxPostgresIntegrationTest {
         assertThat(db.queryForObject("SELECT actor_id FROM ticket_activities WHERE ticket_id=?",String.class,ticket.getId()))
                 .isEqualTo(data(event).path("updatedBy").path("id").asText());
     }
-    @ParameterizedTest @ValueSource(strings={"M4","M7","M5"})
+    @ParameterizedTest @ValueSource(strings={"M4","M7","M5","M6"})
     void externalAckObservesCommittedEvidenceAndPrematureProgressNacks(String area) throws Exception {
         Ticket ticket=externalTicket(area,TicketStatus.ROUTED);
         var event=externalEvent(area,ticket,"RESOLVED"); evidence(event);
@@ -243,7 +244,7 @@ class CoreInboxPostgresIntegrationTest {
         verify(channel).basicNack(18,false,false);
         assertThat(inbox.existsById(id(premature))).isFalse();
     }
-    @ParameterizedTest @ValueSource(strings={"M4","M7","M5"})
+    @ParameterizedTest @ValueSource(strings={"M4","M7","M5","M6"})
     void externalEventCollisionAndOldProgressCannotOverwriteCommittedFact(String area) {
         Ticket ticket=externalTicket(area,TicketStatus.ROUTED);
         var event=externalEvent(area,ticket,"STARTED"); processor.process(bytes(event));
@@ -252,7 +253,7 @@ class CoreInboxPostgresIntegrationTest {
         var old=externalEvent(area,ticket,"PROGRESS"); data(old).put("updateOccurredAt","2026-09-30T12:00:00Z");
         processAndAssert(old,"IGNORED_OLD_UPDATE");
         processAndAssert(externalEvent(area,ticket,"STARTED"),"IGNORED_STATE_CONFLICT");
-        Ticket other=ticket(TicketStatus.ROUTED);
+        Ticket other=externalTicket(area.equals("M6")?"M3":"M6",TicketStatus.ROUTED);
         processAndAssert(externalEvent(area,other,"STARTED"),"IGNORED_OTHER_AREA");
         assertThat(count("ticket_activities",ticket)).isEqualTo(1);
         assertThat(count("outbox_events",ticket)).isZero();
@@ -279,13 +280,55 @@ class CoreInboxPostgresIntegrationTest {
         assertThat(count("outbox_events",ticket)).isZero();
     }
     @ParameterizedTest @CsvSource({"M7,ciudadanos","M7,core","M7,unknown-producer",
-            "M5,ciudadanos","M5,core","M5,unknown-producer"})
+            "M5,ciudadanos","M5,core","M5,unknown-producer","M6,ciudadanos","M6,core","M6,unknown-producer"})
     void unsupportedProducerCannotModifyExternalTicket(String area,String producer) {
         Ticket ticket=externalTicket(area,TicketStatus.ROUTED);
         var event=externalEvent(area,ticket,"STARTED"); event.put("sourceModule",producer);
         processAndAssert(event,"IGNORED_PRODUCER");
         assertThat(tickets.findById(ticket.getId()).orElseThrow().getCurrentStatus()).isEqualTo(TicketStatus.ROUTED);
         assertThat(count("ticket_activities",ticket)).isZero();
+    }
+    // Synthetic scenarios derived from M2 v1.79 and M6 agreement prose; Sobres PDF unavailable.
+    @ParameterizedTest @CsvSource({"ROUTED,EXTERNAL_USER","IN_PROGRESS,EXTERNAL_USER","ROUTED,SYSTEM","IN_PROGRESS,SYSTEM"})
+    void m6ResolutionWithoutEvidenceAcceptsUnidentifiedActorAndNeverEchoes(String state,String actor) {
+        Ticket ticket=externalTicket("M6",TicketStatus.valueOf(state));
+        var event=externalEvent("M6",ticket,"RESOLVED");
+        data(event).withObject("/updatedBy").put("type",actor).putNull("id");
+        processor.process(bytes(event)); processor.process(bytes(event));
+        assertThat(tickets.findById(ticket.getId()).orElseThrow().getCurrentStatus()).isEqualTo(TicketStatus.RESOLVED);
+        assertThat(count("ticket_resolutions",ticket)).isEqualTo(1);
+        assertThat(count("external_attachment_references",ticket)).isZero();
+        assertThat(count("outbox_events",ticket)).isZero();
+        assertThat(db.queryForObject("SELECT actor_id FROM ticket_activities WHERE ticket_id=?",String.class,ticket.getId())).isNull();
+        assertThat(db.queryForObject("SELECT text FROM ticket_messages WHERE ticket_id=? AND visibility='PUBLIC'",String.class,ticket.getId())).isEqualTo("Trabajo terminado");
+    }
+    @ParameterizedTest @ValueSource(strings={"OTHER","DOES_NOT_APPLY","REQUEST_TYPE_MISMATCH"})
+    void m6CancellationAndReturnUseOfficialReasonsAndInternalExplanation(String reason) {
+        Ticket ticket=externalTicket("M6",TicketStatus.ROUTED);
+        boolean returned=reason.equals("REQUEST_TYPE_MISMATCH");
+        var event=externalEvent("M6",ticket,returned?"RETURNED":"REJECTED");
+        data(event).remove("publicMessage"); data(event).put("internalMessage","Motivo del operador");
+        details(event).withObject(returned?"/returnInfo":"/cancellation").put("reasonCode",reason);
+        processor.process(bytes(event)); processor.process(bytes(event));
+        assertThat(tickets.findById(ticket.getId()).orElseThrow().getCurrentStatus()).isEqualTo(returned?TicketStatus.IN_REVIEW:TicketStatus.CANCELLED);
+        assertThat(db.queryForObject("SELECT reason_code FROM ticket_activities WHERE ticket_id=?",String.class,ticket.getId())).isEqualTo(reason);
+        assertThat(count("ticket_activities",ticket)).isEqualTo(1);
+        assertThat(count("outbox_events",ticket)).isZero();
+    }
+    @Test void m6PastSuggestedDeadlineIsAuditedAndAckedAfterRollback() throws Exception {
+        Ticket ticket=externalTicket("M6",TicketStatus.ROUTED);
+        var event=externalEvent("M6",ticket,"INFORMATION_REQUIRED");
+        details(event).withObject("/informationRequest").put("requiredBy","2000-01-01T00:00:00Z");
+        Channel channel=mock(Channel.class);
+        var consumer=new CoreEventConsumer(mock(ConnectionFactory.class),processor,1);
+        var delivery=new Delivery(new Envelope(19,false,"",""),new AMQP.BasicProperties(),bytes(event));
+        consumer.receive(channel,mock(Connection.class),delivery); consumer.receive(channel,mock(Connection.class),delivery);
+        verify(channel,times(2)).basicAck(19,false);
+        assertThat(inbox.findById(id(event)).orElseThrow().getError()).isEqualTo("REJECTED_BUSINESS_RULE");
+        assertThat(tickets.findById(ticket.getId()).orElseThrow().getCurrentStatus()).isEqualTo(TicketStatus.ROUTED);
+        assertThat(count("information_requests",ticket)).isZero();
+        assertThat(count("ticket_activities",ticket)).isZero();
+        assertThat(count("outbox_events",ticket)).isZero();
     }
     private Ticket externalTicket(String area,TicketStatus state) {
         Ticket ticket=ticket(state); ticket.setResponsibleAreaId(area); return tickets.saveAndFlush(ticket);

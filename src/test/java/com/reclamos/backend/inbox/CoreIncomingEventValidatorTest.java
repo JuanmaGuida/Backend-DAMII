@@ -79,6 +79,39 @@ class CoreIncomingEventValidatorTest {
         assertThat(validator.decode(bytes(event)).eventType()).isEqualTo("otherEvent");
         event.put("eventId","not-a-uuid"); rejected(event,IncomingEventFailure.Code.INVALID_EVENT);
     }
+    @ParameterizedTest @ValueSource(strings={"status","previousStatus","publicId","expectedTicketVersion","sourceRef","serviceId","inspectionId"})
+    void m6CannotAddForeignEntityOrOfficialStateFields(String field) {
+        var event=status(UUID.randomUUID(),"STARTED"); data(event).put(field,"foreign-value");
+        rejected(event,IncomingEventFailure.Code.INVALID_EVENT);
+    }
+    @ParameterizedTest @ValueSource(strings={"USR-M6-77","14",""})
+    void m6ActorMustUseUuidOrNullRatherThanLocalIdentifiers(String id) {
+        var event=status(UUID.randomUUID(),"STARTED"); data(event).withObject("/updatedBy").put("id",id);
+        rejected(event,IncomingEventFailure.Code.INVALID_EVENT);
+    }
+    @Test void m6ActorIdMayBeOmittedByCoreButUnknownActorsAndAlternateAttachmentsAreRejected() {
+        var event=status(UUID.randomUUID(),"STARTED"); data(event).withObject("/updatedBy").remove("id");
+        assertThat(validator.statusRequest(validator.decode(bytes(event))).updatedBy().id()).isNull();
+        data(event).withObject("/updatedBy").put("type","AREA_USER");
+        rejected(event,IncomingEventFailure.Code.INVALID_EVENT);
+        data(event).withObject("/updatedBy").put("type","EXTERNAL_USER");
+        data(event).putArray("attachments").addObject().put("url","https://example.test/photo")
+                .put("mimeType","image/jpeg").put("description","Foto");
+        rejected(event,IncomingEventFailure.Code.INVALID_EVENT);
+    }
+    @ParameterizedTest @ValueSource(strings={"2026-12-01","2026-12-01T10:00:00","not-a-date"})
+    void m6SuggestedDeadlineRequiresDateTimeWithZone(String date) {
+        var event=status(UUID.randomUUID(),"INFORMATION_REQUIRED");
+        details(event).withObject("/informationRequest").put("requiredBy",date);
+        rejected(event,IncomingEventFailure.Code.INVALID_EVENT);
+    }
+    @Test void m6InformationMessageUsesM2NonblankRuleWithoutInventingPdfLengthLimit() {
+        var event=status(UUID.randomUUID(),"INFORMATION_REQUIRED");
+        var info=details(event).withObject("/informationRequest");
+        info.put("messageForCitizen"," "); rejected(event,IncomingEventFailure.Code.INVALID_EVENT);
+        info.put("messageForCitizen","a".repeat(501));
+        assertThat(validator.statusRequest(validator.decode(bytes(event))).details().informationRequest().messageForCitizen()).hasSize(501);
+    }
     private void rejected(ObjectNode event, IncomingEventFailure.Code code) {
         assertThatThrownBy(() -> validator.decode(bytes(event))).isInstanceOf(IncomingEventFailure.class).hasMessage(code.name());
     }

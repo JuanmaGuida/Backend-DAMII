@@ -105,7 +105,7 @@ class TicketOutboxServiceTest {
     }
 
     @ParameterizedTest @CsvSource({"M3,false,false","M3,false,true","M4,false,false","M4,false,true",
-            "M7,false,false","M7,false,true","M7,true,false","M7,true,true","M5,false,false","M5,false,true","M5,true,false","M5,true,true"})
+            "M7,false,false","M7,false,true","M7,true,false","M7,true,true","M5,false,false","M5,false,true","M5,true,false","M5,true,true","M6,false,false","M6,false,true","M6,true,false","M6,true,true"})
     @SuppressWarnings("unchecked")
     void externalRoutingHasContractSnapshotAndReassignmentWithoutCreatingATicketEvent(String area,boolean anonymous,boolean reassignment) {
         Ticket ticket=ticket(anonymous,area,TicketStatus.ROUTED);
