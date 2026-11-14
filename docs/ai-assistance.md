@@ -150,7 +150,22 @@ Por qué no funcionan: el texto del usuario entra dentro de delimitadores sin po
 devolver JSON con campos validados por el back, el tipo sugerido tiene que existir en el catálogo, y la IA no ejecuta
 acciones: cambiar el tipo o vincular un duplicado lo decide siempre una persona.
 
+## Límites del tier gratuito (consola de Google AI Studio, 13/11/2026)
+
+Leídos del panel «Límites de frecuencia» del proyecto, no de fuentes de terceros:
+
+| Modelo | RPM (por minuto) | TPM (tokens de entrada por minuto) | RPD (por día) | Máximo usado en 28 días |
+|---|---|---|---|---|
+| Gemini 3.5 Flash Lite (`gemini-3.5-flash-lite`, el que usa el back) | 15 | 250 000 | 500 | 7 RPM · 19,25 K TPM · 33 RPD |
+
+- El tope global del gateway (10 pedidos por minuto) queda por debajo de los 15 RPM del proveedor, así que el back
+  corta antes de que Google devuelva 429 por frecuencia.
+- El gateway no limita por día: los 500 pedidos diarios del proveedor son el techo real. Cuando se agotan, Google
+  responde 429 y el back lo trata como proveedor caído (`UNAVAILABLE`, el corte de 3 fallos lo aísla un minuto).
+- La demostración consume poco: en 28 días de pruebas el máximo fue de 33 pedidos en un día.
+
+Capturas de la consola adjuntas en DDA2-266.
+
 ## Pendiente de verificar
 
-- Confirmar los límites vigentes del tier gratuito en la consola de AI Studio (los valores citados son de terceros).
 - Probar en vivo la alternativa del análisis del agente con `AI_ENABLED=false` en el entorno de la demo.
