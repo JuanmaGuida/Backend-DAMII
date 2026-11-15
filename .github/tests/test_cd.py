@@ -75,20 +75,23 @@ if a[0]=='compose':
  elif a[-3:]==['ps','-q','backend']: print('a'*12)
  elif a[-3:]==['ps','-q','frontend']: print('b'*12)
  else: sys.exit(90)
+elif a[0]=='inspect' and a[1:3]==['--format','{{.Config.Image}}']:
+ print('ghcr.io/santimussi/front-desarrollo-apps-2@sha256:'+'d'*64)
 elif a[0]=='inspect':
- template=a[2]
- if template=='{{.State.Running}}': print(os.getenv('FAKE_RUNNING','true'))
- elif template=='{{.Config.Image}}': print('ghcr.io/santimussi/front-desarrollo-apps-2@sha256:'+'d'*64)
- else:
-  pair=re.search(r'if eq \\. "([^"]+)"',template).group(1)
-  values={'IDENTITY_PROVIDER':os.getenv('FAKE_RUNNING_PROVIDER','M1'),
-   'CORE_OUTBOX_ENABLED':'false','CORE_INBOX_ENABLED':'false',
-   'CORE_OUTBOX_AUTO_APPROVE_NEW_EVENTS':'false','SIMULATOR_ENABLED':'false','CORE_OUTBOX_APPROVED_EVENT_IDS':''}
-  key,value=pair.split('=',1)
-  if values.get(key)==value and key!=os.getenv('FAKE_BAD_PAIR'): print('OK')
+ values=json.loads(Path(os.environ['FAKE_CONFIG']).read_text())['services']['backend']['environment'].copy()
+ values['IDENTITY_PROVIDER']=os.getenv('FAKE_RUNNING_PROVIDER',values['IDENTITY_PROVIDER'])
+ if os.getenv('FAKE_BAD_PAIR'): values[os.environ['FAKE_BAD_PAIR']]='runtime-drift'
+ values.update(json.loads(os.getenv('FAKE_RUNNING_ENV','{}')))
+ print(json.dumps([
+  {'State':{'Running':os.getenv('FAKE_RUNNING','true')=='true'},'Config':{'Env':[k+'='+str(v) for k,v in values.items()]}},
+  {'State':{'Running':os.getenv('FAKE_FRONTEND_RUNNING','true')=='true'},'Config':{}}
+ ]))
 elif a[:2]==['image','inspect']: print(os.getenv('FAKE_FRONTEND_PROVIDER','M1'))
 else: sys.exit(91)
 ''')
+        if os.name == 'nt':
+            # Python subprocess cannot execute the Unix shebang fixture directly on Windows.
+            self.write(self.bin / 'docker.cmd', '@"' + str(sys.executable) + '" "%~dp0docker" %*\n')
         self.write(self.bin / 'gh', '#!/usr/bin/env python3\nimport os\nprint(os.getenv("FAKE_HEAD", ""))\n')
         self.write(self.server / 'scripts/validate-integration-config.py',
                    'import json,os,sys\njson.load(sys.stdin)\nsys.exit(78 if os.getenv("FAKE_INVALID_CONFIG") else 0)\n')
@@ -174,19 +177,75 @@ else: sys.exit(91)
         self.environment['IDENTITY_PROVIDER']='MOCK';self.write_config()
         self.blocked(self.deploy())
 
-    def test_each_configured_integration_flag_blocks_cd(self):
-        for flag in ('CORE_OUTBOX_ENABLED','CORE_INBOX_ENABLED','CORE_OUTBOX_AUTO_APPROVE_NEW_EVENTS','SIMULATOR_ENABLED'):
-            with self.subTest(flag=flag):
-                self.environment[flag]='true';self.write_config();self.blocked(self.deploy());self.environment[flag]='false'
+    def test_core_off_inbox_only_outbox_only_and_both_are_allowed_for_both_services(self):
+        for inbox,outbox in (("false","false"),("true","false"),("false","true"),("true","true")):
+            self.environment.update(CORE_INBOX_ENABLED=inbox,CORE_OUTBOX_ENABLED=outbox)
+            self.write_config()
+            for service,selection in (("backend",SHA),("frontend",DIGEST)):
+                with self.subTest(inbox=inbox,outbox=outbox,service=service):
+                    self.called.unlink(missing_ok=True)
+                    result=self.deploy(service,selection)
+                    self.assertEqual(result.returncode,0,result.stderr)
+                    self.assertEqual(self.called.read_text().splitlines(),[service,selection])
 
-    def test_manual_event_list_blocks_without_printing_values(self):
-        self.environment['CORE_OUTBOX_APPROVED_EVENT_IDS']=PRIVATE;self.write_config()
+    def test_valid_manual_and_automatic_publication_modes_preserve_configuration(self):
+        for automatic,approved in (("false","293c56b5-a2ee-409b-8ab7-107cff88df7e"),("true","")):
+            self.environment.update(CORE_INBOX_ENABLED="true",CORE_OUTBOX_ENABLED="true",
+                CORE_OUTBOX_AUTO_APPROVE_NEW_EVENTS=automatic,CORE_OUTBOX_APPROVED_EVENT_IDS=approved)
+            self.write_config()
+            before=self.config.read_bytes()
+            for service,selection in (("backend",SHA),("frontend",DIGEST)):
+                with self.subTest(automatic=automatic,service=service):
+                    result=self.deploy(service,selection)
+                    self.assertEqual(result.returncode,0,result.stderr)
+                    self.assertEqual(self.config.read_bytes(),before)
+                    self.assertEqual((self.server/"compose/.env").read_text(),"# local fixture only\n")
+
+    def test_simulator_and_live_provider_or_service_mismatches_are_still_blocked(self):
+        self.environment["SIMULATOR_ENABLED"]="true";self.write_config()
         self.blocked(self.deploy())
-
-    def test_live_provider_stopped_backend_and_flags_are_checked(self):
-        for key,value in (('FAKE_RUNNING_PROVIDER','MOCK'),('FAKE_RUNNING','false'),('FAKE_BAD_PAIR','CORE_INBOX_ENABLED')):
+        self.environment["SIMULATOR_ENABLED"]="false";self.write_config()
+        for key,value in (("FAKE_RUNNING_PROVIDER","MOCK"),("FAKE_RUNNING","false"),
+                          ("FAKE_FRONTEND_RUNNING","false")):
             with self.subTest(key=key):
                 self.env[key]=value;self.blocked(self.deploy());self.env.pop(key)
+
+    def test_backend_rejects_drift_in_any_core_setting_without_echoing_secrets(self):
+        for key in ("CORE_INBOX_ENABLED","CORE_OUTBOX_ENABLED","CORE_OUTBOX_AUTO_APPROVE_NEW_EVENTS",
+                    "CORE_OUTBOX_APPROVED_EVENT_IDS","CORE_RABBIT_HOST","CORE_RABBIT_USERNAME",
+                    "CORE_RABBIT_PASSWORD","CORE_OUTBOX_MAX_ATTEMPTS"):
+            for desired in ("false","true") if key.endswith("ENABLED") else ("configured-value",):
+                with self.subTest(key=key,desired=desired):
+                    self.environment[key]=desired;self.write_config()
+                    self.env["FAKE_RUNNING_ENV"]=json.dumps({key:PRIVATE})
+                    self.blocked(self.deploy("backend",SHA))
+                    self.env.pop("FAKE_RUNNING_ENV")
+                    self.environment.pop(key)
+        self.env["FAKE_RUNNING_ENV"]=json.dumps({"CORE_UNDECLARED_OPTION":PRIVATE})
+        self.blocked(self.deploy("backend",SHA))
+
+    def test_frontend_does_not_depend_on_internal_runtime_core_flags_or_credentials(self):
+        self.environment.update(CORE_INBOX_ENABLED="true",CORE_OUTBOX_ENABLED="true")
+        self.write_config()
+        self.env["FAKE_RUNNING_ENV"]=json.dumps({"CORE_INBOX_ENABLED":"false",
+            "CORE_OUTBOX_APPROVED_EVENT_IDS":"3fa85f64-5717-4562-b3fc-2c963f66afa6", "CORE_RABBIT_PASSWORD":PRIVATE})
+        result=self.deploy()
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.assertEqual(self.called.read_text().splitlines(),["frontend",DIGEST])
+
+    def test_invalid_core_modes_rejected_by_installed_validator_never_reach_deploy(self):
+        # Infra owns mode/TLS/credential validation. A rejection from that boundary
+        # must stop either guard even when Core-off restrictions are removed.
+        self.env["FAKE_INVALID_CONFIG"]="1"
+        for values in ({"CORE_INBOX_ENABLED":"invalid"},
+                       {"CORE_INBOX_ENABLED":"true","IDENTITY_PROVIDER":"MOCK"},
+                       {"CORE_OUTBOX_AUTO_APPROVE_NEW_EVENTS":"true","CORE_OUTBOX_ENABLED":"false"},
+                       {"CORE_OUTBOX_ENABLED":"true","CORE_RABBIT_PORT":"5672"},
+                       {"CORE_OUTBOX_ENABLED":"true","CORE_OUTBOX_APPROVED_EVENT_IDS":PRIVATE}):
+            self.environment.update(values);self.write_config()
+            for service,selection in (("backend",SHA),("frontend",DIGEST)):
+                with self.subTest(fields=sorted(values),service=service):
+                    self.blocked(self.deploy(service,selection))
 
     def test_running_frontend_label_mismatch_or_missing_is_blocked(self):
         for value in ('MOCK',''):

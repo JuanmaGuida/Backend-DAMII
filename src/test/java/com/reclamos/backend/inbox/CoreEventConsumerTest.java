@@ -79,4 +79,35 @@ class CoreEventConsumerTest {
         assertThatThrownBy(() -> new CoreEventConsumer(factory,processor,0)).isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> new CoreEventConsumer(factory,processor,17)).isInstanceOf(IllegalStateException.class);
     }
+
+    @Test void shutdownDuringProcessingClosesDeliveryChannelAndNeverReconnectsOrAcksOnAnotherChannel() throws Exception {
+        when(factory.newConnection("m2-core-inbox")).thenReturn(connection);
+        when(connection.createChannel()).thenReturn(channel);
+        consumer.connectIfNeeded();
+        var entered = new java.util.concurrent.CountDownLatch(1);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        doAnswer(i -> {
+            entered.countDown();
+            assertThat(release.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            return null;
+        }).when(processor).process(body);
+        doThrow(new IOException("delivery connection closed during shutdown")).when(channel).basicAck(17, false);
+        try (var executor = java.util.concurrent.Executors.newSingleThreadExecutor()) {
+            var inFlight = executor.submit(() -> consumer.receive(channel, connection, delivery()));
+            try {
+                assertThat(entered.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+                consumer.close();
+                consumer.connectIfNeeded();
+                verify(connection).abort(1000);
+                verify(channel, never()).basicAck(anyLong(), anyBoolean());
+                verify(factory, times(1)).newConnection(anyString());
+            } finally {
+                release.countDown();
+            }
+            inFlight.get(5, java.util.concurrent.TimeUnit.SECONDS);
+        }
+        verify(channel).basicAck(17, false); // Original channel only; broker may redeliver after the lost ACK.
+        verify(connection, times(2)).abort(1000);
+        verify(channel, never()).basicNack(anyLong(), anyBoolean(), anyBoolean());
+    }
 }

@@ -23,11 +23,9 @@ import json, sys
 try:
     env = json.load(sys.stdin)["services"]["backend"]["environment"]
     assert env.get("IDENTITY_PROVIDER") == sys.argv[1]
-    assert all(str(env.get(key)).lower() == "false" for key in (
-        "CORE_OUTBOX_ENABLED", "CORE_INBOX_ENABLED", "CORE_OUTBOX_AUTO_APPROVE_NEW_EVENTS", "SIMULATOR_ENABLED"))
-    assert not (env.get("CORE_OUTBOX_APPROVED_EVENT_IDS") or "").strip()
+    assert str(env.get("SIMULATOR_ENABLED")).lower() == "false"
 except (AssertionError, KeyError, TypeError, ValueError):
-    sys.exit("CD blocked: configured provider differs or Core/simulator is enabled.")
+    sys.exit("CD blocked: configured provider differs or simulator is enabled.")
 ' "$expected"
 
 backend_id="$("${compose[@]}" ps -q backend)"
@@ -35,15 +33,30 @@ frontend_id="$("${compose[@]}" ps -q frontend)"
 [[ "$backend_id" =~ ^[0-9a-f]{12,64}$ && "$frontend_id" =~ ^[0-9a-f]{12,64}$ ]] || {
   echo 'CD requires both existing application services.' >&2; exit 65;
 }
-[[ "$(docker inspect --format '{{.State.Running}}' "$backend_id")" == true &&
-   "$(docker inspect --format '{{.State.Running}}' "$frontend_id")" == true ]] || exit 65
-for pair in "IDENTITY_PROVIDER=$expected" CORE_OUTBOX_ENABLED=false CORE_INBOX_ENABLED=false CORE_OUTBOX_AUTO_APPROVE_NEW_EVENTS=false SIMULATOR_ENABLED=false CORE_OUTBOX_APPROVED_EVENT_IDS=; do
-  # Emit only a match marker, never the container environment or rejected values.
-  template="{{range .Config.Env}}{{if eq . \"$pair\"}}OK{{end}}{{end}}"
-  [[ "$(docker inspect --format "$template" "$backend_id")" == OK ]] || {
-    echo 'CD blocked: running Backend provider/flags differ from the expected configuration.' >&2; exit 65;
-  }
-done
+# Inspect privately: Frontend does not restart Backend or depend on its Core flags.
+# Backend must not silently apply staged Core configuration during a routine image rollout.
+"${compose[@]}" config --format json | python3 -c '
+import json, shutil, subprocess, sys
+try:
+    config = json.load(sys.stdin)
+    configured = config["services"]["backend"]["environment"]
+    containers = json.loads(subprocess.run(
+        [shutil.which("docker"), "inspect", sys.argv[1], sys.argv[2]],
+        capture_output=True, check=True).stdout)
+    assert len(containers) == 2 and all(c["State"]["Running"] for c in containers)
+    actual = dict(pair.split("=", 1) for pair in containers[0]["Config"]["Env"])
+    assert actual.get("IDENTITY_PROVIDER") == sys.argv[3]
+    assert actual.get("SIMULATOR_ENABLED") == "false"
+    # Reuse Infra policy for the live mode too; capture output to keep secrets private.
+    config["services"]["backend"]["environment"] = actual
+    subprocess.run([sys.executable, sys.argv[5]], input=json.dumps(config).encode(),
+                   capture_output=True, check=True)
+    if sys.argv[4] == "backend":
+        keys = {key for env in (configured, actual) for key in env if key.startswith("CORE_")}
+        assert all(str(configured.get(key)) == actual.get(key) for key in keys)
+except (AssertionError, KeyError, TypeError, ValueError, OSError, subprocess.SubprocessError):
+    sys.exit("CD blocked: live services/provider differ or Backend Core configuration has drifted.")
+' "$backend_id" "$frontend_id" "$expected" "$service" "$root/scripts/validate-integration-config.py"
 frontend_image="$(docker inspect --format '{{.Config.Image}}' "$frontend_id")"
 frontend_provider="$(docker image inspect --format '{{if .Config.Labels}}{{index .Config.Labels "ar.edu.uade.m2.identity-provider"}}{{end}}' "$frontend_image")"
 [[ "$frontend_provider" == "$expected" ]] || {
