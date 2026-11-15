@@ -9,12 +9,33 @@ on:
     branches:
       - dev
       - master
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
+  secrets:
+    name: Scan full history and working tree
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Scan secrets (metadata only)
+        run: python3 .github/scripts/check-secrets.py --output "$RUNNER_TEMP/secrets-summary.json" --self-test
+      - name: Upload safe secret scan summary
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: secrets-summary
+          path: ${{ runner.temp }}/secrets-summary.json
+          if-no-files-found: error
+
   configuration:
     name: Resolve provider and validate CD contracts
     runs-on: ubuntu-latest
@@ -113,16 +134,32 @@ jobs:
         run: docker build --tag backend-ci:${{ github.sha }} .
 
       - name: Upload JaCoCo report
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: jacoco-report
           path: target/site/jacoco/
           if-no-files-found: error
 
+      - name: Upload test results and source revision
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: backend-test-results
+          path: target/surefire-reports/TEST-*.xml
+          if-no-files-found: warn
+
+      - name: Record validated revision
+        if: always()
+        env:
+          VALIDATED_REF: ${{ github.ref }}
+          VALIDATED_SHA: ${{ github.sha }}
+        run: printf 'Backend ref=%s commit=%s\n' "$VALIDATED_REF" "$VALIDATED_SHA" >> "$GITHUB_STEP_SUMMARY"
+
   publish:
     name: Publish Backend image
     if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
-    needs: validate
+    needs: [validate, secrets]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     concurrency:
@@ -158,7 +195,7 @@ jobs:
   deploy:
     name: Deploy Backend to Lightsail
     if: github.event_name == 'push' && github.ref == 'refs/heads/dev' && vars.CD_ENABLED == 'true'
-    needs: [configuration, publish]
+    needs: [configuration, publish, secrets]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     concurrency:
