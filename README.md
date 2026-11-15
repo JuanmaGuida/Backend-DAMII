@@ -50,7 +50,7 @@ Contenido base:
 
 POSTGRES_DB=reclamos
 POSTGRES_USER=reclamos
-POSTGRES_PASSWORD=reclamos_local
+POSTGRES_PASSWORD=<contraseña local privada>
 POSTGRES_PORT=5432
 APP_PORT=8080
 MOCK_CITIZEN_PASSWORD=replace_with_a_local_citizen_password
@@ -135,7 +135,7 @@ Al ejecutar el backend localmente desde cualquier IDE, estas variables deben con
 SPRING_PROFILES_ACTIVE=dev
 SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5432/reclamos
 SPRING_DATASOURCE_USERNAME=reclamos
-SPRING_DATASOURCE_PASSWORD=reclamos_local
+SPRING_DATASOURCE_PASSWORD=<contraseña local privada>
 ```
 
 Los valores deben coincidir con los configurados en `.env`.
@@ -242,7 +242,7 @@ Las migraciones se encuentran en:
 src/main/resources/db/migration
 ```
 
-La migración vigente más reciente es `V41__create_notification_log.sql`. La secuencia incluye, entre otras:
+La migración vigente más reciente es `V51__external_attachment_references.sql`. La secuencia incluye, entre otras:
 
 ```text
 V1__...
@@ -292,7 +292,7 @@ Host: localhost
 Port: 5432
 Database: reclamos
 Username: reclamos
-Password: reclamos_local
+Password: valor privado configurado en .env
 ```
 
 Si se modifica `POSTGRES_PORT`, utilizar también ese puerto en pgAdmin.
@@ -351,7 +351,7 @@ TICKET_INFORMATION_EXPIRATION_SCAN_DELAY=30000
 # Usuarios mock disponibles en desarrollo
 
 El profile `dev` incluye identidades simuladas para desarrollar sin depender de M1.
-Las contraseñas no están versionadas: deben definirse en el `.env` local usando
+Las contraseñas actuales se suministran por entorno. Existen literales MOCK históricos pendientes de revisión de reutilización antes de G6. Definir las actuales en el `.env` local usando
 las variables indicadas a continuación.
 
 ## Ciudadano
@@ -523,7 +523,7 @@ Host: localhost
 Port: 5433
 Database: reclamos
 Username: reclamos
-Password: reclamos_local
+Password: valor privado configurado en .env
 ```
 
 Después recrear el contenedor:
@@ -566,7 +566,7 @@ Primero verificar que los valores utilizados por Spring coincidan con `.env`:
 ```env
 POSTGRES_DB=reclamos
 POSTGRES_USER=reclamos
-POSTGRES_PASSWORD=reclamos_local
+POSTGRES_PASSWORD=<contraseña local privada>
 ```
 
 Existe un detalle importante con los volúmenes de Docker:
@@ -616,7 +616,7 @@ El CD no utiliza GitHub Environments. En `Settings → Secrets and variables →
 SPRING_PROFILES_ACTIVE=dev
 SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5432/reclamos
 SPRING_DATASOURCE_USERNAME=reclamos
-SPRING_DATASOURCE_PASSWORD=reclamos_local
+SPRING_DATASOURCE_PASSWORD=<contraseña local privada>
 ```
 
 ## Levantar PostgreSQL
@@ -654,3 +654,48 @@ Configuración local de Spring:
 ```text
 SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5433/reclamos
 ```
+
+## Validación de release y secretos
+
+Los pushes de tags `v*` (incluido `v2.0-entrega4`) validan el commit etiquetado;
+no publican imágenes ni despliegan. Se conservan pruebas y gate de líneas del 85%.
+JaCoCo, resultados JUnit, ref/SHA y un resumen de secretos sin valores son evidencia
+para QA. La duración definitiva se mide en el run del tag cuando se cierre la release.
+Sonar y los demás controles académicos pendientes no están implementados por este cambio.
+
+Desde la raíz: `python .github/scripts/check-secrets.py` (Python 3.11+ y Git).
+Descarga temporalmente Gitleaks 8.30.1 oficial, verifica SHA-256 y escanea todo el
+historial alcanzable por las referencias locales más archivos actuales versionables,
+incluidos untracked no ignorados. Requiere clon completo; no descarga refs por su cuenta.
+Para ejecución sin descarga: `python .github/scripts/check-secrets.py --gitleaks <ruta>`.
+Agregar `--self-test` ejecuta regresiones reales con valores inventados y commits sólo
+en repositorios temporales; es obligatorio en el job G6 de CI.
+`--output <archivo-fuera-del-repo.json>` guarda sólo regla/ruta/líneas/commit y recuentos.
+Los `.env` privados ignorados quedan fuera: revisar `git status` antes de agregar archivos.
+No publicar reportes crudos de Gitleaks, logs, tokens ni contraseñas.
+
+La configuración conserva las reglas oficiales y detecta asignaciones literales en
+código, JSON, YAML, `.env`, properties y formatos de configuración, incluidos defaults
+de variables y finales LF/CRLF. Omite referencias y placeholders completos, con letras
+Unicode. Las fixtures revisadas (stubs, proveedores de test, transacciones de prueba,
+CI efímero y ejemplos negativos) requieren valor exacto, regla y ruta anclada al archivo
+desde la raíz. Se conservan las fixtures públicas ya verificadas. Valores nuevos, copias
+en subdirectorios y otros tipos de secretos en esas rutas se siguen detectando.
+El runner rechaza `.gitleaksignore` y descuenta después del escaneo sólo los 82
+fingerprints exactos de `.gitleaks-history-exceptions.json` (commit completo, archivo,
+regla y línea), aprobados para siete contraseñas históricas. El inventario no contiene
+sus valores. Cualquier entrada inválida, duplicada o sin coincidencia provoca un error;
+el árbol actual nunca recibe esas excepciones. El test de CI fija cantidad y huella
+del inventario: cambiarlo requiere una revisión explícita. Se informa cuántos hallazgos
+se detectaron y exceptuaron, sin publicar contenido sensible.
+Esta aceptación técnica conserva los secretos en el historial y no acredita G6 literal
+ante la cátedra. Su vigencia/reutilización sigue pendiente de confirmación con el equipo;
+si hubo uso real corresponde coordinar la rotación. No se rota ni reescribe automáticamente.
+La detección está limitada a los patrones y formatos reconocidos; no es cobertura absoluta.
+Publicar y desplegar requiere que G6 termine correctamente, además de los gates existentes.
+Un fallo, cancelación u omisión de G6 bloquea ambas operaciones; no afecta la versión ya desplegada.
+
+Para Backend + PostgreSQL local: completar `.env`, generar la clave persistente según
+la guía enlazada y ejecutar `docker compose up --build --wait --wait-timeout 600`.
+El healthcheck espera HTTP 200 de Actuator. Para Frontend + Backend + PostgreSQL,
+seguir el README de Infra. Ninguna de esas variantes acredita aún G1 completo.

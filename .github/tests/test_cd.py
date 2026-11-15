@@ -224,7 +224,7 @@ else: sys.exit(91)
         self.assertIn('if: always()', deploy)
         self.assertIn('< .github/scripts/deploy-cd.sh', deploy)
         if 'Frontend CI' in WORKFLOW:
-            self.assertIn('needs: [configuration, validate, e2e]', WORKFLOW)
+            self.assertIn('needs: [configuration, validate, e2e, secrets]', WORKFLOW)
             self.assertIn('image: ${{ steps.record.outputs.image }}', WORKFLOW)
             self.assertIn('VITE_IDENTITY_PROVIDER: MOCK', WORKFLOW)
             self.assertIn('needs.publish.outputs.image', deploy)

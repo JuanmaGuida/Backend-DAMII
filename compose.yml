@@ -4,7 +4,7 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-reclamos}
       POSTGRES_USER: ${POSTGRES_USER:-reclamos}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-reclamos_local}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
@@ -25,7 +25,7 @@ services:
       SPRING_PROFILES_ACTIVE: dev
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-reclamos}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-reclamos}
-      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-reclamos_local}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       TRACKING_CODE_ENCRYPTION_KEY_BASE64: ${TRACKING_CODE_ENCRYPTION_KEY_BASE64:?Set TRACKING_CODE_ENCRYPTION_KEY_BASE64 in .env}
       TRACKING_CODE_ENCRYPTION_KEY_ID: ${TRACKING_CODE_ENCRYPTION_KEY_ID:?Set TRACKING_CODE_ENCRYPTION_KEY_ID in .env}
       MOCK_CITIZEN_PASSWORD: ${MOCK_CITIZEN_PASSWORD:?Set MOCK_CITIZEN_PASSWORD in .env}
@@ -47,6 +47,12 @@ services:
       - "${APP_PORT:-8080}:8080"
     volumes:
       - attachment_data:/var/lib/m2/attachments
+    healthcheck:
+      test: ["CMD", "bash", "-ec", "exec 3<>/dev/tcp/127.0.0.1/8080; printf 'GET /actuator/health HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3; IFS= read -r status <&3; [[ \"$$status\" == *\" 200 \"* ]]"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+      start_period: 30s
     depends_on:
       postgres:
         condition: service_healthy
