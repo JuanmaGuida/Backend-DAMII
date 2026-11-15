@@ -48,7 +48,7 @@ public class InformationRequestExpirationService {
         if (request == null
                 || request.getStatus() != InformationRequestStatus.PENDING
                 || request.getDueAt().isAfter(now)
-                || ticket.getCurrentStatus() != TicketStatus.PENDING_INFORMATION) {
+                || !ticket.canPerform(TicketAction.EXPIRE_INFORMATION)) {
             return;
         }
 
@@ -57,8 +57,7 @@ public class InformationRequestExpirationService {
             informationRequestRepository.save(request);
             reclassificationDataService.terminate(ticket, "INFO_TIMEOUT: venció la solicitud estructurada", now);
             ticketSlaService.resumeActiveResolutionCycle(ticket, now);
-            ticket.setCurrentStatus(TicketStatus.IN_REVIEW);
-            ticket.setStatusChangedAt(now.truncatedTo(java.time.temporal.ChronoUnit.MICROS));
+            ticket.transition(TicketAction.REVIEW_INFORMATION, now.truncatedTo(java.time.temporal.ChronoUnit.MICROS));
             ticketRepository.save(ticket);
             CancellationConflictAudit.record(activityRepository,ticket,"INFO_TIMEOUT",CancellationReasonCode.INFO_TIMEOUT,
                     null,request.getId(),ticketRepository.findActiveDuplicateIds(ticketId),TicketStatus.PENDING_INFORMATION,now,null,null);
@@ -76,8 +75,7 @@ public class InformationRequestExpirationService {
         if (cancellationRepository.existsByTicketId(ticket.getId())) return;
 
         ticketSlaService.terminateActiveCycles(ticket, now);
-        ticket.setCurrentStatus(TicketStatus.CANCELLED);
-        ticket.setStatusChangedAt(now);
+        ticket.transition(TicketAction.EXPIRE_INFORMATION, now);
         ticketRepository.save(ticket);
 
         TicketCancellation cancellation = new TicketCancellation();

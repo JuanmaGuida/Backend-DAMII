@@ -120,8 +120,7 @@ public class TicketReclassificationService {
         // reportó la anterior no corresponde a la nueva, por lo que se reinicia y queda en la auditoría.
         Short previousProgress = exceptional ? ticket.getCurrentProgress() : null;
         if (exceptional) ticket.setCurrentProgress(null);
-        ticket.setCurrentStatus("M2".equalsIgnoreCase(target.getResponsibleAreaId()) ? TicketStatus.IN_PROGRESS : TicketStatus.ROUTED);
-        ticket.setStatusChangedAt(now);
+        ticket.transition(TicketAction.ROUTE, now);
         if (ticket.getClassificationFinalizedAt() == null) ticket.setClassificationFinalizedAt(now);
         tickets.save(ticket);
         // Promote only this proposal's public evidence. Abandoned attempts remain isolated.
@@ -154,10 +153,10 @@ public class TicketReclassificationService {
             InformationRequest info = requests.findByIdAndTicketIdForUpdate(p.getInformationRequestId(), ticketId).orElseThrow();
             if (info.getStatus() == InformationRequestStatus.PENDING) {
                 if (!info.getDueAt().isAfter(now)) throw new InformationRequestExpiredException();
-                if (ticket.getCurrentStatus() != TicketStatus.PENDING_INFORMATION) throw conflict("Estado incompatible con la solicitud pendiente");
+                if (!ticket.canPerform(TicketAction.REVIEW_INFORMATION)) throw conflict("Estado incompatible con la solicitud pendiente");
                 info.setStatus(InformationRequestStatus.CANCELLED); requests.save(info);
                 sla.resumeActiveResolutionCycle(ticket, now);
-                ticket.setCurrentStatus(TicketStatus.IN_REVIEW); ticket.setStatusChangedAt(now); tickets.save(ticket);
+                ticket.transition(TicketAction.REVIEW_INFORMATION, now); tickets.save(ticket);
             }
         }
         p.setStatus(ReclassificationProposalStatus.ABANDONED); p.setAbandonmentReason(reason.strip());
@@ -169,7 +168,7 @@ public class TicketReclassificationService {
 
     /** The persisted, accepted external fact grants the exception, never IN_REVIEW alone. */
     UUID authorization(Ticket ticket) {
-        if (ticket.getCurrentStatus() != TicketStatus.IN_REVIEW) throw conflict("La propuesta requiere IN_REVIEW");
+        if (!ticket.canPerform(TicketAction.CLASSIFY)) throw conflict("La propuesta requiere IN_REVIEW");
         if (ticket.getClassificationFinalizedAt() == null) {
             if (activities.findAllByTicket_IdOrderBySequenceAsc(ticket.getId()).stream()
                     .anyMatch(a -> a.getActionType() == ActivityType.DUPLICATE_LINKED)) {

@@ -208,4 +208,35 @@ public class Ticket {
 
     @Column(name = "is_public", nullable = false)
     private boolean isPublic = false;
+
+    /** Query without mutation, also used by Inbox before choosing its disposition. */
+    public boolean canPerform(TicketAction action) {
+        return TicketState.of(currentStatus).next(this, action, currentStatus) != null;
+    }
+
+    public TicketStatus nextStatus(TicketAction action) {
+        return nextStatus(action, null);
+    }
+
+    private TicketStatus nextStatus(TicketAction action, TicketStatus resumeStatus) {
+        TicketStatus next = TicketState.of(currentStatus).next(this, action, resumeStatus);
+        if (next == null) {
+            throw new com.reclamos.backend.exception.TicketStateConflictException(
+                    action + " no es válido en " + currentStatus);
+        }
+        return next;
+    }
+
+    public void transition(TicketAction action, Instant occurredAt) {
+        transition(action, occurredAt, null);
+    }
+
+    /** Rejected operations cannot mutate status or its timestamp. */
+    public void transition(TicketAction action, Instant occurredAt, TicketStatus resumeStatus) {
+        TicketStatus next = nextStatus(action, resumeStatus);
+        if (next != currentStatus) {
+            currentStatus = next;
+            statusChangedAt = occurredAt;
+        }
+    }
 }

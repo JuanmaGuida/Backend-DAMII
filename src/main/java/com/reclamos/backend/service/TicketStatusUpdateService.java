@@ -19,6 +19,7 @@ import com.reclamos.backend.entity.TicketCancellation;
 import com.reclamos.backend.entity.TicketLocation;
 import com.reclamos.backend.entity.TicketMessage;
 import com.reclamos.backend.entity.TicketStatus;
+import com.reclamos.backend.entity.TicketAction;
 import com.reclamos.backend.entity.MessageVisibility;
 import com.reclamos.backend.entity.UpdateTicketStatusType;
 import com.reclamos.backend.exception.InvalidTicketRequestException;
@@ -126,44 +127,43 @@ public class TicketStatusUpdateService {
         ActivityType activityType;
         TicketStatus previousStatus = ticket.getCurrentStatus();
         TicketStatus newStatus;
+        TicketAction action = TicketAction.external(request.updateType());
 
         switch (request.updateType()) {
             case STARTED -> {
-                requireCurrentStatus(ticket, TicketStatus.ROUTED, "STARTED sólo es válido con el ticket en ROUTED");
+                requireAction(ticket, action, "STARTED sólo es válido con el ticket en ROUTED");
                 if (request.progress() != null) {
                     ticket.setCurrentProgress(request.progress().shortValue());
                 }
-                newStatus = TicketStatus.IN_PROGRESS;
+                newStatus = ticket.nextStatus(action);
                 activityType = ActivityType.STATE_CHANGED;
             }
             case PROGRESS -> {
-                requireCurrentStatus(ticket, TicketStatus.IN_PROGRESS, "PROGRESS sólo es válido con el ticket en IN_PROGRESS");
+                requireAction(ticket, action, "PROGRESS sólo es válido con el ticket en IN_PROGRESS");
                 if (request.progress() == null && isBlank(request.publicMessage()) && isBlank(request.internalMessage())
                         && request.attachments().isEmpty()) {
                     throw new InvalidTicketRequestException(
                             "PROGRESS debe aportar al menos progress, publicMessage, internalMessage o attachments");
                 }
-                newStatus = TicketStatus.IN_PROGRESS;
+                newStatus = ticket.nextStatus(action);
                 activityType = ActivityType.PROGRESS_REPORTED;
                 if (request.progress() != null) {
                     ticket.setCurrentProgress(request.progress().shortValue());
                 }
             }
             case INFORMATION_REQUIRED -> {
-                requireCurrentStatus(ticket, "INFORMATION_REQUIRED sólo es válido con el ticket en ROUTED o IN_PROGRESS",
-                        TicketStatus.ROUTED, TicketStatus.IN_PROGRESS);
+                requireAction(ticket, action, "INFORMATION_REQUIRED sólo es válido con el ticket en ROUTED o IN_PROGRESS");
                 UpdateTicketStatusRequest.InformationRequest info = request.details() == null
                         ? null : request.details().informationRequest();
                 if (info == null || isBlank(info.messageForCitizen())) {
                     throw new InvalidTicketRequestException(
                             "INFORMATION_REQUIRED requiere details.informationRequest.messageForCitizen");
                 }
-                newStatus = TicketStatus.PENDING_INFORMATION;
+                newStatus = ticket.nextStatus(action);
                 activityType = ActivityType.INFORMATION_REQUIRED;
             }
             case RETURNED -> {
-                requireCurrentStatus(ticket, "RETURNED sólo es válido con el ticket en ROUTED o IN_PROGRESS",
-                        TicketStatus.ROUTED, TicketStatus.IN_PROGRESS);
+                requireAction(ticket, action, "RETURNED sólo es válido con el ticket en ROUTED o IN_PROGRESS");
                 UpdateTicketStatusRequest.ReturnInfo returnInfo = request.details() == null
                         ? null : request.details().returnInfo();
                 if (returnInfo == null || isBlank(returnInfo.reasonCode())) {
@@ -177,7 +177,7 @@ public class TicketStatusUpdateService {
                     throw new InvalidTicketRequestException(
                             "RETURNED requiere publicMessage o internalMessage explicando la devolución");
                 }
-                newStatus = TicketStatus.IN_REVIEW;
+                newStatus = ticket.nextStatus(action);
                 activityType = ActivityType.RETURNED_BY_AREA;
                 reasonCode = returnInfo.reasonCode();
             }
@@ -186,8 +186,7 @@ public class TicketStatusUpdateService {
                 // ROUTED como desde IN_PROGRESS. M2 no mantiene una configuración por
                 // RequestType para habilitar o impedir la resolución directa (ver
                 // V9__drop_request_type_direct_resolution.sql).
-                requireCurrentStatus(ticket, "RESOLVED sólo es válido con el ticket en ROUTED o IN_PROGRESS",
-                        TicketStatus.ROUTED, TicketStatus.IN_PROGRESS);
+                requireAction(ticket, action, "RESOLVED sólo es válido con el ticket en ROUTED o IN_PROGRESS");
                 UpdateTicketStatusRequest.Resolution resolution = request.details() == null
                         ? null : request.details().resolution();
                 if (resolution == null || resolution.type() == null) {
@@ -199,15 +198,14 @@ public class TicketStatusUpdateService {
                 if (request.progress() != null) {
                     ticket.setCurrentProgress(request.progress().shortValue());
                 }
-                newStatus = TicketStatus.RESOLVED;
+                newStatus = ticket.nextStatus(action);
                 activityType = ActivityType.RESOLVED;
                 resolutionType = resolution.type();
                 reasonCode = resolution.type().name();
             }
             case REJECTED -> {
-                requireCurrentStatus(ticket,
-                        "REJECTED sólo es válido con el ticket en ROUTED o IN_PROGRESS",
-                        TicketStatus.ROUTED, TicketStatus.IN_PROGRESS);
+                requireAction(ticket, action,
+                        "REJECTED sólo es válido con el ticket en ROUTED o IN_PROGRESS");
                 UpdateTicketStatusRequest.Cancellation cancellation = request.details() == null
                         ? null : request.details().cancellation();
                 if (cancellation == null || isBlank(cancellation.reasonCode())) {
@@ -217,7 +215,7 @@ public class TicketStatusUpdateService {
                     throw new InvalidTicketRequestException(
                             "REJECTED requiere publicMessage o internalMessage explicando el rechazo");
                 }
-                newStatus = TicketStatus.CANCELLED;
+                newStatus = ticket.nextStatus(action);
                 activityType = ActivityType.CANCELLED;
                 reasonCode = cancellation.reasonCode();
                 cancellationReason = mapCancellationReason(cancellation.reasonCode());
@@ -260,8 +258,7 @@ public class TicketStatusUpdateService {
                 informationRequestService.cancelPendingBecauseTicketTerminated(ticket);
             }
             ticketSlaService.terminateActiveCycles(ticket, request.updateOccurredAt());
-            ticket.setCurrentStatus(TicketStatus.CANCELLED);
-            ticket.setStatusChangedAt(request.updateOccurredAt());
+            ticket.transition(action, request.updateOccurredAt());
             ticketRepository.save(ticket);
             TicketCancellation cancellation = new TicketCancellation();
             cancellation.setTicket(ticket);
@@ -274,12 +271,8 @@ public class TicketStatusUpdateService {
             cancellation.setCancelledAt(request.updateOccurredAt());
             cancellationRepository.save(cancellation);
         } else {
-            ticket.setCurrentStatus(newStatus);
-            // PROGRESS informa avance sin cambiar de estado: statusChangedAt
-            // sólo avanza cuando el ticket realmente cambia de estado.
-            if (newStatus != previousStatus) {
-                ticket.setStatusChangedAt(request.updateOccurredAt());
-            }
+            // State preserves statusChangedAt for PROGRESS (same state).
+            ticket.transition(action, request.updateOccurredAt());
             ticketRepository.save(ticket);
         }
 
@@ -346,17 +339,10 @@ public class TicketStatusUpdateService {
         return event;
     }
 
-    private void requireCurrentStatus(Ticket ticket, TicketStatus expected, String message) {
-        requireCurrentStatus(ticket, message, expected);
-    }
-
-    private void requireCurrentStatus(Ticket ticket, String message, TicketStatus... expected) {
-        for (TicketStatus status : expected) {
-            if (ticket.getCurrentStatus() == status) {
-                return;
-            }
+    private void requireAction(Ticket ticket, TicketAction action, String message) {
+        if (!ticket.canPerform(action)) {
+            throw new TicketStateConflictException(message + " (estado actual: " + ticket.getCurrentStatus() + ")");
         }
-        throw new TicketStateConflictException(message + " (estado actual: " + ticket.getCurrentStatus() + ")");
     }
 
     /**

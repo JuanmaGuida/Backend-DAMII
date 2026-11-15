@@ -109,12 +109,7 @@ public class CoreInboxProcessor {
             return "IGNORED_OLD_UPDATE";
         if (request.updateType() == UpdateTicketStatusType.PROGRESS && ticket.getCurrentStatus() == TicketStatus.ROUTED)
             throw new IncomingEventFailure(PREMATURE_PROGRESS);
-        boolean applicable = switch (request.updateType()) {
-            case STARTED -> ticket.getCurrentStatus() == TicketStatus.ROUTED;
-            case PROGRESS -> ticket.getCurrentStatus() == TicketStatus.IN_PROGRESS;
-            default -> ticket.getCurrentStatus() == TicketStatus.ROUTED || ticket.getCurrentStatus() == TicketStatus.IN_PROGRESS;
-        };
-        if (!applicable) return "IGNORED_STATE_CONFLICT";
+        if (!ticket.canPerform(TicketAction.external(request.updateType()))) return "IGNORED_STATE_CONFLICT";
         try {
             updates.applyCoreUpdate(new TicketStatusUpdateCommand(request.ticketId(), event.eventId(), event.eventType(),
                     event.occurredAt(), module, event.correlationId(), request));

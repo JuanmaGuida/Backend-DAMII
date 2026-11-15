@@ -37,7 +37,7 @@ public class TicketCancellationRequestService {
     }
 
     private CancellationRequestResponse create(Ticket ticket, CreateCancellationRequest input) {
-        if (ticket.getCurrentStatus() != TicketStatus.REGISTERED || ticket.getMainTicket() != null) {
+        if (!ticket.canPerform(TicketAction.CANCEL_OWNER) || ticket.getMainTicket() != null) {
             throw conflict("La solicitud ciudadana requiere un principal REGISTERED");
         }
         List<UUID> duplicates = tickets.findActiveDuplicateIds(ticket.getId());
@@ -100,7 +100,7 @@ public class TicketCancellationRequestService {
             return response(r);
         }
         if (r.getStatus() != CancellationRequestStatus.PENDING) throw conflict("La solicitud ya fue rechazada");
-        if (ticket.getCurrentStatus() != TicketStatus.REGISTERED || ticket.getMainTicket() != null
+        if (!ticket.canPerform(TicketAction.CANCEL_OWNER) || ticket.getMainTicket() != null
                 || !ticket.getStatusChangedAt().equals(r.getRequestedStatusChangedAt())
                 || !tickets.findActiveDuplicateIds(ticketId).equals(r.getDuplicateSnapshot())) {
             throw conflict("Solicitud desactualizada: cambió el estado o el conjunto de duplicados; requiere revisión");
