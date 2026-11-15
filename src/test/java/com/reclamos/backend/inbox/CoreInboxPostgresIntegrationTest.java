@@ -490,6 +490,29 @@ class CoreInboxPostgresIntegrationTest {
         assertThat(tickets.findById(child.getId()).orElseThrow().getCurrentStatus()).isEqualTo(TicketStatus.DUPLICATE);
         assertThat(count("ticket_activities",main)).isEqualTo(1); assertThat(count("ticket_cancellations",main)).isZero();
     }
+    @Test void committedDeliveryWithLostAckIsDeduplicatedByAReplacementConsumer() throws Exception {
+        Ticket ticket = ticket(TicketStatus.ROUTED);
+        var event = track(status(ticket.getId(), "STARTED"));
+        byte[] body = bytes(event);
+        Channel oldChannel = mock(Channel.class), newChannel = mock(Channel.class);
+        Connection oldConnection = mock(Connection.class), newConnection = mock(Connection.class);
+        var oldConsumer = new CoreEventConsumer(mock(ConnectionFactory.class), processor, 1);
+        doThrow(new java.io.IOException("shutdown before ACK reached broker")).when(oldChannel).basicAck(7, false);
+        oldConsumer.receive(oldChannel, oldConnection,
+                new Delivery(new Envelope(7, false, "", ""), new AMQP.BasicProperties(), body));
+        assertThat(tickets.findById(ticket.getId()).orElseThrow().getCurrentStatus()).isEqualTo(TicketStatus.IN_PROGRESS);
+        assertThat(count("ticket_activities", ticket)).isEqualTo(1);
+        verify(oldConnection).abort(1000);
+        var replacement = new CoreEventConsumer(mock(ConnectionFactory.class), processor, 1);
+        replacement.receive(newChannel, newConnection,
+                new Delivery(new Envelope(1, true, "", ""), new AMQP.BasicProperties(), body));
+        verify(newChannel).basicAck(1, false);
+        verify(newChannel, never()).basicNack(anyLong(), anyBoolean(), anyBoolean());
+        assertThat(count("ticket_activities", ticket)).isEqualTo(1);
+        assertThat(count("outbox_events", ticket)).isZero();
+        assertThat(inbox.findById(id(event))).isPresent();
+    }
+
     @Test void failureAfterBusinessEffectsRollsBackEverythingAndRedeliveryRecovers() {
         Ticket ticket=ticket(TicketStatus.ROUTED); var event=track(status(ticket.getId(),"STARTED"));
         InboxEventRepository failing=mock(InboxEventRepository.class,delegatesTo(inbox));
