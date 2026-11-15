@@ -14,7 +14,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
-import java.util.EnumSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
@@ -24,10 +23,6 @@ import org.springframework.web.multipart.MultipartFile;
 @RequiredArgsConstructor
 public class InformationRequestService {
     private static final String MODULE_ID = "M2";
-    // Estados desde los que un agente puede solicitar información adicional
-    private static final EnumSet<TicketStatus> REQUESTABLE_STATUSES = EnumSet.of(
-            TicketStatus.IN_REVIEW, TicketStatus.ROUTED, TicketStatus.IN_PROGRESS);
-
     private final TicketRepository ticketRepository;
     private final InformationRequestRepository informationRequestRepository;
     private final TicketActivityRepository activityRepository;
@@ -95,7 +90,7 @@ public class InformationRequestService {
 
     private InformationRequest createPending(Ticket ticket, InformationRequestApplication application,
                                               InformationRequestPurpose purpose) {
-        if (!REQUESTABLE_STATUSES.contains(ticket.getCurrentStatus())) {
+        if (!ticket.canPerform(TicketAction.REQUEST_INFORMATION)) {
             throw new InformationRequestConflictException(
                     "El estado actual del ticket no permite solicitar información");
         }
@@ -120,8 +115,7 @@ public class InformationRequestService {
         informationRequest = informationRequestRepository.save(informationRequest);
 
         ticketSlaService.pauseActiveResolutionCycle(ticket, application.requestedAt());
-        ticket.setCurrentStatus(TicketStatus.PENDING_INFORMATION); // Mientras se espera la respuesta, el ticket queda en PENDING_INFORMATION
-        ticket.setStatusChangedAt(application.requestedAt());
+        ticket.transition(TicketAction.REQUEST_INFORMATION, application.requestedAt());
         ticketRepository.save(ticket);
         saveActivity(ticket, ActivityType.INFORMATION_REQUIRED, resumeStatus,
                 TicketStatus.PENDING_INFORMATION, application.actorType(), application.actorId(),
@@ -170,7 +164,7 @@ public class InformationRequestService {
     private InformationRequestResponse answerPending(Ticket ticket, AnswerInformationRequest answer, String responseMessage, String actorId,
                                                      AuthenticatedIdentity identity,
                                                      List<AttachmentService.ValidatedAttachment> validatedAttachments) {
-        if (ticket.getCurrentStatus() != TicketStatus.PENDING_INFORMATION) {
+        if (!ticket.canPerform(TicketAction.ANSWER_INFORMATION)) {
             if (ticket.getCurrentStatus() == TicketStatus.IN_REVIEW
                     && informationRequestRepository.existsByTicketIdAndStatus(ticket.getId(), InformationRequestStatus.EXPIRED)) {
                 throw new InformationRequestExpiredException();
@@ -211,8 +205,7 @@ public class InformationRequestService {
         informationRequestRepository.save(informationRequest);
 
         ticketSlaService.resumeActiveResolutionCycle(ticket, answeredAt);
-        ticket.setCurrentStatus(informationRequest.getResumeStatus());
-        ticket.setStatusChangedAt(answeredAt);
+        ticket.transition(TicketAction.ANSWER_INFORMATION, answeredAt, informationRequest.getResumeStatus());
         ticketRepository.save(ticket);
         saveActivity(ticket, ActivityType.INFORMATION_PROVIDED, TicketStatus.PENDING_INFORMATION,
                 informationRequest.getResumeStatus(), ActorType.CITIZEN, actorId,

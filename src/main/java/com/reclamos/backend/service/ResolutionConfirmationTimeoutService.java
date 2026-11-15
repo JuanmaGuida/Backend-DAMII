@@ -50,14 +50,13 @@ public class ResolutionConfirmationTimeoutService {
     }
 
     private void closeIfStillExpired(Ticket ticket, Instant now) {
-        if (ticket.getCurrentStatus() != TicketStatus.RESOLVED
+        if (!ticket.canPerform(TicketAction.CLOSE_RESOLUTION)
                 || ticket.getResolutionConfirmationDueAt() == null
                 || ticket.getResolutionConfirmationDueAt().isAfter(now)) {
             return;
         }
 
-        ticket.setCurrentStatus(TicketStatus.CLOSED);
-        ticket.setStatusChangedAt(now);
+        ticket.transition(TicketAction.CLOSE_RESOLUTION, now);
         ticket.setResolutionConfirmationDueAt(null);
         ticketRepository.save(ticket);
 

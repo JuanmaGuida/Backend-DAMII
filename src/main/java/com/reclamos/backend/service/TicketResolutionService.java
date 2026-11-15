@@ -81,7 +81,7 @@ public class TicketResolutionService {
             throw new TicketResolutionConflictException(
                     "El ticket pertenece a un área externa y debe resolverse mediante el flujo de integración");
         }
-        if (ticket.getCurrentStatus() != TicketStatus.IN_PROGRESS) {
+        if (!ticket.canPerform(TicketAction.RESOLVE_MANUALLY)) {
             throw new TicketResolutionConflictException(
                     "El estado actual del ticket no permite su resolución manual");
         }
@@ -126,8 +126,8 @@ public class TicketResolutionService {
         resolution.setResolvedAt(application.resolvedAt());
         resolution = resolutionRepository.save(resolution);
 
-        ticket.setCurrentStatus(TicketStatus.RESOLVED);
-        ticket.setStatusChangedAt(application.resolvedAt());
+        ticket.transition(application.externalEventId() == null
+                ? TicketAction.RESOLVE_MANUALLY : TicketAction.EXTERNAL_RESOLVED, application.resolvedAt());
         ticket.setResolutionConfirmationDueAt(application.resolvedAt().plus(confirmationDuration));
         ticketRepository.save(ticket);
         saveResolutionActivity(ticket, previousStatus, application);
@@ -155,11 +155,10 @@ public class TicketResolutionService {
     }
 
     private TicketResolutionActionResponse confirm(Ticket ticket, String actorId) {
-        requireResolved(ticket, "El estado actual del ticket no permite confirmar la resolución");
+        requireResolved(ticket, TicketAction.CLOSE_RESOLUTION, "El estado actual del ticket no permite confirmar la resolución");
 
         Instant now = clock.instant();
-        ticket.setCurrentStatus(TicketStatus.CLOSED);
-        ticket.setStatusChangedAt(now);
+        ticket.transition(TicketAction.CLOSE_RESOLUTION, now);
         ticket.setResolutionConfirmationDueAt(null);
         ticketRepository.save(ticket);
         saveCitizenActivity(ticket, ActivityType.CLOSED, TicketStatus.CLOSED, actorId,
@@ -188,11 +187,10 @@ public class TicketResolutionService {
     }
 
     private TicketResolutionActionResponse reopen(Ticket ticket, ReopenTicketRequest request, String actorId) {
-        requireResolved(ticket, "El estado actual del ticket no permite reabrir el ticket");
+        requireResolved(ticket, TicketAction.REOPEN, "El estado actual del ticket no permite reabrir el ticket");
 
         Instant now = clock.instant();
-        ticket.setCurrentStatus(TicketStatus.IN_PROGRESS);
-        ticket.setStatusChangedAt(now);
+        ticket.transition(TicketAction.REOPEN, now);
         ticket.setReopenCount(ticket.getReopenCount() + 1);
         ticket.setResolutionConfirmationDueAt(null);
         ticketSlaService.startReopenedResolutionCycle(ticket, now);
@@ -248,8 +246,8 @@ public class TicketResolutionService {
         }
     }
 
-    private void requireResolved(Ticket ticket, String message) {
-        if (ticket.getCurrentStatus() != TicketStatus.RESOLVED) {
+    private void requireResolved(Ticket ticket, TicketAction action, String message) {
+        if (!ticket.canPerform(action)) {
             throw new TicketResolutionConflictException(message);
         }
     }

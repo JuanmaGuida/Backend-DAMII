@@ -71,10 +71,6 @@ public class TicketService {
             "currentProgress", "createdAt", "updatedAt"
     );
 
-    /** Estados habilitados para la cancelación administrativa de tickets ajenos. */
-    private static final Set<TicketStatus> ADMIN_CANCELLABLE_STATUSES = Set.of(
-            TicketStatus.REGISTERED, TicketStatus.IN_REVIEW, TicketStatus.PENDING_INFORMATION);
-
     private final RequestTypeRepository requestTypeRepository;
     private final TicketRepository ticketRepository;
     private final TicketActivityRepository activityRepository;
@@ -226,7 +222,7 @@ public class TicketService {
         Ticket ticket = loadForUpdate(ticketId);
         requireTriageAuthority(ticket, actor);
 
-        if (ticket.getCurrentStatus() != TicketStatus.REGISTERED) {
+        if (!ticket.canPerform(TicketAction.START_REVIEW)) {
             throw new TicketStateConflictException(
                     "El ticket está en estado " + ticket.getCurrentStatus()
                             + " y no puede tomarse a revisión: sólo se puede tomar un ticket REGISTERED");
@@ -235,8 +231,7 @@ public class TicketService {
         TicketStatus previousStatus = ticket.getCurrentStatus();
         Instant reviewedAt = clock.instant();
         ticketSlaService.completeFirstResponseCycle(ticket, reviewedAt);
-        ticket.setCurrentStatus(TicketStatus.IN_REVIEW);
-        ticket.setStatusChangedAt(reviewedAt);
+        ticket.transition(TicketAction.START_REVIEW, reviewedAt);
         // Entidades V1.49 §"CONVENCIÓN DE IDENTIFICADORES DE ACTOR": a diferencia
         // de los identificadores externos de actor, Ticket.assignedAgentId
         // es una FK real a ModuleUser.id, reservada para relaciones puramente
@@ -267,7 +262,7 @@ public class TicketService {
     public TicketResponse correctClassification(UUID ticketId, Long newRequestTypeId, AuthenticatedIdentity actor) {
         Ticket ticket = loadForUpdate(ticketId);
         requireTriageAuthority(ticket, actor);
-        if (ticket.getCurrentStatus() != TicketStatus.IN_REVIEW) {
+        if (!ticket.canPerform(TicketAction.CLASSIFY)) {
             throw new TicketStateConflictException("La clasificación requiere IN_REVIEW");
         }
         if (Objects.equals(ticket.getRequestType().getId(), newRequestTypeId)) {
@@ -298,7 +293,7 @@ public class TicketService {
         Ticket ticket = loadForUpdate(ticketId);
         requireTriageAuthority(ticket, actor);
 
-        if (ticket.getCurrentStatus() != TicketStatus.IN_REVIEW) {
+        if (!ticket.canPerform(TicketAction.ROUTE)) {
             throw new TicketStateConflictException(
                     "El ticket está en estado " + ticket.getCurrentStatus()
                             + " y no puede derivarse: sólo se puede derivar un ticket IN_REVIEW");
@@ -323,9 +318,8 @@ public class TicketService {
         TicketStatus previousStatus = ticket.getCurrentStatus();
         Instant now = clock.instant();
         boolean selfManaged = SELF_MANAGED_AREA_ID.equalsIgnoreCase(ticket.getResponsibleAreaId());
-        TicketStatus nextStatus = selfManaged ? TicketStatus.IN_PROGRESS : TicketStatus.ROUTED;
-        ticket.setCurrentStatus(nextStatus);
-        ticket.setStatusChangedAt(now);
+        TicketStatus nextStatus = ticket.nextStatus(TicketAction.ROUTE);
+        ticket.transition(TicketAction.ROUTE, now);
         // classificationFinalizedAt se fija sólo la primera vez que el ticket
         // sale de IN_REVIEW hacia gestión (Entidades §4.1): a partir de acá,
         // correctClassification() ya no acepta correcciones ni siquiera después
@@ -360,7 +354,7 @@ public class TicketService {
      * POST /tickets/{id}/cancel. El propietario actúa con capacidad ciudadana
      * independientemente de su role y sólo puede cancelar en REGISTERED.
      * AGENT/ADMIN conservan la cancelación administrativa de tickets ajenos
-     * en {@link #ADMIN_CANCELLABLE_STATUSES}. ROUTED/IN_PROGRESS se cancelan
+     * en los estados habilitados por State. ROUTED/IN_PROGRESS se cancelan
      * por el flujo de integración (updateTicketStatus/REJECTED), no por acá.
      * DUPLICATE tampoco es cancelable directamente por el propietario acá:
      * la idea de permitir retirar un DUPLICATE propio se descartó — sólo
@@ -375,7 +369,7 @@ public class TicketService {
 
         ActorType actorType = isOwnTicket ? ActorType.CITIZEN
                 : (actor.role() == ModuleRole.ADMIN ? ActorType.ADMIN : ActorType.AGENT);
-        if (!isOwnTicket && ADMIN_CANCELLABLE_STATUSES.contains(ticket.getCurrentStatus())
+        if (!isOwnTicket && ticket.canPerform(TicketAction.CANCEL_ADMIN)
                 && ticketRepository.existsByMainTicket_IdAndCurrentStatus(ticketId, TicketStatus.DUPLICATE)) {
             cancelWithScope(ticket, request, actor);
             return toResponse(ticket, locationRepository.findByTicket_Id(ticketId).orElse(null));
@@ -394,12 +388,12 @@ public class TicketService {
 
     private TicketResponse cancelTicket(Ticket ticket, CancelTicketRequest request, ActorType actorType,
                                         String actorId, boolean ownerAction, boolean publishCancellation) {
-        if (ownerAction && ticket.getCurrentStatus() != TicketStatus.REGISTERED) {
+        if (ownerAction && !ticket.canPerform(TicketAction.CANCEL_OWNER)) {
             throw new TicketStateConflictException(
                     "El ticket está en estado " + ticket.getCurrentStatus()
                             + " y el propietario sólo puede cancelarlo directamente en REGISTERED");
         }
-        if (!ownerAction && !ADMIN_CANCELLABLE_STATUSES.contains(ticket.getCurrentStatus())) {
+        if (!ownerAction && !ticket.canPerform(TicketAction.CANCEL_ADMIN)) {
             throw new TicketStateConflictException(
                     "El ticket está en estado " + ticket.getCurrentStatus()
                             + " y no admite cancelación administrativa por este endpoint"
@@ -412,11 +406,13 @@ public class TicketService {
         if (request.getCancellationScope() != null) {
             throw new InvalidTicketRequestException("Sin duplicados activos cancellationScope debe ser null");
         }
-        return executeCancellation(ticket, request, actorType, actorId, publishCancellation, clock.instant());
+        return executeCancellation(ticket, request, actorType, actorId, publishCancellation, clock.instant(),
+                ownerAction ? TicketAction.CANCEL_OWNER : TicketAction.CANCEL_ADMIN);
     }
 
     private TicketResponse executeCancellation(Ticket ticket, CancelTicketRequest request, ActorType actorType,
-                                                String actorId, boolean publishCancellation, Instant now) {
+                                                String actorId, boolean publishCancellation, Instant now,
+                                                TicketAction action) {
         reclassificationDataService.terminate(ticket, "Cancelación del ticket", now);
 
         TicketCancellation cancellation = new TicketCancellation();
@@ -436,8 +432,7 @@ public class TicketService {
             informationRequestService.cancelPendingBecauseTicketTerminated(ticket);
         }
         ticketSlaService.terminateActiveCycles(ticket, now);
-        ticket.setCurrentStatus(TicketStatus.CANCELLED);
-        ticket.setStatusChangedAt(now);
+        ticket.transition(action, now);
         ticketRepository.save(ticket);
 
         recordCancellationActivity(ticket, previousStatus, actorType, actorId, request.getReasonCode(),
@@ -471,8 +466,8 @@ public class TicketService {
 
     private void applyScopedCancellation(Ticket main, CancelTicketRequest input, AuthenticatedIdentity actor, boolean external) {
         requireTriageAuthority(main, actor);
-        boolean permitted=ADMIN_CANCELLABLE_STATUSES.contains(main.getCurrentStatus())
-                || external && (main.getCurrentStatus()==TicketStatus.ROUTED || main.getCurrentStatus()==TicketStatus.IN_PROGRESS);
+        TicketAction action = external ? TicketAction.CANCEL_EXTERNAL_REVIEW : TicketAction.CANCEL_ADMIN;
+        boolean permitted = main.canPerform(action);
         if (!permitted || main.getMainTicket() != null)
             throw new TicketStateConflictException("El estado del principal no admite esta cancelación administrativa");
         if (input.getCancellationScope() == null || input.getDecisionReason() == null
@@ -493,20 +488,19 @@ public class TicketService {
         // Linking in older flows could retain a pending request on a DUPLICATE.
         // None may survive either termination or the change of principal.
         for (Ticket child : children) informationRequestService.cancelPendingBecauseTicketTerminated(child);
-        executeCancellation(main, input, type, actorId, notifyExternal, now);
+        executeCancellation(main, input, type, actorId, notifyExternal, now, action);
         if (input.getCancellationScope() == CancellationScope.GLOBAL) {
             for (Ticket child : children) {
                 // The scope belongs to the principal decision, not an independent child decision.
                 CancelTicketRequest inherited = new CancelTicketRequest();
                 inherited.setReasonCode(input.getReasonCode()); inherited.setPublicMessage(input.getPublicMessage());
                 inherited.setInternalMessage("Cancelación GLOBAL del principal " + main.getId());
-                executeCancellation(child, inherited, type, actorId, !child.isAnonymous(), now);
+                executeCancellation(child, inherited, type, actorId, !child.isAnonymous(), now, TicketAction.CANCEL_DUPLICATE);
             }
         } else {
             Ticket promoted = children.stream().min(java.util.Comparator.comparing(Ticket::getCreatedAt)
                     .thenComparing(t -> t.getId().toString())).orElseThrow();
-            promoted.setMainTicket(null); promoted.setCurrentStatus(TicketStatus.IN_REVIEW);
-            promoted.setStatusChangedAt(now);
+            promoted.setMainTicket(null); promoted.transition(TicketAction.PROMOTE_DUPLICATE, now);
             // Classification stays locked by its duplicate-link history. Preserve the
             // real routing timestamp: setting it here would invent external management.
             ticketRepository.save(promoted);

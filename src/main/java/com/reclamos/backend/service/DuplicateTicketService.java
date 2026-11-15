@@ -14,17 +14,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.time.Instant;
-import java.util.Set;
 import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
 public class DuplicateTicketService {
     private static final String MODULE_ID = "M2";
-    private static final Set<TicketStatus> ACTIVE_MAIN_STATUSES = Set.of(
-            TicketStatus.REGISTERED, TicketStatus.IN_REVIEW, TicketStatus.ROUTED,
-            TicketStatus.IN_PROGRESS, TicketStatus.PENDING_INFORMATION);
-
     private final TicketRepository ticketRepository;
     private final TicketActivityRepository activityRepository;
     private final TicketSlaService ticketSlaService;
@@ -59,9 +54,7 @@ public class DuplicateTicketService {
         if (duplicate.getCurrentStatus() == TicketStatus.DUPLICATE) {
             throw new TicketStateConflictException("El ticket duplicado no tiene un vínculo principal válido");
         }
-        if (duplicate.getCurrentStatus() == TicketStatus.CLOSED
-                || duplicate.getCurrentStatus() == TicketStatus.CANCELLED
-                || duplicate.getCurrentStatus() == TicketStatus.RESOLVED) {
+        if (!duplicate.canPerform(TicketAction.LINK_DUPLICATE)) {
             throw new TicketStateConflictException("El estado del ticket no permite convertirlo en duplicado");
         }
         // Todo link entrante también bloquea este ticket como principal. Mantener el lock
@@ -72,7 +65,7 @@ public class DuplicateTicketService {
         if (main.getMainTicket() != null || main.getCurrentStatus() == TicketStatus.DUPLICATE) {
             throw new TicketStateConflictException("El principal no puede ser a su vez un duplicado");
         }
-        if (!ACTIVE_MAIN_STATUSES.contains(main.getCurrentStatus())) {
+        if (!main.canPerform(TicketAction.ACCEPT_DUPLICATE)) {
             throw new TicketStateConflictException("El estado del ticket principal no permite vincular duplicados");
         }
 
@@ -82,8 +75,7 @@ public class DuplicateTicketService {
         TicketStatus previous = duplicate.getCurrentStatus();
         Instant now = clock.instant();
         duplicate.setMainTicket(main);
-        duplicate.setCurrentStatus(TicketStatus.DUPLICATE);
-        duplicate.setStatusChangedAt(now);
+        duplicate.transition(TicketAction.LINK_DUPLICATE, now);
         ticketSlaService.stopActiveCyclesForDuplicate(duplicate, now);
         ticketRepository.save(duplicate);
         saveActivity(duplicate, ActivityType.DUPLICATE_LINKED, previous, TicketStatus.DUPLICATE,
@@ -98,8 +90,7 @@ public class DuplicateTicketService {
     public void propagateClosed(Ticket main, ActorType actorType, String actorId,
                                 String reasonCode, Instant closedAt) {
         for (Ticket duplicate : ticketRepository.findActiveDuplicatesForUpdate(main.getId())) {
-            duplicate.setCurrentStatus(TicketStatus.CLOSED);
-            duplicate.setStatusChangedAt(closedAt);
+            duplicate.transition(TicketAction.CLOSE_DUPLICATE, closedAt);
             ticketRepository.save(duplicate);
             saveActivity(duplicate, ActivityType.CLOSED, TicketStatus.DUPLICATE, TicketStatus.CLOSED,
                     actorType, actorId, "Cierre heredado del ticket principal " + main.getId(), closedAt,
