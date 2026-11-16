@@ -4,6 +4,8 @@ import com.rabbitmq.client.*;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 
 import java.io.IOException;
@@ -84,6 +86,23 @@ class RabbitCoreEventPublisherTest {
     @Test void cleanupFailureDoesNotUndoAnAlreadyReceivedConfirm() {
         doThrow(new IllegalStateException("private")).when(connection).abort(anyInt());
         assertThatCode(() -> publisher.publish(id, "ticketCreated", body)).doesNotThrowAnyException();
+    }
+    @ParameterizedTest
+    @ValueSource(strings={"channel", "exchange", "confirm", "publish", "nack", "timeout", "interrupted"})
+    void abortsTheDedicatedConnectionAndItsChannelsOnEveryFailureStage(String stage) throws Exception {
+        switch (stage) {
+            case "channel" -> when(connection.createChannel()).thenThrow(new IOException("synthetic"));
+            case "exchange" -> doThrow(new IOException("synthetic")).when(channel).exchangeDeclarePassive(anyString());
+            case "confirm" -> when(channel.confirmSelect()).thenThrow(new IOException("synthetic"));
+            case "publish" -> doThrow(new IOException("synthetic")).when(channel)
+                    .basicPublish(anyString(), anyString(), anyBoolean(), any(), any(byte[].class));
+            case "nack" -> when(channel.waitForConfirms(anyLong())).thenReturn(false);
+            case "timeout" -> when(channel.waitForConfirms(anyLong())).thenThrow(new TimeoutException("synthetic"));
+            case "interrupted" -> when(channel.waitForConfirms(anyLong())).thenThrow(new InterruptedException("synthetic"));
+            default -> throw new AssertionError(stage);
+        }
+        assertThatThrownBy(() -> publisher.publish(id, "ticketCreated", body)).isInstanceOf(PublicationFailure.class);
+        verify(connection).abort(1000);
     }
     private void assertFailure(PublicationFailure.Code code) {
         assertThatThrownBy(() -> publisher.publish(id, "ticketUpdated", body))

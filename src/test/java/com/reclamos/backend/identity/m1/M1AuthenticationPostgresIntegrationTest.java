@@ -28,6 +28,7 @@ import org.springframework.web.client.RestClient;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.Instant;
+import java.net.URI;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.*;
@@ -231,6 +232,42 @@ class M1AuthenticationPostgresIntegrationTest {
                 .andExpect(status().isForbidden()).andExpect(header().doesNotExist(HttpHeaders.SET_COOKIE));
         mvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON).content(credentials()))
                 .andExpect(status().isForbidden()).andExpect(header().doesNotExist(HttpHeaders.SET_COOKIE));
+    }
+
+    @Test
+    void rejectsDuplicateOrMalformedOriginsForEveryCookieEndpoint() throws Exception {
+        for (String endpoint : new String[]{"login", "refresh", "logout"}) {
+            String path = "/api/auth/" + endpoint;
+            mvc.perform(post(path).header("Origin", M1TestTokens.ORIGIN, "https://evil.example.test")
+                            .header(M1SessionCookies.CSRF_HEADER, "1").cookie(refreshCookie())
+                            .contentType(MediaType.APPLICATION_JSON).content(credentials()))
+                    .andExpect(status().isForbidden()).andExpect(header().doesNotExist(HttpHeaders.SET_COOKIE));
+            for (String origin : new String[]{"http://m2.example.test", "https://m2.example.test.evil.test",
+                    M1TestTokens.ORIGIN + "/unexpected", M1TestTokens.ORIGIN + "?query=1"}) {
+                mvc.perform(post(path).header("Origin", origin).header(M1SessionCookies.CSRF_HEADER, "1")
+                                .cookie(refreshCookie()).contentType(MediaType.APPLICATION_JSON).content(credentials()))
+                        .andExpect(status().isForbidden()).andExpect(header().doesNotExist(HttpHeaders.SET_COOKIE));
+            }
+        }
+    }
+
+    @Test
+    void alternateCookieEndpointPathsAndMethodsCannotBypassOriginChecks() throws Exception {
+        for (String endpoint : new String[]{"login", "refresh", "logout"}) {
+            for (String path : new String[]{"/api/auth/" + endpoint + "/", "/api/auth//" + endpoint,
+                    "/api/auth/" + endpoint + ";ignored", "/api/auth/./" + endpoint,
+                    "/api/auth/ignored/../" + endpoint,
+                    "/api/auth/%" + Integer.toHexString(endpoint.charAt(0)) + endpoint.substring(1)}) {
+                mvc.perform(post(URI.create(path)).header("Origin", "https://evil.example.test")
+                                .header(M1SessionCookies.CSRF_HEADER, "1").cookie(refreshCookie())
+                                .contentType(MediaType.APPLICATION_JSON).content(credentials()))
+                        .andExpect(status().is4xxClientError()).andExpect(header().doesNotExist(HttpHeaders.SET_COOKIE));
+            }
+            mvc.perform(get("/api/auth/" + endpoint).cookie(refreshCookie()))
+                    .andExpect(status().is4xxClientError()).andExpect(header().doesNotExist(HttpHeaders.SET_COOKIE));
+            mvc.perform(put("/api/auth/" + endpoint).cookie(refreshCookie()))
+                    .andExpect(status().is4xxClientError()).andExpect(header().doesNotExist(HttpHeaders.SET_COOKIE));
+        }
     }
 
     @Test

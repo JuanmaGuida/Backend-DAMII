@@ -151,6 +151,26 @@ class IndicatorOverviewPostgresIntegrationTest {
         assertThat(period.trend().stream().mapToLong(v->v.created()).sum()).isEqualTo(3);
     }
 
+    @Test void treatsSqlMetacharactersInAreaAsBoundDataAcrossQueriesAndExport() {
+        insert(4);
+        assertThat(repository.overview(filter(null,null),now).counts().total()).isEqualTo(4);
+        for (Integer days : Arrays.asList(null, 30)) {
+            var hostile = new IndicatorOverviewFilter(null,null,null,"M9' OR '1'='1' --",null,false,null,days);
+            var result = repository.overview(hostile,now);
+            assertThat(result.counts().total()).isZero();
+            assertThat(result.counts().previousTotal()).isZero();
+            assertThat(result.categories()).isEmpty();
+            assertThat(result.attention()).isEmpty();
+            assertThat(result.trend()).allSatisfy(bucket -> {
+                assertThat(bucket.created()).isZero();
+                assertThat(bucket.resolved()).isZero();
+            });
+            var output = new ByteArrayOutputStream();
+            repository.export(hostile,now,output);
+            assertThat(output.toString(StandardCharsets.UTF_8)).doesNotContain(marker);
+        }
+    }
+
     @Test void slaFiltersAndBoundedAttentionUseCurrentFacts() {
         insert(15);
         cycle(id(1),1,"RUNNING",false,true);

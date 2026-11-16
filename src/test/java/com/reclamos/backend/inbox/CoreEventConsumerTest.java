@@ -80,6 +80,18 @@ class CoreEventConsumerTest {
         assertThatThrownBy(() -> new CoreEventConsumer(factory,processor,17)).isInstanceOf(IllegalStateException.class);
     }
 
+    @Test void channelCreationFailureAbortsTheOpenedConnectionAndAllowsReconnect() throws Exception {
+        when(factory.newConnection("m2-core-inbox")).thenReturn(connection);
+        when(connection.createChannel()).thenThrow(new IOException("synthetic channel failure")).thenReturn(channel);
+        consumer.connectIfNeeded();
+        verify(connection).abort(1000);
+        consumer.connectIfNeeded();
+        verify(factory,times(2)).newConnection("m2-core-inbox");
+        verify(channel).basicConsume(eq(CoreEventConsumer.QUEUE),eq(false),any(DeliverCallback.class),any(CancelCallback.class));
+        consumer.close();
+        verify(connection,times(2)).abort(1000);
+    }
+
     @Test void shutdownDuringProcessingClosesDeliveryChannelAndNeverReconnectsOrAcksOnAnotherChannel() throws Exception {
         when(factory.newConnection("m2-core-inbox")).thenReturn(connection);
         when(connection.createChannel()).thenReturn(channel);

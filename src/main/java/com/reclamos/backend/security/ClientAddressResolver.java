@@ -6,6 +6,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.web.util.matcher.IpAddressMatcher;
 import org.springframework.stereotype.Component;
 
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.util.List;
 import java.util.regex.Pattern;
 
@@ -62,13 +64,12 @@ public class ClientAddressResolver {
             return peer;
         }
         // El último salto es el que agregó el proxy confiable más cercano.
-        String[] hops = forwardedFor.split(",");
-        String candidate = hops[hops.length - 1].trim();
-        return IP_LITERAL.matcher(candidate).matches() ? candidate : peer;
+        String candidate = forwardedFor.substring(forwardedFor.lastIndexOf(',') + 1).trim();
+        return isIpLiteral(candidate) ? candidate : peer;
     }
 
     private boolean isTrustedProxy(String address) {
-        if (address == null || !IP_LITERAL.matcher(address).matches()) {
+        if (!isIpLiteral(address)) {
             return false;
         }
         try {
@@ -76,5 +77,26 @@ public class ClientAddressResolver {
         } catch (IllegalArgumentException invalid) {
             return false;
         }
+    }
+
+    private static boolean isIpLiteral(String address) {
+        if (address == null || !IP_LITERAL.matcher(address).matches()) return false;
+        if (address.indexOf(':') >= 0) {
+            try {
+                // A colon plus the restricted alphabet permits only IPv6 parsing, never a DNS hostname.
+                InetAddress.getByName(address);
+                return true;
+            } catch (UnknownHostException invalid) {
+                return false;
+            }
+        }
+        String[] octets = address.split("\\.", -1);
+        if (octets.length != 4) return false;
+        for (String octet : octets) {
+            if (octet.isEmpty() || octet.length() > 3
+                    || !octet.chars().allMatch(character -> character >= '0' && character <= '9')
+                    || Integer.parseInt(octet) > 255) return false;
+        }
+        return true;
     }
 }
