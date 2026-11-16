@@ -25,7 +25,7 @@ SONAR_SPEC.loader.exec_module(SONAR_POLICY)
 
 
 def job(name):
-    match = re.search(r'^  ' + name + r':\n(.*?)(?=^  [\w-]+:\n|\Z)', FLOW, re.M | re.S)
+    match = re.search(r'^  ' + name + r':\n(.*?)(?=(?:^  [\w-]+:\n)|\Z)', FLOW, re.M | re.S)
     return match.group(1) if match else None
 
 
@@ -127,7 +127,7 @@ class ReleasePolicyTests(unittest.TestCase):
     def test_security_gate_cannot_be_bypassed_by_status_or_error_overrides(self):
         for name in ('publish', 'deploy'):
             body = job(name)
-            condition = re.search(r'^    if: (.*?)(?=^    [\w-]+:|\Z)', body, re.M | re.S).group(1)
+            condition = re.search(r'^    if: (.*?)(?=(?:^    [\w-]+:)|\Z)', body, re.M | re.S).group(1)
             self.assertNotRegex(condition, r'\b(always|failure|cancelled)\s*\(')
             self.assertNotRegex(body, r'(?m)^    continue-on-error:')
         scan = job('secrets')

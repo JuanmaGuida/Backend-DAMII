@@ -7,6 +7,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 class PiiRedactorTest {
 
     @Test
+    void redactsLongEmailDomainWithoutRecursiveBacktracking() {
+        String email = "vecina@" + "subdominio.".repeat(10_000) + "com";
+        assertThat(PiiRedactor.redact(email)).isEqualTo("[email]");
+    }
+
+    @Test
     void removesEmailsLinksAndPhones() {
         String result = PiiRedactor.redact(
                 "Escribime a vecina@mail.com o al 11 5555-1234, mirá https://sitio.com/foto o www.otra.com/x");

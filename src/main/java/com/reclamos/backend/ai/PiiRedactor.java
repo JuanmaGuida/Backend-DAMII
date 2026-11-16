@@ -10,7 +10,7 @@ import java.util.regex.Pattern;
  * clasificación los usa.
  */
 public final class PiiRedactor {
-    private static final Pattern EMAIL = Pattern.compile("[\\w.%+-]+@[\\w-]+(\\.[\\w-]+)+");
+    private static final Pattern EMAIL = Pattern.compile("[\\w.%+-]+@[\\w-]+(?:\\.[\\w-]++)++");
     private static final Pattern URL = Pattern.compile("(?i)\\b(?:https?://|www\\.)\\S+");
     private static final Pattern DOCUMENT = Pattern.compile("\\b\\d{1,2}\\.\\d{3}\\.\\d{3}\\b");
     private static final Pattern NUMBER_RUN = Pattern.compile("\\+?\\d[\\d\\s().-]{6,}\\d");

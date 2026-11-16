@@ -26,6 +26,33 @@ SCA = module('scan-vulnerabilities')
 SONAR = module('check-sonar') if (ROOT / '.github/scripts/check-sonar.py').exists() else None
 
 
+class PathBoundaryTests(unittest.TestCase):
+    def test_cli_paths_reject_traversal_and_symlink_escape_before_file_access(self):
+        scanners = (SCA, SONAR, module('check-secrets'))
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            checkout, scratch, outside = root / 'checkout', root / 'scratch', root / 'outside'
+            for path in (checkout, scratch, outside):
+                path.mkdir()
+            with patch.object(Path, 'cwd', return_value=checkout), \
+                 patch.dict(os.environ, {'RUNNER_TEMP': str(scratch)}):
+                for scanner in scanners:
+                    with self.subTest(scanner=scanner.__name__):
+                        self.assertEqual(scanner.checked_path(scratch / 'report.json'), scratch / 'report.json')
+                        self.assertEqual(scanner.checked_path(checkout / 'task.txt'), checkout / 'task.txt')
+                        for target in (outside / 'report.json', checkout / '..' / 'outside' / 'report.json'):
+                            with self.assertRaises(ValueError):
+                                scanner.checked_path(target)
+                try:
+                    (scratch / 'linked').symlink_to(outside, target_is_directory=True)
+                except OSError:
+                    return  # Windows may require privilege; Linux CI exercises this branch.
+                for scanner in scanners:
+                    with self.assertRaises(ValueError):
+                        scanner.checked_path(scratch / 'linked' / 'report.json')
+            self.assertEqual(list(outside.iterdir()), [])
+
+
 class SCATests(unittest.TestCase):
     def test_inventory_is_required_even_when_no_vulnerabilities_are_reported(self):
         for raw in ({}, {'Results': []}, {'Results': [{'Packages': []}]}):
@@ -256,7 +283,7 @@ docker() {
         self.assertIn('if: always()', FLOW)
         self.assertNotIn('continue-on-error', FLOW)
         if SONAR:
-            security = re.search(r'^  security:\n(.*?)(?=^  [\w-]+:|\Z)', FLOW, re.M | re.S).group(1)
+            security = re.search(r'^  security:\n(.*?)(?=(?:^  [\w-]+:)|\Z)', FLOW, re.M | re.S).group(1)
             self.assertNotRegex(security, r'(?m)^    if:')
             self.assertIn("if: needs.configuration.outputs.sonar_mode != 'unsupported'", FLOW)
             self.assertIn('--scope --main-branch', FLOW)

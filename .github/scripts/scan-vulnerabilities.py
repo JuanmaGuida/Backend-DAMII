@@ -13,6 +13,15 @@ VERSION = '0.76.2'
 FIELDS = ('VulnerabilityID', 'PkgName', 'InstalledVersion', 'FixedVersion', 'Severity', 'Status', 'PkgID')
 
 
+def checked_path(value):
+    """Confine CLI file access to the checkout or runner scratch space."""
+    candidate = Path(value).resolve()
+    roots = (Path.cwd().resolve(), Path(os.environ.get('RUNNER_TEMP') or tempfile.gettempdir()).resolve())
+    if not any(candidate.is_relative_to(root) for root in roots):
+        raise ValueError('Path is outside the checkout and runner temporary directory')
+    return candidate
+
+
 def summarize(raw):
     results = raw.get('Results', [])
     if not isinstance(results, list):
@@ -36,10 +45,9 @@ def main():
     parser.add_argument('--image', action='append', default=[])
     parser.add_argument('--archive', action='append', default=[])
     parser.add_argument('--npm', help='Directory containing package-lock.json')
-    parser.add_argument('--output', required=True)
-    parser.add_argument('--trivy', default='trivy')
+    parser.add_argument('--output', required=True, type=checked_path)
     args = parser.parse_args()
-    output = Path(args.output)
+    output = args.output
     output.mkdir(parents=True, exist_ok=True)
     started = time.monotonic()
     report = {'scanner': 'Trivy', 'version': VERSION, 'revision': os.environ.get('GITHUB_SHA', ''),
@@ -64,7 +72,7 @@ def main():
         except Exception:
             report['errors'].append('npm audit failed; no valid dependency audit received')
     try:
-        version = subprocess.run([args.trivy, '--version', '--format', 'json'], check=True,
+        version = subprocess.run(['trivy', '--version', '--format', 'json'], check=True,
                                  capture_output=True, text=True, timeout=30)
         metadata = json.loads(version.stdout)
         if metadata['Version'] != VERSION:
@@ -78,7 +86,7 @@ def main():
                 raise ValueError('No scan targets')
             for index, (kind, target) in enumerate(targets):
                 raw_path = temporary / f'{index}.json'
-                command = [args.trivy, kind if kind in ('fs', 'rootfs') else 'image',
+                command = ['trivy', kind if kind in ('fs', 'rootfs') else 'image',
                            '--config', str(temporary / 'config.yaml'), '--ignorefile', str(temporary / 'ignore'),
                            '--scanners', 'vuln', '--format', 'json', '--list-all-pkgs',
                            '--exit-code', '0', '--timeout', '5m', '--output', str(raw_path)]
@@ -90,7 +98,7 @@ def main():
                 elif kind == 'image':
                     command += ['--image-src', 'remote', '--platform', 'linux/amd64']
                 if kind != 'archive':
-                    command.append(target)
+                    command.extend(['--', target])
                 try:
                     subprocess.run(command, check=True, capture_output=True, timeout=330)
                     raw = json.loads(raw_path.read_text(encoding='utf-8'))
@@ -103,7 +111,7 @@ def main():
                     report['scans'].append(scan)
                 except Exception:
                     report['errors'].append(f'Scan {index + 1} ({kind}) failed or returned no inventory')
-            version = subprocess.run([args.trivy, '--version', '--format', 'json'], check=True,
+            version = subprocess.run(['trivy', '--version', '--format', 'json'], check=True,
                                      capture_output=True, text=True, timeout=30)
             report['databases'] = {key: value for key, value in json.loads(version.stdout).items()
                                    if key in ('VulnerabilityDB', 'JavaDB')}

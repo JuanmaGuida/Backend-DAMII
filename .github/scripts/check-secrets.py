@@ -25,6 +25,15 @@ FIELDS = ("RuleID", "File", "StartLine", "EndLine", "Commit")
 EXCEPTIONS_FILE = '.gitleaks-history-exceptions.json'
 
 
+def checked_path(value):
+    """Confine CLI file access to the checkout or runner scratch space."""
+    candidate = Path(value).resolve()
+    roots = (Path.cwd().resolve(), Path(os.environ.get('RUNNER_TEMP') or tempfile.gettempdir()).resolve())
+    if not any(candidate.is_relative_to(root) for root in roots):
+        raise ValueError('Path is outside the checkout and runner temporary directory')
+    return candidate
+
+
 def valid_path(path):
     return (isinstance(path, str) and bool(path) and not PurePosixPath(path).is_absolute()
             and PurePosixPath(path).as_posix() == path and '..' not in PurePosixPath(path).parts
@@ -192,7 +201,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", type=Path, default=Path(__file__).resolve().parents[2])
     parser.add_argument("--gitleaks", help="Existing Gitleaks 8.30.1 executable; otherwise download verified official binary")
-    parser.add_argument("--output", type=Path, help="Optional metadata-only JSON, never raw scanner output")
+    parser.add_argument("--output", type=checked_path, help="Optional metadata-only JSON, never raw scanner output")
     parser.add_argument("--self-test", action="store_true", help="Require real detector regressions before scanning (mandatory in CI)")
     args = parser.parse_args()
     started = time.monotonic()

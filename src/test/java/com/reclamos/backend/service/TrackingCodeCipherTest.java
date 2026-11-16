@@ -14,6 +14,19 @@ import java.util.concurrent.Executors;
 import static org.assertj.core.api.Assertions.*;
 
 class TrackingCodeCipherTest {
+    @Test
+    void encryptedMaterialEqualityUsesByteContentsAndPreservesDefensiveCopies() {
+        byte[] ciphertext = {1, 2}, nonce = {3, 4};
+        var first = new TrackingCodeCipher.EncryptedCode(ciphertext, nonce, "test-v1");
+        var same = new TrackingCodeCipher.EncryptedCode(new byte[]{1, 2}, new byte[]{3, 4}, "test-v1");
+        assertThat(first).isEqualTo(same).hasSameHashCodeAs(same);
+        ciphertext[0] = 9;
+        first.nonce()[0] = 9;
+        assertThat(first).isEqualTo(same);
+        assertThat(first).isNotEqualTo(new TrackingCodeCipher.EncryptedCode(new byte[]{9, 2}, new byte[]{3, 4}, "test-v1"));
+        assertThat(first).isNotEqualTo(new TrackingCodeCipher.EncryptedCode(new byte[]{1, 2}, new byte[]{9, 4}, "test-v1"));
+        assertThat(first).isNotEqualTo(new TrackingCodeCipher.EncryptedCode(new byte[]{1, 2}, new byte[]{3, 4}, "other"));
+    }
     public static final String TEST_KEY = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=";
     private final TrackingCodeService codes = new TrackingCodeService();
     private final TrackingCodeCipher cipher = new TrackingCodeCipher(TEST_KEY, "test-v1", codes);

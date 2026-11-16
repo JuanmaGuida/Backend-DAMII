@@ -11,6 +11,7 @@ import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.Arrays;
 import java.util.Base64;
+import java.util.Objects;
 import java.util.UUID;
 
 /** Fixed v1 format: 32 UTF-8 bytes, 96-bit nonce, 128-bit authentication tag. */
@@ -105,6 +106,15 @@ public final class TrackingCodeCipher {
 
         @Override public byte[] ciphertext() { return ciphertext == null ? null : ciphertext.clone(); }
         @Override public byte[] nonce() { return nonce == null ? null : nonce.clone(); }
+        @Override public boolean equals(Object other) {
+            return other instanceof EncryptedCode that
+                    && Arrays.equals(ciphertext, that.ciphertext)
+                    && Arrays.equals(nonce, that.nonce)
+                    && Objects.equals(keyId, that.keyId);
+        }
+        @Override public int hashCode() {
+            return Objects.hash(Arrays.hashCode(ciphertext), Arrays.hashCode(nonce), keyId);
+        }
         @Override public String toString() { return "EncryptedCode[<redacted>]"; }
     }
 }
