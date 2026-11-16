@@ -128,16 +128,22 @@ public class TicketController {
         return ticketService.startReview(ticketId, actor);
     }
 
-    /**
-     * Story 3.2 - BE: Endpoint de corrección de clasificación.
-     */
+    @GetMapping("/{ticketId}/classification")
+    public ResponseEntity<ClassificationCorrectionRequest> getClassification(
+            @PathVariable UUID ticketId,
+            @AuthenticationPrincipal AuthenticatedIdentity actor) {
+        var revision = ticketService.getClassification(ticketId, actor);
+        return ResponseEntity.ok().eTag(revision.etag()).body(revision.body());
+    }
+
     @PatchMapping("/{ticketId}/classification")
-    public TicketResponse correctClassification(
+    public ResponseEntity<TicketResponse> correctClassification(
             @PathVariable UUID ticketId,
             @Valid @RequestBody ClassificationCorrectionRequest request,
-            @AuthenticationPrincipal AuthenticatedIdentity actor
-    ) {
-        return ticketService.correctClassification(ticketId, request.requestTypeId(), actor);
+            @AuthenticationPrincipal AuthenticatedIdentity actor,
+            @RequestHeader HttpHeaders headers) {
+        var revision = ticketService.correctClassification(ticketId, request.requestTypeId(), actor, ifMatch(headers));
+        return ResponseEntity.ok().eTag(revision.etag()).body(revision.body());
     }
 
     /** Finaliza la clasificación e inicia gestión propia o deriva al área externa responsable. */
@@ -260,18 +266,33 @@ public class TicketController {
         return ticketMessageService.list(ticketId, identity);
     }
 
+    @GetMapping("/{ticketId}/messages/{messageId}")
+    public ResponseEntity<TicketMessageResponse> getMessage(
+            @PathVariable UUID ticketId, @PathVariable Long messageId,
+            @AuthenticationPrincipal AuthenticatedIdentity identity) {
+        var revision = ticketMessageService.get(ticketId, messageId, identity);
+        return ResponseEntity.ok().eTag(revision.etag()).body(revision.body());
+    }
+
     /**
      * PATCH /tickets/{id}/messages/{messageId}: sólo el propio autor puede
      * editar su mensaje, y sólo el texto (visibility es inmutable). Ver
      * TicketMessageService.findOwnMessage.
      */
     @PatchMapping(path = "/{ticketId}/messages/{messageId}", consumes = MediaType.APPLICATION_JSON_VALUE)
-    public TicketMessageResponse updateMessage(
+    public ResponseEntity<TicketMessageResponse> updateMessage(
             @PathVariable UUID ticketId,
             @PathVariable Long messageId,
             @Valid @RequestBody TicketMessageUpdateRequest request,
-            @AuthenticationPrincipal AuthenticatedIdentity identity) {
-        return ticketMessageService.update(ticketId, messageId, request, identity);
+            @AuthenticationPrincipal AuthenticatedIdentity identity,
+            @RequestHeader HttpHeaders headers) {
+        var revision = ticketMessageService.update(ticketId, messageId, request, identity, ifMatch(headers));
+        return ResponseEntity.ok().eTag(revision.etag()).body(revision.body());
+    }
+
+    private String ifMatch(HttpHeaders headers) {
+        var values = headers.get(HttpHeaders.IF_MATCH);
+        return values == null ? null : String.join(",", values);
     }
 
     /**

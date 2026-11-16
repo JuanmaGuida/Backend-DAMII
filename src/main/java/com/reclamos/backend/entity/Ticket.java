@@ -8,6 +8,8 @@ import lombok.NoArgsConstructor;
 import lombok.ToString;
 import org.hibernate.annotations.Check;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.Generated;
+import org.hibernate.generator.EventType;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UpdateTimestamp;
 import org.hibernate.type.SqlTypes;
@@ -57,6 +59,10 @@ import java.util.UUID;
 @AllArgsConstructor
 @NoArgsConstructor
 public class Ticket {
+    @Generated(event = {EventType.INSERT, EventType.UPDATE}, writable = true)
+    @Column(name = "resource_version", nullable = false)
+    private long resourceVersion;
+
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;

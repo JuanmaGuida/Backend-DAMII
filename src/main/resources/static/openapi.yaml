@@ -1786,11 +1786,33 @@ paths:
         '409':
           $ref: '#/components/responses/TicketStateConflict'
   /api/tickets/{ticketId}/classification:
+    get:
+      tags: [ Tickets ]
+      summary: Leer la clasificación actual y su ETag
+      operationId: getTicketClassification
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - $ref: '#/components/parameters/TicketId'
+      responses:
+        '200':
+          description: Recurso autorizado con ETag fuerte de su versión persistente.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ResourceETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClassificationCorrectionRequest'
+        '401': { $ref: '#/components/responses/InvalidToken' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
     patch:
       tags: [ Tickets ]
       summary: Compatibilidad de clasificación
       description: |
-        AGENT/ADMIN sobre ticket ajeno IN_REVIEW. Mismo RequestType conserva el ticket sin efectos.
+        AGENT/ADMIN sobre ticket ajeno IN_REVIEW. Mismo RequestType conserva la clasificación sin actividades ni eventos.
+        Con If-Match vigente consume una nueva versión, aun si el RequestType es el mismo.
         Un tipo diferente retorna 409 TICKET_STATE_CONFLICT con indicación del flujo de propuestas.
         Nunca vacía formData ni aplica una clasificación provisional.
       operationId: correctTicketClassification
@@ -1798,6 +1820,7 @@ paths:
         - bearerAuth: [ ]
       parameters:
         - $ref: '#/components/parameters/TicketId'
+        - $ref: '#/components/parameters/IfMatch'
       requestBody:
         required: true
         content:
@@ -1807,6 +1830,9 @@ paths:
       responses:
         '200':
           description: Clasificación corregida.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ResourceETag'
           content:
             application/json:
               schema:
@@ -1821,6 +1847,8 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/TicketStateConflict'
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+
   /api/tickets/{ticketId}/route:
     post:
       tags: [ Tickets ]
@@ -2178,6 +2206,28 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
   /api/tickets/{ticketId}/messages/{messageId}:
+    get:
+      tags: [ Tickets ]
+      summary: Leer un mensaje autorizado y su ETag
+      operationId: getTicketMessage
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - $ref: '#/components/parameters/TicketId'
+        - $ref: '#/components/parameters/TicketMessageId'
+      responses:
+        '200':
+          description: Recurso autorizado con ETag fuerte de su versión persistente.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ResourceETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketMessageResponse'
+        '401': { $ref: '#/components/responses/InvalidToken' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
     patch:
       tags: [ Tickets ]
       summary: Editar el texto de un mensaje propio del chat
@@ -2187,12 +2237,14 @@ paths:
         módulo). visibility no es editable. AREA_RESPONSIBLE debe conservar
         acceso al ticket por su área actual; la autoría no evita este control.
         Se preserva la edición ciudadana sobre tickets propios.
+        Un If-Match obsoleto retorna 412 sin modificar el mensaje ni generar efectos.
       operationId: updateTicketMessage
       security:
         - bearerAuth: [ ]
       parameters:
         - $ref: '#/components/parameters/TicketId'
         - $ref: '#/components/parameters/TicketMessageId'
+        - $ref: '#/components/parameters/IfMatch'
       requestBody:
         required: true
         content:
@@ -2202,6 +2254,9 @@ paths:
       responses:
         '200':
           description: Mensaje editado.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ResourceETag'
           content:
             application/json:
               schema:
@@ -2211,6 +2266,7 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
     delete:
       tags: [ Tickets ]
       summary: Borrar un mensaje propio del chat
@@ -3276,7 +3332,21 @@ components:
       type: http
       scheme: bearer
       description: Token Bearer obtenido del proveedor de identidad vigente. En DEV puede obtenerse mediante /api/auth/login.
+  headers:
+    ResourceETag:
+      description: ETag fuerte del recurso indicado por la URL; obtener la versión vigente mediante su GET individual.
+      schema: { type: string, example: '"message-123-v2"' }
   parameters:
+    IfMatch:
+      name: If-Match
+      in: header
+      required: false
+      description: |
+        Precondición opcional. Comparación fuerte con el ETag del GET individual del recurso.
+        Acepta una lista de entity-tags o * (recurso existente); los tags débiles no coinciden.
+        Un tag obsoleto retorna 412; un encabezado mal formado retorna 400.
+        Sin encabezado se mantiene el comportamiento anterior; no se exige 428.
+      schema: { type: string, example: '"message-123-v2"' }
     OverviewWithoutLocation:
       name: withoutLocation
       in: query
@@ -3361,6 +3431,13 @@ components:
         type: integer
         format: int64
   responses:
+    PreconditionFailed:
+      description: If-Match no coincide con la versión actual; no se modifica el recurso ni se generan efectos secundarios.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          example: { code: PRECONDITION_FAILED, message: If-Match no coincide con la versión actual del recurso }
     InvalidRequest:
       description: Solicitud inválida.
       content:

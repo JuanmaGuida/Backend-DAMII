@@ -4,6 +4,8 @@ import jakarta.persistence.*;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.Generated;
+import org.hibernate.generator.EventType;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.Instant;
@@ -19,6 +21,10 @@ import java.time.Instant;
                 )
         })
 public class TicketMessage {
+    @Generated(event = {EventType.INSERT, EventType.UPDATE}, writable = true)
+    @Column(name = "resource_version", nullable = false)
+    private long resourceVersion;
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;

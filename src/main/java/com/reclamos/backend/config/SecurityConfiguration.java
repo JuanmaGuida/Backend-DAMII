@@ -145,6 +145,7 @@ public class SecurityConfiguration {
                         // ADMIN") no se resuelve acá por rol — lo valida
                         // TicketService.requireTriageAuthority.
                         .requestMatchers(HttpMethod.POST, "/api/tickets/*/review").hasAnyRole("AGENT", "ADMIN")
+                        .requestMatchers(HttpMethod.GET, "/api/tickets/*/classification").hasAnyRole("AGENT", "ADMIN")
                         .requestMatchers(HttpMethod.PATCH, "/api/tickets/*/classification")
                         .hasAnyRole("AGENT", "ADMIN")
                         .requestMatchers(HttpMethod.POST, "/api/tickets/*/route").hasAnyRole("AGENT", "ADMIN")
@@ -164,7 +165,7 @@ public class SecurityConfiguration {
                         // ningún rol interno en su propio ticket) la valida
                         // TicketMessageService.requireWriteAuthority/requireReadAuthority.
                         .requestMatchers(HttpMethod.POST, "/api/tickets/*/messages").authenticated()
-                        .requestMatchers(HttpMethod.GET, "/api/tickets/*/messages").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/tickets/*/messages", "/api/tickets/*/messages/*").authenticated()
                         // PATCH/DELETE /tickets/{id}/messages/{messageId}: editar/borrar un
                         // mensaje propio. Acá también alcanza con "autenticado" — la
                         // restricción real (sólo el propio autor, y sólo sobre mensajes

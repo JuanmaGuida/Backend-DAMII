@@ -24,6 +24,11 @@ import org.springframework.web.multipart.support.MissingServletRequestPartExcept
  */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+    @ExceptionHandler(PreconditionFailedException.class)
+    public ResponseEntity<ApiErrorResponse> handlePreconditionFailed(PreconditionFailedException exception) {
+        return response(HttpStatus.PRECONDITION_FAILED, "PRECONDITION_FAILED", exception.getMessage());
+    }
+
     @ExceptionHandler(IdempotencyConflictException.class)
     public ResponseEntity<ApiErrorResponse> handleIdempotencyConflict(IdempotencyConflictException exception) {
         return ResponseEntity.status(HttpStatus.CONFLICT).cacheControl(CacheControl.noStore())
