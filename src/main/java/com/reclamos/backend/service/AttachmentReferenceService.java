@@ -21,7 +21,12 @@ public class AttachmentReferenceService {
         if (configured.getHost() == null || configured.getQuery() != null || configured.getFragment() != null) {
             throw new IllegalArgumentException("attachment.public-base-url no es válida");
         }
-        this.publicBaseUrl = configured.toString().replaceAll("/+$", "");
+        String base = configured.toString();
+        int end = base.length();
+        while (end > 0 && base.charAt(end - 1) == '/') {
+            end--;
+        }
+        this.publicBaseUrl = base.substring(0, end);
     }
 
     public String downloadUrl(Attachment attachment) {

@@ -38,6 +38,23 @@ class ClientAddressResolverTest {
     }
 
     @Test
+    void rejectsEmptyFinalHopsAndInvalidIpLiteralsWithoutTrustingEarlierValues() {
+        for (String header : List.of(",", ",,,", "198.51.100.7,", "198.51.100.7,  ",
+                "face", "dead.beef", "1.2.3", "999.1.2.3", "1..2.3", "0000.1.2.3", "::::")) {
+            assertEquals("172.18.0.5", resolve("172.18.0.5", header), header);
+        }
+        assertEquals("2001:db8::7", resolve("172.18.0.5", "forged, 2001:db8::7"));
+        assertEquals("::ffff:198.51.100.7", resolve("172.18.0.5", "::ffff:198.51.100.7"));
+    }
+
+    @Test
+    void doesNotResolveHostnamesOrTrustMalformedPeers() {
+        for (String peer : List.of("face", "dead.beef", "::::", "999.1.2.3")) {
+            assertEquals(peer, resolve(peer, "198.51.100.7"));
+        }
+    }
+
+    @Test
     void onlyTrustsTheConfiguredProxyNetworks() {
         ClientAddressResolver narrow = new ClientAddressResolver(List.of("172.18.0.0/16"));
 
