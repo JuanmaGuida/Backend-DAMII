@@ -302,6 +302,12 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+      - name: Restore validated Maven metadata for the POM scan
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
       - uses: actions/download-artifact@v7
         with:
           name: backend-image
