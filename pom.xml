@@ -31,6 +31,9 @@
 		<!-- Boot 4.1.2 still manages 5.30.0; 5.34.0 fixes the reported AMQP advisories. -->
 		<rabbit-amqp-client.version>5.34.0</rabbit-amqp-client.version>
 		<sonar.coverage.jacoco.xmlReportPaths>${project.basedir}/target/site/jacoco/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
+		<!-- Keep CI helper tests analyzed as tests, not uncovered production Python. -->
+		<sonar.tests>src/test/java,.github/tests</sonar.tests>
+		<sonar.exclusions>.github/tests/**</sonar.exclusions>
 		<jacoco.version>0.8.13</jacoco.version>
 		<jjwt.version>0.13.0</jjwt.version>
 	</properties>

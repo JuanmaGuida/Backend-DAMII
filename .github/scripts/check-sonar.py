@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
@@ -17,6 +18,15 @@ METRICS = ('ncloc', 'bugs', 'vulnerabilities', 'duplicated_lines_density',
 
 class EvidenceError(ValueError):
     """A controlled diagnostic that is safe to include in QA artifacts."""
+
+
+def checked_path(value):
+    """Confine CLI file access to the checkout or runner scratch space."""
+    candidate = Path(value).resolve()
+    roots = (Path.cwd().resolve(), Path(os.environ.get('RUNNER_TEMP') or tempfile.gettempdir()).resolve())
+    if not any(candidate.is_relative_to(root) for root in roots):
+        raise ValueError('Path is outside the checkout and runner temporary directory')
+    return candidate
 
 
 def analysis_mode(event, ref, base, main_branch):
@@ -61,7 +71,7 @@ def overall_errors(values):
 
 
 def verify(task_file, project, branch, revision, pull_request=''):
-    task = dict(line.split('=', 1) for line in Path(task_file).read_text().splitlines() if '=' in line)
+    task = dict(line.split('=', 1) for line in checked_path(task_file).read_text(encoding='utf-8').splitlines() if '=' in line)
     if task.get('serverUrl', '').rstrip('/') != HOST or task.get('projectKey') != project:
         raise EvidenceError('Scanner task does not match the configured server/project')
     result = api('ce/task', id=task['ceTaskId'])['task']
@@ -114,9 +124,9 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--scope', action='store_true')
     parser.add_argument('--main-branch', choices=('main', 'master'))
-    parser.add_argument('--task')
+    parser.add_argument('--task', type=checked_path)
     parser.add_argument('--existing-analysis', action='store_true')
-    parser.add_argument('--output')
+    parser.add_argument('--output', type=checked_path)
     args = parser.parse_args()
     if args.scope:
         if not args.main_branch:
@@ -137,7 +147,7 @@ def main():
         return 0
     if not args.output or (bool(args.task) == args.existing_analysis):
         parser.error('Use --output and exactly one of --task or --existing-analysis')
-    output = Path(args.output)
+    output = args.output
     output.parent.mkdir(parents=True, exist_ok=True)
     report = {'qualityGate': 'NOT_VERIFIED', 'overallVerified': False}
     try:
