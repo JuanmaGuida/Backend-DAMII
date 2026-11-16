@@ -10,6 +10,7 @@ tags:
   - name: Authentication
   - name: Catalog
   - name: Catalog Admin
+  - name: Staff Admin
   - name: Tickets
   - name: AI
   - name: Indicators
@@ -224,6 +225,39 @@ paths:
           $ref: '#/components/responses/InvalidRequest'
         '404':
           $ref: '#/components/responses/NotFound'
+  /api/admin/agents:
+    get:
+      tags: [Staff Admin]
+      summary: Directorio del personal de M2 con su carga de trabajo
+      description: |
+        Exclusivo de ADMIN. Lista el personal dado de alta localmente en M2
+        (roles AGENT, AREA_RESPONSIBLE y ADMIN), activo e inactivo. Por persona
+        informa los tickets principales asignados en estado activo, los
+        resueltos en el mes en curso (hora de Buenos Aires, última resolución
+        de cada ticket) y el resultado del último ciclo cerrado del SLA de
+        resolución (cumplido o vencido). No informa disponibilidad en tiempo
+        real porque M2 no la registra.
+      operationId: listStaffDirectory
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Personal de M2, activos primero y ordenado por apellido.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                example: no-store
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AgentDirectoryEntry'
+        '401':
+          $ref: '#/components/responses/InvalidToken'
+        '403':
+          $ref: '#/components/responses/Forbidden'
   /api/admin/catalog/categories:
     get:
       tags: [Catalog Admin]
@@ -3862,6 +3896,47 @@ components:
         description:
           type: string
       additionalProperties: false
+    AgentDirectoryEntry:
+      type: object
+      required: [actorId, firstName, lastName, email, role, areaId, active, activeTickets,
+        resolvedThisMonth, slaMet, slaBreached]
+      properties:
+        actorId:
+          type: string
+          format: uuid
+        firstName:
+          type: string
+          nullable: true
+        lastName:
+          type: string
+          nullable: true
+        email:
+          type: string
+          nullable: true
+        role:
+          type: string
+          enum: [AGENT, AREA_RESPONSIBLE, ADMIN]
+        areaId:
+          type: string
+          nullable: true
+        active:
+          type: boolean
+        activeTickets:
+          type: integer
+          format: int64
+          description: Tickets principales asignados en IN_REVIEW, ROUTED, IN_PROGRESS o PENDING_INFORMATION.
+        resolvedThisMonth:
+          type: integer
+          format: int64
+          description: Tickets asignados cuya última resolución cae en el mes en curso (hora de Buenos Aires).
+        slaMet:
+          type: integer
+          format: int64
+          description: Tickets asignados cuyo último ciclo cerrado del SLA de resolución se cumplió.
+        slaBreached:
+          type: integer
+          format: int64
+          description: Tickets asignados cuyo último ciclo cerrado del SLA de resolución se venció.
     CategoryAdminResponse:
       type: object
       required: [id, name, description, active, createdAt, updatedAt]
