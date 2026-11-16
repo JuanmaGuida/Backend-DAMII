@@ -1,0 +1,25 @@
+{
+  "eventId": "1e0e550a-9e72-4510-a2fc-2ffdd4c75440",
+  "eventType": "updateTicketStatus",
+  "eventVersion": "1.0",
+  "occurredAt": "2026-10-20T10:00:00-03:00",
+  "sourceModule": "habilitaciones",
+  "correlationId": "3af11141-03c3-4f17-a13e-dc9babf894fc",
+  "causationId": "67280afc-ce69-4eba-b97f-14c21b9dca80",
+  "data": {
+    "ticketId": "550e8400-e29b-41d4-a716-446655440000",
+    "updateType": "RESOLVED",
+    "publicMessage": "La inspección comercial finalizó y se informó el resultado.",
+    "details": {
+      "resolution": {
+        "type": "ACTION_COMPLETED"
+      }
+    },
+    "attachments": [],
+    "updatedBy": {
+      "type": "EXTERNAL_USER",
+      "id": "0c717968-17db-42d6-bc88-33b9f10dd37a"
+    },
+    "updateOccurredAt": "2026-10-20T09:50:00-03:00"
+  }
+}

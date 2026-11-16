@@ -1,0 +1,1073 @@
+package com.reclamos.backend.service;
+
+import com.reclamos.backend.dto.TicketFilter;
+import com.reclamos.backend.dto.TicketResponse;
+import com.reclamos.backend.dto.request.CancelTicketRequest;
+import com.reclamos.backend.dto.request.CreateTicketRequest;
+import com.reclamos.backend.dto.response.*;
+import com.reclamos.backend.dto.response.AnonymousContactResponse;
+import com.reclamos.backend.dto.response.CreateTicketResponse;
+import com.reclamos.backend.dto.response.StaffTicketDetailResponse;
+import com.reclamos.backend.dto.response.TicketActivityResponse;
+import com.reclamos.backend.dto.response.TicketAttachmentResponse;
+import com.reclamos.backend.dto.response.TicketDetailResponse;
+import com.reclamos.backend.entity.*;
+import com.reclamos.backend.exception.EvidenceRequiredException;
+import com.reclamos.backend.exception.InvalidTicketRequestException;
+import com.reclamos.backend.exception.ResourceNotFoundException;
+import com.reclamos.backend.exception.TicketStateConflictException;
+import com.reclamos.backend.exception.UnauthorizedTicketOperationException;
+import com.reclamos.backend.identity.AuthenticatedIdentity;
+import com.reclamos.backend.identity.ModuleRole;
+import com.reclamos.backend.repository.*;
+import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.Clock;
+import java.time.Instant;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
+@Service
+@RequiredArgsConstructor
+public class TicketService {
+    /**
+     * "M2" identifica gestión propia de Atención Ciudadana (Eventos v1.6 §2.1):
+     * un ticket de esa "área" inicia gestión propia en IN_PROGRESS y nunca
+     * genera ROUTED; los identificados sí actualizan la proyección de M1.
+     */
+    private static final String SELF_MANAGED_AREA_ID = "M2";
+
+    /**
+     * Whitelist de propiedades de Ticket habilitadas para {@code ?sort=}.
+     * Se valida acá, antes de tocar el repository, en lugar de dejar que
+     * Spring Data traduzca el Sort contra la entidad recién al ejecutar la
+     * query (lo que devolvería un error interno del framework sin manejar
+     * para un campo inexistente). Quedan afuera relaciones (requestType,
+     * mainTicket), el mapa formData y trackingCodeHash (dato sensible). Si
+     * el equipo quiere habilitar más/menos campos, este es el único lugar
+     * que hay que tocar.
+     */
+    private static final Set<String> SORTABLE_TICKET_PROPERTIES = Set.of(
+            "id", "publicId", "ticketType", "responsibleAreaId", "assignedAgent.id",
+            "summary", "currentStatus", "currentPriority", "estimatedAffectedCount",
+            "escalated", "escalationReasonCode", "escalatedAt", "reopenCount",
+            "statusChangedAt", "resolutionConfirmationDueAt", "classificationFinalizedAt",
+            "currentProgress", "createdAt", "updatedAt"
+    );
+
+    private final RequestTypeRepository requestTypeRepository;
+    private final TicketRepository ticketRepository;
+    private final TicketActivityRepository activityRepository;
+    private final AttachmentRepository attachmentRepository;
+    private final TicketLocationRepository locationRepository;
+    private final NeighborhoodRepository neighborhoodRepository;
+    private final TicketCancellationRepository cancellationRepository;
+    private final TicketSlaService ticketSlaService;
+    private final InformationRequestService informationRequestService;
+    private final InformationRequestProjectionService informationRequestProjectionService;
+    private final FormValidationService formValidationService;
+    private final RiskCalculationService riskCalculationService;
+    private final PriorityCalculationService priorityCalculationService;
+    private final TicketSlaMilestoneService milestoneService;
+    private final TicketOutboxService ticketOutboxService;
+    private final com.reclamos.backend.outbox.CorePublicationPolicy corePublicationPolicy;
+    private final TrackingCodeService trackingCodeService;
+    private final TrackingCodeCipher trackingCodeCipher;
+    private final TicketPublicIdGenerator publicIdGenerator;
+    private final AttachmentService attachmentService;
+    private final AttachmentReferenceService attachmentReferenceService;
+    private final AnonymousTicketCredentialService anonymousTicketCredentialService;
+    private final AnonymousContactValidator anonymousContactValidator;
+    private final ModuleUserRepository moduleUserRepository;
+    private final TicketLabelRepository ticketLabelRepository;
+    private final FormTemplateRepository formTemplateRepository;
+    private final FormFieldRepository formFieldRepository;
+    private final NotificationService notificationService;
+    private final Clock clock;
+    private final TicketReclassificationProposalRepository reclassificationProposals;
+    private final ReclassificationDataService reclassificationDataService;
+
+    @Transactional
+    public CreateTicketResponse create(CreateTicketRequest request, AuthenticatedIdentity identity,
+                                       MultipartFile[] evidence) {
+        boolean anonymous = identity == null;
+        if (!anonymous && !identity.hasCitizenIdentity()) {
+            throw new UnauthorizedTicketOperationException();
+        }
+        if (!anonymous && request.containsAnonymousData()) {
+            throw new InvalidTicketRequestException(
+                    "Los datos de acceso o contacto anónimo no aplican a un ticket identificado");
+        }
+        RequestType requestType = requestTypeRepository.findByIdForUpdate(request.requestTypeId())
+                .orElseThrow(() -> new ResourceNotFoundException("Request Type no encontrado"));
+        if (!requestType.isActive()) {
+            throw new InvalidTicketRequestException("El Request Type seleccionado está inactivo");
+        }
+        if (anonymous && !requestType.isAllowsAnonymous()) {
+            throw new InvalidTicketRequestException("El Request Type seleccionado no admite creación anónima");
+        }
+        ResolvedForm resolvedForm = formValidationService.resolveAndValidate(requestType, request.formData());
+        RiskAssessment assessment = riskCalculationService.calculateRisk(requestType, resolvedForm);
+        Risk risk = assessment.calculatedRisk();
+        List<AttachmentService.ValidatedAttachment> validatedAttachments = attachmentService.validate(evidence);
+        if ((risk == Risk.HIGH || risk == Risk.CRITICAL) && validatedAttachments.isEmpty()) {
+            throw new EvidenceRequiredException();
+        }
+        validateLocation(requestType, request.location());
+
+        AnonymousContactValidator.ValidatedContact anonymousContact = anonymous
+                ? anonymousContactValidator.validate(request.anonymousContact())
+                : null;
+        AnonymousTicketCredentialService.CredentialMaterial anonymousCredential = anonymous
+                ? anonymousTicketCredentialService.prepare(request.anonymousAccessPassword())
+                : null;
+
+        String trackingCode;
+        String trackingHash;
+        do {
+            trackingCode = trackingCodeService.generate();
+            trackingHash = trackingCodeService.hash(trackingCode);
+        } while (ticketRepository.existsByTrackingCodeHash(trackingHash));
+
+        Instant now = clock.instant();
+        String publicId = publicIdGenerator.generate(now);
+        Ticket ticket = new Ticket();
+        ticket.setPublicId(publicId);
+        ticket.setTrackingCodeHash(trackingHash);
+        ticket.setCitizenId(anonymous ? null : identity.citizenId());
+        ticket.setAnonymous(anonymous);
+        ticket.setCoreOriginVerified(corePublicationPolicy.realOriginForNewTicket(ticket));
+        ticket.setAnonymousAccessPasswordHash(anonymous ? anonymousCredential.passwordHash() : null);
+        ticket.setAnonymousContactChannel(anonymousContact == null ? null : anonymousContact.channel());
+        ticket.setAnonymousContactValue(anonymousContact == null ? null : anonymousContact.value());
+        ticket.setRequestType(requestType);
+        ticket.setFormTemplateId(resolvedForm.formTemplateId());
+        ticket.setTicketType(requestType.getTicketType());
+        ticket.setResponsibleAreaId(requestType.getResponsibleAreaId());
+        ticket.setSummary(request.summary());
+        ticket.setDescription(request.description());
+        ticket.setFormData(new HashMap<>(resolvedForm.formData()));
+        ticket.setCurrentStatus(TicketStatus.REGISTERED);
+        ticket.setCreatedAt(now);
+        TicketLocation location = request.location() == null ? null : toLocation(ticket, request.location());
+        ticket.setEstimatedAffectedCount(estimateAffectedCount(requestType, location));
+        ticket.setCurrentPriority(priorityCalculationService.calculate(assessment.score(),
+                ticket.getEstimatedAffectedCount(), new PriorityCalculationService.AgeFraction(0, 1),
+                requestType.getMinimumPriority()));
+        ticket.setReopenCount(0);
+        ticket.setEscalated(false);
+        ticket.setPublic(false);
+        ticket.setStatusChangedAt(now);
+        ticket = ticketRepository.save(ticket);
+        if (!anonymous) {
+            var encrypted = trackingCodeCipher.encrypt(ticket.getId(), ticket.getCitizenId(), trackingCode);
+            ticket.setTrackingCodeCiphertext(encrypted.ciphertext());
+            ticket.setTrackingCodeNonce(encrypted.nonce());
+            ticket.setTrackingCodeKeyId(encrypted.keyId());
+        }
+        ticketRepository.flush();
+        ticketSlaService.startFirstResponseCycle(ticket, now);
+        Optional<TicketSla> resolutionSla = ticketSlaService.startInitialResolutionCycle(ticket, now);
+
+        List<Attachment> storedAttachments = validatedAttachments.isEmpty()
+                ? List.of()
+                : attachmentService.storeForTicket(ticket, identity, validatedAttachments, now);
+
+        if (location != null) {
+            location = locationRepository.save(location);
+        }
+        TicketActivity activity = new TicketActivity();
+        activity.setTicket(ticket);
+        activity.setSequence(1);
+        activity.setActionType(ActivityType.TICKET_CREATED);
+        activity.setPreviousStatus(null);
+        activity.setNewStatus(TicketStatus.REGISTERED);
+        activity.setActorType(ActorType.CITIZEN);
+        activity.setActorId(anonymous ? null : identity.actorId().toString());
+        activity.setOccurredAt(now);
+        activityRepository.save(activity);
+        activateCriticalEscalationIfNeeded(ticket, now);
+        ticketOutboxService.ticketCreated(ticket, location, storedAttachments,
+                resolutionSla.map(TicketSla::getDueAt).orElse(null));
+        notificationService.queue(ticket, NotificationType.TICKET_REGISTERED);
+        ticketRepository.flush();
+        return new CreateTicketResponse(ticket.getId(), ticket.getPublicId(), trackingCode,
+                TicketStatus.REGISTERED, anonymous ? anonymousCredential.generatedPassword() : null);
+    }
+
+    /**
+     * Story 3.2 (BE - Endpoint de transición de estados del ticket): la única
+     * transición que corresponde a esta story es la toma de ticket por un agente,
+     * REGISTERED -&gt; IN_REVIEW. Las demás transiciones (ROUTED, RESOLVED, etc.) son
+     * stories aparte más adelante en el plan y no se tocan acá.
+     */
+    @Transactional
+    public TicketResponse startReview(UUID ticketId, AuthenticatedIdentity actor) {
+        Ticket ticket = loadForUpdate(ticketId);
+        requireTriageAuthority(ticket, actor);
+
+        if (!ticket.canPerform(TicketAction.START_REVIEW)) {
+            throw new TicketStateConflictException(
+                    "El ticket está en estado " + ticket.getCurrentStatus()
+                            + " y no puede tomarse a revisión: sólo se puede tomar un ticket REGISTERED");
+        }
+
+        TicketStatus previousStatus = ticket.getCurrentStatus();
+        Instant reviewedAt = clock.instant();
+        ticketSlaService.completeFirstResponseCycle(ticket, reviewedAt);
+        ticket.transition(TicketAction.START_REVIEW, reviewedAt);
+        // Entidades V1.49 §"CONVENCIÓN DE IDENTIFICADORES DE ACTOR": a diferencia
+        // de los identificadores externos de actor, Ticket.assignedAgentId
+        // es una FK real a ModuleUser.id, reservada para relaciones puramente
+        // internas de M2. Por eso acá se resuelve el ModuleUser del agente
+        // autenticado (por su actorId) en lugar de guardar actor.subjectId()
+        // directamente. Decisión (a confirmar con el equipo): si el agente
+        // autenticado no tiene un ModuleUser registrado, se corta con 404 en
+        // lugar de dejar el ticket sin asignar silenciosamente — un agente
+        // autenticado que no existe como ModuleUser es un estado inconsistente
+        // que conviene visibilizar, no absorber.
+        if (ticket.getAssignedAgent() == null) {
+            ModuleUser agent = moduleUserRepository.findByActorId(actor.actorId())
+                    .orElseThrow(() -> new ResourceNotFoundException(
+                            "El agente autenticado no está registrado como ModuleUser"));
+            ticket.setAssignedAgent(agent);
+        }
+        ticketRepository.save(ticket);
+
+        recordActivity(ticket, ActivityType.REVIEW_STARTED, previousStatus, TicketStatus.IN_REVIEW,
+                actor, null, null, null, reviewedAt);
+        ticketOutboxService.statusChanged(ticket, null, reviewedAt);
+
+        return toResponse(ticket, locationRepository.findByTicket_Id(ticketId).orElse(null));
+    }
+
+    /** Compatibility route: unchanged classification is a no-op; changes require an auditable proposal. */
+    @Transactional
+    public TicketResponse correctClassification(UUID ticketId, Long newRequestTypeId, AuthenticatedIdentity actor) {
+        Ticket ticket = loadForUpdate(ticketId);
+        requireTriageAuthority(ticket, actor);
+        if (!ticket.canPerform(TicketAction.CLASSIFY)) {
+            throw new TicketStateConflictException("La clasificación requiere IN_REVIEW");
+        }
+        if (Objects.equals(ticket.getRequestType().getId(), newRequestTypeId)) {
+            return toResponse(ticket, locationRepository.findByTicket_Id(ticketId).orElse(null));
+        }
+        throw new TicketStateConflictException(
+                "El cambio requiere una propuesta: POST /api/staff/tickets/{ticketId}/reclassification-proposals y confirmación explícita");
+    }
+
+    /**
+     * Finaliza la clasificación: inicia gestión propia M2 en IN_PROGRESS o
+     * deriva una gestión externa a ROUTED y publica su snapshot inicial.
+     * <p>
+     * INTERPRETACIÓN DE "SELECCIONAR UN ÁREA VÁLIDA" (AC): este endpoint no
+     * recibe un área por parámetro. El área ya quedó fijada en
+     * responsibleAreaId durante la clasificación (Story 3.2 / RequestType), así
+     * que acá "seleccionar" se interpreta como confirmar/validar esa área ya
+     * asignada, no como un input nuevo del agente. Si el equipo necesita que el
+     * agente pueda cambiar el área en el momento de derivar, este método hay
+     * que extenderlo para recibir un areaId explícito.
+     * <p>
+     * No recalcula el SLA: ya quedó fijado en create() o en
+     * correctClassification() y nada cambia entre la primera IN_REVIEW y esta
+     * derivación que lo afecte.
+     */
+    @Transactional
+    public TicketResponse routeToArea(UUID ticketId, AuthenticatedIdentity actor) {
+        Ticket ticket = loadForUpdate(ticketId);
+        requireTriageAuthority(ticket, actor);
+
+        if (!ticket.canPerform(TicketAction.ROUTE)) {
+            throw new TicketStateConflictException(
+                    "El ticket está en estado " + ticket.getCurrentStatus()
+                            + " y no puede derivarse: sólo se puede derivar un ticket IN_REVIEW");
+        }
+        if (ticket.getResponsibleAreaId() == null || ticket.getResponsibleAreaId().isBlank()) {
+            throw new TicketStateConflictException(
+                    "El ticket no tiene un área responsable válida asignada; no puede derivarse");
+        }
+        if (ticket.getRequestType() == null) {
+            throw new TicketStateConflictException("El ticket no tiene una clasificación válida; no puede iniciar gestión");
+        }
+
+        if (reclassificationProposals.findOpen(ticketId).isPresent()) {
+            throw new TicketStateConflictException("Confirme o abandone la propuesta abierta antes de iniciar gestión");
+        }
+        if (ticket.getClassificationFinalizedAt() != null && activityRepository.findAllByTicket_IdOrderBySequenceAsc(ticketId)
+                .stream().filter(a -> a.getActionType() == ActivityType.RETURNED_BY_AREA)
+                .reduce((a,b) -> b).map(a -> "REQUEST_TYPE_MISMATCH".equals(a.getReasonCode())).orElse(false)) {
+            throw new TicketStateConflictException("REQUEST_TYPE_MISMATCH requiere confirmar una propuesta autorizada");
+        }
+        reclassificationDataService.validateCurrentClassification(ticket);
+        TicketStatus previousStatus = ticket.getCurrentStatus();
+        Instant now = clock.instant();
+        boolean selfManaged = SELF_MANAGED_AREA_ID.equalsIgnoreCase(ticket.getResponsibleAreaId());
+        TicketStatus nextStatus = ticket.nextStatus(TicketAction.ROUTE);
+        ticket.transition(TicketAction.ROUTE, now);
+        // classificationFinalizedAt se fija sólo la primera vez que el ticket
+        // sale de IN_REVIEW hacia gestión (Entidades §4.1): a partir de acá,
+        // correctClassification() ya no acepta correcciones ni siquiera después
+        // de un ROUTED -> RETURNED -> IN_REVIEW posterior.
+        if (ticket.getClassificationFinalizedAt() == null) {
+            ticket.setClassificationFinalizedAt(now);
+        }
+        ticketRepository.save(ticket);
+
+        ActivityType activityType = selfManaged ? ActivityType.STATE_CHANGED : ActivityType.ROUTED;
+        String message = selfManaged
+                ? "Comenzó la gestión propia de Atención Ciudadana"
+                : "Derivado al área responsable '" + ticket.getResponsibleAreaId() + "'";
+        recordActivity(ticket, activityType, previousStatus, nextStatus, actor, null, null, message, now);
+
+        TicketLocation location = locationRepository.findByTicket_Id(ticketId).orElse(null);
+        TicketSla resolutionSla = ticketSlaService.findLatestResolutionCycle(ticket).orElse(null);
+
+        // La gestión externa recibe el snapshot ROUTED. En gestión propia sólo
+        // se proyecta STATUS_CHANGED para identificados; el helper omite anónimos.
+        if (selfManaged) {
+            ticketOutboxService.statusChanged(ticket, null, now);
+        } else {
+            ticketOutboxService.routed(ticket, location,
+                    resolutionSla == null ? null : resolutionSla.getDueAt(), now);
+        }
+
+        return toResponse(ticket, location, resolutionSla);
+    }
+
+    /**
+     * POST /tickets/{id}/cancel. El propietario actúa con capacidad ciudadana
+     * independientemente de su role y sólo puede cancelar en REGISTERED.
+     * AGENT/ADMIN conservan la cancelación administrativa de tickets ajenos
+     * en los estados habilitados por State. ROUTED/IN_PROGRESS se cancelan
+     * por el flujo de integración (updateTicketStatus/REJECTED), no por acá.
+     * DUPLICATE tampoco es cancelable directamente por el propietario acá:
+     * la idea de permitir retirar un DUPLICATE propio se descartó — sólo
+     * REGISTERED habilita la cancelación directa del ciudadano.
+     */
+    @Transactional
+    public TicketResponse cancelTicket(UUID ticketId, CancelTicketRequest request, AuthenticatedIdentity actor) {
+        Ticket ticket = loadForUpdate(ticketId);
+        boolean isOwnTicket = actor != null && !ticket.isAnonymous() && ticket.getCitizenId() != null
+                && ticket.getCitizenId().equals(actor.citizenId());
+        requireCancelAuthority(actor, isOwnTicket);
+
+        ActorType actorType = isOwnTicket ? ActorType.CITIZEN
+                : (actor.role() == ModuleRole.ADMIN ? ActorType.ADMIN : ActorType.AGENT);
+        if (!isOwnTicket && ticket.canPerform(TicketAction.CANCEL_ADMIN)
+                && ticketRepository.existsByMainTicket_IdAndCurrentStatus(ticketId, TicketStatus.DUPLICATE)) {
+            cancelWithScope(ticket, request, actor);
+            return toResponse(ticket, locationRepository.findByTicket_Id(ticketId).orElse(null));
+        }
+        return cancelTicket(ticket, request, actorType, actor.actorId().toString(), isOwnTicket, true);
+    }
+
+    @Transactional
+    public TicketResponse cancelAnonymousTicket(UUID ticketId, CancelTicketRequest request) {
+        Ticket ticket = loadForUpdate(ticketId);
+        if (!ticket.isAnonymous() || ticket.getCitizenId() != null) {
+            throw new UnauthorizedTicketOperationException();
+        }
+        return cancelTicket(ticket, request, ActorType.CITIZEN, null, true, false);
+    }
+
+    private TicketResponse cancelTicket(Ticket ticket, CancelTicketRequest request, ActorType actorType,
+                                        String actorId, boolean ownerAction, boolean publishCancellation) {
+        if (ownerAction && !ticket.canPerform(TicketAction.CANCEL_OWNER)) {
+            throw new TicketStateConflictException(
+                    "El ticket está en estado " + ticket.getCurrentStatus()
+                            + " y el propietario sólo puede cancelarlo directamente en REGISTERED");
+        }
+        if (!ownerAction && !ticket.canPerform(TicketAction.CANCEL_ADMIN)) {
+            throw new TicketStateConflictException(
+                    "El ticket está en estado " + ticket.getCurrentStatus()
+                            + " y no admite cancelación administrativa por este endpoint"
+                            + " (estados permitidos: REGISTERED, IN_REVIEW o PENDING_INFORMATION)");
+        }
+
+        if (ticketRepository.existsByMainTicket_IdAndCurrentStatus(ticket.getId(), TicketStatus.DUPLICATE)) {
+            throw new TicketStateConflictException("El principal tiene duplicados activos: requiere una solicitud de cancelación y revisión administrativa");
+        }
+        if (request.getCancellationScope() != null) {
+            throw new InvalidTicketRequestException("Sin duplicados activos cancellationScope debe ser null");
+        }
+        return executeCancellation(ticket, request, actorType, actorId, publishCancellation, clock.instant(),
+                ownerAction ? TicketAction.CANCEL_OWNER : TicketAction.CANCEL_ADMIN);
+    }
+
+    private TicketResponse executeCancellation(Ticket ticket, CancelTicketRequest request, ActorType actorType,
+                                                String actorId, boolean publishCancellation, Instant now,
+                                                TicketAction action) {
+        reclassificationDataService.terminate(ticket, "Cancelación del ticket", now);
+
+        TicketCancellation cancellation = new TicketCancellation();
+        cancellation.setTicket(ticket);
+        cancellation.setReasonCode(request.getReasonCode());
+        cancellation.setCancellationScope(request.getCancellationScope());
+        cancellation.setPublicMessage(request.getPublicMessage());
+        cancellation.setInternalMessage(request.getInternalMessage());
+        cancellation.setCancelledByType(actorType);
+        cancellation.setCancelledById(actorId);
+        cancellation.setCancelledByModuleId(SELF_MANAGED_AREA_ID);
+        cancellation.setCancelledAt(now);
+        cancellationRepository.save(cancellation);
+
+        TicketStatus previousStatus = ticket.getCurrentStatus();
+        if (previousStatus == TicketStatus.PENDING_INFORMATION || previousStatus == TicketStatus.DUPLICATE) {
+            informationRequestService.cancelPendingBecauseTicketTerminated(ticket);
+        }
+        ticketSlaService.terminateActiveCycles(ticket, now);
+        ticket.transition(action, now);
+        ticketRepository.save(ticket);
+
+        recordCancellationActivity(ticket, previousStatus, actorType, actorId, request.getReasonCode(),
+                request.getPublicMessage() != null ? request.getPublicMessage() : request.getInternalMessage(), now);
+
+        // Los flujos identificados y administrativos conservan la política de
+        // publicación previa; el flujo anónimo acreditado no publica desde aquí.
+        if (publishCancellation) {
+            ticketOutboxService.cancelled(ticket, request.getReasonCode(), request.getPublicMessage(), true, now);
+        }
+
+        UUID actingActorId = actorId == null ? null : UUID.fromString(actorId);
+        if (actorType != ActorType.CITIZEN) {
+            notificationService.queueCitizen(ticket, NotificationType.CANCELLED);
+        }
+        notificationService.queueAssignedAgent(ticket, NotificationType.CANCELLED, actingActorId);
+
+
+        return toResponse(ticket, locationRepository.findByTicket_Id(ticket.getId()).orElse(null));
+    }
+
+    /** Caller owns the main row lock for the entire transaction. */
+    void cancelWithScope(Ticket main, CancelTicketRequest input, AuthenticatedIdentity actor) {
+        applyScopedCancellation(main,input,actor,false);
+    }
+
+    /** Only an audited, revalidated external rejection review may cancel active external management. */
+    void cancelAfterConflict(Ticket main, CancelTicketRequest input, AuthenticatedIdentity actor, boolean external) {
+        applyScopedCancellation(main,input,actor,external);
+    }
+
+    private void applyScopedCancellation(Ticket main, CancelTicketRequest input, AuthenticatedIdentity actor, boolean external) {
+        requireTriageAuthority(main, actor);
+        TicketAction action = external ? TicketAction.CANCEL_EXTERNAL_REVIEW : TicketAction.CANCEL_ADMIN;
+        boolean permitted = main.canPerform(action);
+        if (!permitted || main.getMainTicket() != null)
+            throw new TicketStateConflictException("El estado del principal no admite esta cancelación administrativa");
+        if (input.getCancellationScope() == null || input.getDecisionReason() == null
+                || input.getDecisionReason().isBlank() || input.getDecisionReason().length() > 4000)
+            throw new InvalidTicketRequestException("Un principal con duplicados exige cancellationScope y decisionReason");
+        List<Ticket> children = ticketRepository.lockCancellationDuplicates(main.getId());
+        if (children.isEmpty()) throw new TicketStateConflictException("El principal ya no tiene duplicados activos");
+        for (Ticket child : children) {
+            requireTriageAuthority(child, actor);
+            if (reclassificationProposals.findOpen(child.getId()).isPresent())
+                throw new TicketStateConflictException("Un duplicado tiene una propuesta abierta incompatible");
+        }
+        Instant now = clock.instant();
+        ActorType type = actor.role() == ModuleRole.ADMIN ? ActorType.ADMIN : ActorType.AGENT;
+        String actorId = actor.actorId().toString();
+        boolean notifyExternal = !main.isAnonymous() || main.getClassificationFinalizedAt() != null
+                && !SELF_MANAGED_AREA_ID.equalsIgnoreCase(main.getResponsibleAreaId());
+        // Linking in older flows could retain a pending request on a DUPLICATE.
+        // None may survive either termination or the change of principal.
+        for (Ticket child : children) informationRequestService.cancelPendingBecauseTicketTerminated(child);
+        executeCancellation(main, input, type, actorId, notifyExternal, now, action);
+        if (input.getCancellationScope() == CancellationScope.GLOBAL) {
+            for (Ticket child : children) {
+                // The scope belongs to the principal decision, not an independent child decision.
+                CancelTicketRequest inherited = new CancelTicketRequest();
+                inherited.setReasonCode(input.getReasonCode()); inherited.setPublicMessage(input.getPublicMessage());
+                inherited.setInternalMessage("Cancelación GLOBAL del principal " + main.getId());
+                executeCancellation(child, inherited, type, actorId, !child.isAnonymous(), now, TicketAction.CANCEL_DUPLICATE);
+            }
+        } else {
+            Ticket promoted = children.stream().min(java.util.Comparator.comparing(Ticket::getCreatedAt)
+                    .thenComparing(t -> t.getId().toString())).orElseThrow();
+            promoted.setMainTicket(null); promoted.transition(TicketAction.PROMOTE_DUPLICATE, now);
+            // Classification stays locked by its duplicate-link history. Preserve the
+            // real routing timestamp: setting it here would invent external management.
+            ticketRepository.save(promoted);
+            recordActivity(promoted, ActivityType.STATE_CHANGED, TicketStatus.DUPLICATE, TicketStatus.IN_REVIEW,
+                    actor, null, null, "Promovido por cancelación del principal " + main.getId(), now);
+            ticketSlaService.startPromotedResolutionCycle(promoted, now);
+            ticketOutboxService.statusChanged(promoted, null, now);
+            for (Ticket child : children) {
+                if (child.getId().equals(promoted.getId())) continue;
+                child.setMainTicket(promoted); ticketRepository.save(child);
+                recordActivity(child, ActivityType.DUPLICATE_LINKED, TicketStatus.DUPLICATE, TicketStatus.DUPLICATE,
+                        actor, null, null, "Vinculado al nuevo principal " + promoted.getId(), now);
+                if (!child.isAnonymous()) ticketOutboxService.duplicateLinked(child, now);
+            }
+        }
+        // Keep the scope rationale in the immutable activity log, including direct staff decisions.
+        TicketActivity decision = new TicketActivity(); decision.setTicket(main);
+        decision.setSequence(activityRepository.countByTicketId(main.getId()) + 1);
+        decision.setActionType(ActivityType.STATE_CHANGED); decision.setPreviousStatus(TicketStatus.CANCELLED);
+        decision.setNewStatus(TicketStatus.CANCELLED); decision.setActorType(type); decision.setActorId(actorId);
+        decision.setSourceModuleId(SELF_MANAGED_AREA_ID); decision.setOccurredAt(now);
+        decision.setMessage(input.getDecisionReason().strip());
+        decision.setMetadata(Map.of("cancellationScope", input.getCancellationScope().name()));
+        activityRepository.save(decision);
+    }
+
+    private void requireCancelAuthority(AuthenticatedIdentity actor, boolean isOwnTicket) {
+        if (actor == null) {
+            throw new UnauthorizedTicketOperationException();
+        }
+        boolean isStaff = actor.role() == ModuleRole.AGENT || actor.role() == ModuleRole.ADMIN;
+        if (!isOwnTicket && !isStaff) {
+            throw new UnauthorizedTicketOperationException();
+        }
+    }
+
+    private void recordCancellationActivity(Ticket ticket, TicketStatus previousStatus, ActorType actorType,
+                                             String actorId, CancellationReasonCode reasonCode,
+                                             String message, Instant occurredAt) {
+        TicketActivity activity = new TicketActivity();
+        activity.setTicket(ticket);
+        activity.setSequence((int) activityRepository.countByTicketId(ticket.getId()) + 1);
+        activity.setActionType(ActivityType.CANCELLED);
+        activity.setPreviousStatus(previousStatus);
+        activity.setNewStatus(TicketStatus.CANCELLED);
+        activity.setActorType(actorType);
+        activity.setActorId(actorId);
+        activity.setSourceModuleId(SELF_MANAGED_AREA_ID);
+        activity.setReasonCode(reasonCode.name());
+        activity.setMessage(message);
+        activity.setOccurredAt(occurredAt);
+        activityRepository.save(activity);
+    }
+
+    /**
+     * Story 3.1 (BE - Endpoint de listado con filtros por categoría, prioridad,
+     * barrio/rol y estado). "Rol" del work item se interpretó como
+     * responsibleAreaId — ver el javadoc de TicketFilter.
+     */
+    @Transactional(readOnly = true)
+    public Page<TicketResponse> listTickets(TicketFilter filter, Pageable pageable) {
+        validateSort(pageable.getSort());
+        Specification<Ticket> specification = TicketSpecifications.build(filter);
+        Page<Ticket> page = ticketRepository.findAll(specification, pageable);
+
+        List<UUID> ticketIds = page.getContent().stream().map(Ticket::getId).toList();
+        Map<UUID, TicketLocation> locationsByTicket = locationRepository
+                .findAllByTicket_IdIn(ticketIds).stream()
+                .collect(Collectors.toMap(location -> location.getTicket().getId(), Function.identity()));
+        Map<UUID, TicketSla> latestFirstResponseByTicket =
+                ticketSlaService.findLatestFirstResponseCycles(page.getContent());
+        Map<UUID, TicketSla> latestResolutionByTicket =
+                ticketSlaService.findLatestResolutionCycles(page.getContent());
+
+        return mapPage(page, locationsByTicket, latestFirstResponseByTicket, latestResolutionByTicket);
+    }
+
+    /** Area is fixed by the authenticated identity, before SQL filtering/count/pagination. */
+    @Transactional(readOnly = true)
+    public Page<TicketResponse> listAreaTickets(TicketFilter filter, Pageable pageable, AuthenticatedIdentity identity) {
+        if (identity == null || identity.role() != ModuleRole.AREA_RESPONSIBLE
+                || identity.areaId() == null || identity.areaId().isBlank()) {
+            throw new UnauthorizedTicketOperationException();
+        }
+        if (pageable.getPageSize() > 200) {
+            throw new InvalidTicketRequestException("El tamaño máximo de página es 200");
+        }
+        return listTickets(new TicketFilter(filter.categoryId(), filter.priority(), filter.neighborhoodId(),
+                identity.areaId(), filter.status(), filter.labelIds(), filter.search(), filter.withoutLocation()), pageable);
+    }
+
+    /**
+     * GET /me/tickets (Entidades V1.49 §"Autenticación, roles y vistas"):
+     * cualquier usuario autenticado vía M1 conserva capacidades ciudadanas
+     * base sobre sus propios tickets. A diferencia de listTickets (la
+     * bandeja staff de la Story 3.1, restringida por rol en
+     * SecurityConfiguration), acá no hay scoping por rol ni área: siempre
+     * se filtra por el citizenId de quien pregunta.
+     */
+    @Transactional(readOnly = true)
+    public Page<TicketResponse> listMyTickets(AuthenticatedIdentity identity, Pageable pageable) {
+        if (identity == null || !identity.hasCitizenIdentity()) {
+            throw new UnauthorizedTicketOperationException();
+        }
+        validateSort(pageable.getSort());
+        Page<Ticket> page = ticketRepository.findByCitizenId(identity.citizenId(), pageable);
+
+        List<UUID> ticketIds = page.getContent().stream().map(Ticket::getId).toList();
+        Map<UUID, TicketLocation> locationsByTicket = locationRepository
+                .findAllByTicket_IdIn(ticketIds).stream()
+                .collect(Collectors.toMap(location -> location.getTicket().getId(), Function.identity()));
+
+        Map<UUID, TicketSla> latestFirstResponseByTicket =
+                ticketSlaService.findLatestFirstResponseCycles(page.getContent());
+        Map<UUID, TicketSla> latestResolutionByTicket =
+                ticketSlaService.findLatestResolutionCycles(page.getContent());
+        return mapPage(page, locationsByTicket, latestFirstResponseByTicket, latestResolutionByTicket);
+    }
+
+    /**
+     * GET /tickets/{id} (Entidades V1.49 §"Autenticación, roles y vistas":
+     * "Ciudadano owner | Consultar detalle ciudadano autorizado."). Un
+     * ticket anónimo no tiene citizenId, así que nunca es "propio" de
+     * ningún autenticado acá; se consulta por POST /tracking/access, no por
+     * este endpoint.
+     */
+    @Transactional(readOnly = true)
+    public TicketDetailResponse getById(UUID ticketId, AuthenticatedIdentity identity) {
+        Ticket ticket = ticketRepository.findById(ticketId)
+                .orElseThrow(() -> new ResourceNotFoundException("El ticket solicitado no existe"));
+        requireOwner(ticket, identity);
+        TicketLocation location = locationRepository.findByTicket_Id(ticketId).orElse(null);
+        return toDetailResponse(ticket, location, false);
+    }
+
+    private void requireOwner(Ticket ticket, AuthenticatedIdentity identity) {
+        if (identity == null || ticket.isAnonymous() || ticket.getCitizenId() == null
+                || !ticket.getCitizenId().equals(identity.citizenId())) {
+            throw new UnauthorizedTicketOperationException();
+        }
+    }
+
+    /**
+     * GET /staff/tickets/{id} (Guía funcional M2 §7, tabla de roles + §7.1):
+     * detalle staff. AGENT y ADMIN acceden a cualquier ticket ajeno sin
+     * restricción de área. AREA_RESPONSIBLE sólo accede a tickets de su
+     * propia areaId, salvo que el ticket sea suyo como ciudadano (§7.1:
+     * "si el usuario interno es owner... puede ver información interna por
+     * su rol"), en cuyo caso también puede verlo aunque sea de otra área.
+     * La restricción de "toda acción staff queda bloqueada" en ticket propio
+     * no aplica acá porque este endpoint es de sólo lectura.
+     */
+    @Transactional(readOnly = true)
+    public StaffTicketDetailResponse getStaffDetail(UUID ticketId, AuthenticatedIdentity identity) {
+        Ticket ticket = ticketRepository.findById(ticketId)
+                .orElseThrow(() -> new ResourceNotFoundException("El ticket solicitado no existe"));
+        requireStaffAccess(ticket, identity);
+        TicketLocation location = locationRepository.findByTicket_Id(ticketId).orElse(null);
+        StaffTicketDetailResponse detail = toDetailResponse(
+                ticket, location, true, new StaffTicketDetailResponse());
+        detail.setFormData(ticket.getFormData() == null ? null : new HashMap<>(ticket.getFormData()));
+        detail.setCurrentProgress(ticket.getCurrentProgress());
+        // Provisional answers are consulted through the proposal/owner endpoints, not this detail.
+        omitProvisionalAnswers(detail);
+        if (location != null) {
+            detail.setLocation(new StaffTicketLocationResponse(location.getAddressLine(), location.getStreet(),
+                    location.getStreetNumber(), location.getNeighborhood() == null ? null : location.getNeighborhood().getId(),
+                    location.getNeighborhood() == null ? null : location.getNeighborhood().getName(),
+                    location.getLatitude(), location.getLongitude(), location.getReference()));
+        }
+        if (ticket.getFormTemplateId() != null) {
+            formTemplateRepository.findById(ticket.getFormTemplateId()).ifPresent(template ->
+                    detail.setFormTemplate(new StaffTicketFormResponse(template.getId(), template.getVersion(),
+                            formFieldRepository.findAllByFormTemplate_IdOrderByDisplayOrderAsc(template.getId()).stream()
+                                    .map(field -> new StaffTicketFormResponse.Field(field.getCode(), field.getLabel(), field.getType(),
+                                            field.getConfig() != null && field.getConfig().get("options") instanceof List<?> options
+                                                    ? options : List.of()))
+                                    .toList())));
+        }
+        if (ticket.isAnonymous()
+                && (identity.role() == ModuleRole.AGENT || identity.role() == ModuleRole.ADMIN)
+                && ticket.getAnonymousContactChannel() != null
+                && ticket.getAnonymousContactValue() != null) {
+            detail.setAnonymousContact(new AnonymousContactResponse(
+                    ticket.getAnonymousContactChannel(), ticket.getAnonymousContactValue()));
+        }
+        return detail;
+    }
+
+    /**
+     * Carga un ticket para consulta de staff aplicando la misma regla de acceso que el detalle
+     * ({@link #getStaffDetail}): 404 si no existe y 403 si el rol o el área no alcanzan.
+     */
+    @Transactional(readOnly = true)
+    public Ticket requireStaffReadAccess(UUID ticketId, AuthenticatedIdentity identity) {
+        Ticket ticket = ticketRepository.findById(ticketId)
+                .orElseThrow(() -> new ResourceNotFoundException("El ticket solicitado no existe"));
+        requireStaffAccess(ticket, identity);
+        return ticket;
+    }
+
+    private void requireStaffAccess(Ticket ticket, AuthenticatedIdentity identity) {
+        if (identity == null || (identity.role() != ModuleRole.AGENT
+                && identity.role() != ModuleRole.ADMIN
+                && identity.role() != ModuleRole.AREA_RESPONSIBLE)) {
+            throw new UnauthorizedTicketOperationException();
+        }
+        boolean isOwnTicket = !ticket.isAnonymous() && ticket.getCitizenId() != null
+                && ticket.getCitizenId().equals(identity.citizenId());
+        if (identity.role() == ModuleRole.AREA_RESPONSIBLE && !isOwnTicket
+                && (identity.areaId() == null || identity.areaId().isBlank()
+                || !identity.areaId().equals(ticket.getResponsibleAreaId()))) {
+            throw new UnauthorizedTicketOperationException();
+        }
+    }
+
+    /**
+     * Story 2.3 (Enforcement de permisos por rol en backend): autorización
+     * para las acciones de triage (startReview/correctClassification/
+     * routeToArea). El filtro de rol (sólo AGENT/ADMIN llegan hasta acá; ver
+     * SecurityConfiguration — AREA_RESPONSIBLE queda afuera de estas tres
+     * acciones porque la Guía funcional M2 §7 limita su capacidad staff a
+     * "leer y enviar mensajes PUBLIC/INTERNAL", sin triage, ni siquiera sobre
+     * tickets de su propia área) ya se resolvió antes de entrar acá. Lo que
+     * falta y no se puede expresar en el filtro es el bloqueo de "acción
+     * staff en ticket propio": Entidades V1.49 §3.3 dice que si
+     * currentUser.citizenId = ticket.citizenId, "la vista staff queda
+     * completamente read-only, incluso para ADMIN" — ningún AGENT/ADMIN
+     * puede triagear su propio ticket.
+     */
+    void requireTriageAuthority(Ticket ticket, AuthenticatedIdentity actor) {
+        if (actor == null || (actor.role() != ModuleRole.AGENT && actor.role() != ModuleRole.ADMIN)) {
+            throw new UnauthorizedTicketOperationException();
+        }
+        boolean isOwnTicket = !ticket.isAnonymous() && ticket.getCitizenId() != null
+                && ticket.getCitizenId().equals(actor.citizenId());
+        if (isOwnTicket) {
+            throw new UnauthorizedTicketOperationException();
+        }
+    }
+
+    /**
+     * GET /staff/tickets/{id}/citizen-view (Guía funcional M2 §7.1): "misma
+     * proyección visible al ciudadano", pero consultada desde el contexto
+     * staff — no cambia la identidad de quien pregunta ni suplanta al
+     * propietario. El control de acceso de entrada es el mismo que
+     * getStaffDetail (AGENT/ADMIN cualquier ticket ajeno; AREA_RESPONSIBLE
+     * sólo su areaId o su propio ticket); la Guía aclara "en ticket ajeno es
+     * read-only", pero eso ya lo garantiza que este endpoint sea un GET.
+     * <p>
+     * Comparte autorización con getStaffDetail, pero usa la proyección pública
+     * del detalle: sólo adjuntos PUBLIC y actividades sanitizadas, aun cuando
+     * quien consulta tenga un rol staff.
+     */
+    @Transactional(readOnly = true)
+    public TicketDetailResponse getStaffCitizenView(UUID ticketId, AuthenticatedIdentity identity) {
+        Ticket ticket = ticketRepository.findById(ticketId)
+                .orElseThrow(() -> new ResourceNotFoundException("El ticket solicitado no existe"));
+        requireStaffAccess(ticket, identity);
+        TicketLocation location = locationRepository.findByTicket_Id(ticketId).orElse(null);
+        TicketDetailResponse detail = toDetailResponse(ticket, location, false);
+        omitProvisionalAnswers(detail);
+        return detail;
+    }
+
+    private void omitProvisionalAnswers(TicketDetailResponse detail) {
+        PendingInformationRequestResponse pending = detail.getPendingInformationRequest();
+        if (pending != null && pending.reclassification() != null) {
+            detail.setPendingInformationRequest(new PendingInformationRequestResponse(pending.status(),
+                    pending.messageForCitizen(), pending.requestedAt(), pending.dueAt(), pending.attachments(),
+                    pending.purpose(), null));
+        }
+    }
+
+    private void validateSort(Sort sort) {
+        for (Sort.Order order : sort) {
+            if (!SORTABLE_TICKET_PROPERTIES.contains(order.getProperty())) {
+                throw new InvalidTicketRequestException(
+                        "El campo de ordenamiento '" + order.getProperty() + "' no es válido");
+            }
+        }
+    }
+
+    private Ticket loadForUpdate(UUID ticketId) {
+        return ticketRepository.findByIdForUpdate(ticketId)
+                .orElseThrow(() -> new ResourceNotFoundException("El ticket solicitado no existe"));
+    }
+
+    /**
+     * Guía funcional v1.15 §4: población del barrio por factor del tipo vigente.
+     * Creación y corrección inicial comparten la política existente: HALF_UP
+     * a personas enteras y cero cuando no se informó ubicación/barrio o factor.
+     */
+    private int estimateAffectedCount(RequestType requestType, TicketLocation location) {
+        if (location == null || location.getNeighborhood() == null
+                || requestType.getAffectedPopulationFactor() == null) {
+            return 0;
+        }
+        BigDecimal population = BigDecimal.valueOf(location.getNeighborhood().getPopulation());
+        return population.multiply(requestType.getAffectedPopulationFactor())
+                .setScale(0, RoundingMode.HALF_UP)
+                .intValue();
+    }
+
+    private void recordActivity(Ticket ticket, ActivityType actionType, TicketStatus previousStatus,
+                                 TicketStatus newStatus, AuthenticatedIdentity actor,
+                                 Priority previousPriority, Priority newPriority, String message,
+                                 Instant occurredAt) {
+        long nextSequence = activityRepository.countByTicketId(ticket.getId()) + 1;
+
+        TicketActivity activity = new TicketActivity();
+        activity.setTicket(ticket);
+        activity.setSequence((int) nextSequence);
+        activity.setActionType(actionType);
+        activity.setPreviousStatus(previousStatus);
+        activity.setNewStatus(newStatus);
+        activity.setActorType(actor.role() == ModuleRole.ADMIN ? ActorType.ADMIN : ActorType.AGENT);
+        activity.setActorId(actor.actorId().toString());
+        activity.setSourceModuleId(SELF_MANAGED_AREA_ID);
+        activity.setPreviousPriority(previousPriority);
+        activity.setNewPriority(newPriority);
+        activity.setMessage(message);
+        activity.setOccurredAt(occurredAt);
+        activityRepository.save(activity);
+    }
+
+    /**
+     * Activa una sola vez el escalamiento automático por prioridad crítica.
+     * La marca es independiente del estado y la actividad representa una
+     * decisión del sistema, incluso cuando la prioridad surgió de una
+     * reclasificación iniciada por un agente.
+     */
+    private void activateCriticalEscalationIfNeeded(Ticket ticket, Instant activatedAt) {
+        milestoneService.reconcileEscalation(ticket, activatedAt, false);
+    }
+
+    private TicketResponse toResponse(Ticket ticket, TicketLocation location) {
+        return toResponse(ticket, location,
+                ticketSlaService.findLatestFirstResponseCycle(ticket).orElse(null),
+                ticketSlaService.findLatestResolutionCycle(ticket).orElse(null));
+    }
+
+    private TicketDetailResponse toDetailResponse(Ticket ticket, TicketLocation location, boolean staffView) {
+        return toDetailResponse(ticket, location, staffView, new TicketDetailResponse());
+    }
+
+    private <T extends TicketDetailResponse> T toDetailResponse(
+            Ticket ticket, TicketLocation location, boolean staffView, T detail) {
+        TicketResponse base = toResponse(ticket, location);
+        detail.setId(base.getId());
+        detail.setPublicId(base.getPublicId());
+        detail.setRequestTypeCode(base.getRequestTypeCode());
+        detail.setRequestTypeName(base.getRequestTypeName());
+        detail.setCategoryName(base.getCategoryName());
+        detail.setSubcategoryName(base.getSubcategoryName());
+        detail.setTicketType(base.getTicketType());
+        detail.setSummary(base.getSummary());
+        detail.setDescription(ticket.getDescription());
+        detail.setCurrentStatus(base.getCurrentStatus());
+        detail.setMainTicketId(ticket.getMainTicket() == null ? null : ticket.getMainTicket().getId());
+        detail.setCurrentPriority(base.getCurrentPriority());
+        detail.setResponsibleAreaId(base.getResponsibleAreaId());
+        detail.setAssignedAgentId(base.getAssignedAgentId());
+        detail.setAnonymous(base.isAnonymous());
+        detail.setEstimatedAffectedCount(base.getEstimatedAffectedCount());
+        detail.setEscalated(base.isEscalated());
+        detail.setEscalationReasonCode(base.getEscalationReasonCode());
+        detail.setEscalatedAt(base.getEscalatedAt());
+        detail.setFirstResponseDueAt(base.getFirstResponseDueAt());
+        detail.setFirstResponseNearDue(base.isFirstResponseNearDue());
+        detail.setFirstResponseBreached(base.isFirstResponseBreached());
+        detail.setResolutionDueAt(base.getResolutionDueAt());
+        detail.setSlaNearDue(base.isSlaNearDue());
+        detail.setSlaBreached(base.isSlaBreached());
+        detail.setResolutionNearDueAt(base.getResolutionNearDueAt());
+        detail.setNeighborhoodName(base.getNeighborhoodName());
+        detail.setClassificationFinalizedAt(base.getClassificationFinalizedAt());
+        detail.setStatusChangedAt(base.getStatusChangedAt());
+        detail.setCreatedAt(base.getCreatedAt());
+        detail.setUpdatedAt(base.getUpdatedAt());
+
+        InformationRequestProjectionService.Projection pending =
+                informationRequestProjectionService.findPending(ticket.getId());
+        detail.setPendingInformationRequest(pending == null ? null : pending.citizen());
+        if (detail instanceof StaffTicketDetailResponse staffDetail) {
+            staffDetail.setPendingInformationRequestContext(pending == null ? null : pending.staff());
+        }
+
+        List<Attachment> attachments = staffView
+                ? attachmentRepository.findAllByTicket_IdOrderByCreatedAtAsc(ticket.getId())
+                : attachmentRepository.findAllByTicket_IdAndVisibilityOrderByCreatedAtAsc(
+                        ticket.getId(), MessageVisibility.PUBLIC);
+        detail.setAttachments(attachments.stream().map(this::toAttachmentResponse).toList());
+
+        detail.setTicketActivities(activityRepository.findAllByTicket_IdOrderBySequenceAsc(ticket.getId()).stream()
+                .filter(activity -> staffView || isCitizenVisibleActivity(activity))
+                .map(activity -> toActivityResponse(activity, staffView))
+                .toList());
+        if (staffView) {
+            detail.setLabels(ticketLabelRepository.findLabelsByTicketId(ticket.getId()).stream()
+                    .map(label -> new LabelSummaryResponse(label.getId(), label.getCode(), label.getName(), label.getDescription()))
+                    .toList());
+        }
+        return detail;
+    }
+
+    private TicketAttachmentResponse toAttachmentResponse(Attachment attachment) {
+        return new TicketAttachmentResponse(attachment.getId(), attachment.getFileName(),
+                attachment.getContentType(), attachment.getSizeBytes(), attachment.getVisibility(),
+                attachment.getCreatedAt(), attachmentReferenceService.downloadUrl(attachment));
+    }
+
+    private boolean isCitizenVisibleActivity(TicketActivity activity) {
+        return (activity.getReasonCode() == null || !activity.getReasonCode().startsWith("RECLASSIFICATION_"))
+                && activity.getActionType() != ActivityType.INTERNAL_MESSAGE_ADDED
+                && activity.getActionType() != ActivityType.ATTACHMENT_ADDED;
+    }
+
+    private TicketActivityResponse toActivityResponse(TicketActivity activity, boolean staffView) {
+        Instant effectiveOccurredAt = activity.getOccurredAt() != null
+                ? activity.getOccurredAt()
+                : activity.getCreatedAt();
+        return new TicketActivityResponse(
+                activity.getSequence(),
+                activity.getActionType(),
+                activity.getPreviousStatus(),
+                activity.getNewStatus(),
+                effectiveOccurredAt,
+                staffView || isCitizenVisibleReason(activity.getActionType()) ? activity.getReasonCode() : null,
+                staffView ? activity.getActorType() : null,
+                staffView ? activity.getPreviousPriority() : null,
+                staffView ? activity.getNewPriority() : null,
+                staffView || isCitizenVisibleMessage(activity.getActionType())
+                        ? activity.getMessage()
+                        : null);
+    }
+
+    private boolean isCitizenVisibleReason(ActivityType actionType) {
+        return actionType == ActivityType.CANCELLED
+                || actionType == ActivityType.RESOLVED
+                || actionType == ActivityType.CLOSED
+                || actionType == ActivityType.REOPENED;
+    }
+
+    private boolean isCitizenVisibleMessage(ActivityType actionType) {
+        // PUBLIC_MESSAGE_SENT (TicketMessageService, chat de ticket): el
+        // texto tiene que llegar al ciudadano, si no la actividad queda
+        // vacía en su timeline. INTERNAL_MESSAGE_ADDED sigue sin exponer
+        // message porque isCitizenVisibleActivity ya la filtra por completo.
+        return actionType == ActivityType.REOPENED || actionType == ActivityType.PUBLIC_MESSAGE_SENT;
+    }
+
+    private TicketResponse toResponse(Ticket ticket, TicketLocation location, TicketSla resolutionSla) {
+        return toResponse(ticket, location,
+                ticketSlaService.findLatestFirstResponseCycle(ticket).orElse(null), resolutionSla);
+    }
+
+    private TicketResponse toResponse(Ticket ticket, TicketLocation location,
+                                      TicketSla firstResponseSla, TicketSla resolutionSla) {
+        RequestType requestType = ticket.getRequestType();
+        Subcategory subcategory = requestType.getSubcategory();
+        Category category = subcategory.getCategory();
+
+        TicketResponse response = new TicketResponse();
+        response.setId(ticket.getId());
+        response.setPublicId(ticket.getPublicId());
+        response.setRequestTypeCode(requestType.getCode());
+        response.setRequestTypeName(requestType.getName());
+        response.setCategoryName(category.getName());
+        response.setSubcategoryName(subcategory.getName());
+        response.setTicketType(ticket.getTicketType());
+        response.setSummary(ticket.getSummary());
+        response.setCurrentStatus(ticket.getCurrentStatus());
+        response.setCurrentPriority(ticket.getCurrentPriority());
+        response.setResponsibleAreaId(ticket.getResponsibleAreaId());
+        response.setAssignedAgentId(ticket.getAssignedAgent() != null
+                ? String.valueOf(ticket.getAssignedAgent().getId()) : null);
+        response.setAnonymous(ticket.isAnonymous());
+        response.setHasLocation(location != null && (location.getNeighborhood() != null
+                || location.getAddressLine() != null && !location.getAddressLine().isBlank()
+                || location.getStreet() != null && !location.getStreet().isBlank()
+                || location.getLatitude() != null && location.getLongitude() != null));
+        response.setEstimatedAffectedCount(ticket.getEstimatedAffectedCount());
+        response.setEscalated(ticket.isEscalated());
+        response.setEscalationReasonCode(ticket.getEscalationReasonCode());
+        response.setEscalatedAt(ticket.getEscalatedAt());
+        applySlaSignals(response, firstResponseSla, resolutionSla);
+        if (location != null && location.getNeighborhood() != null) {
+            response.setNeighborhoodId(location.getNeighborhood().getId());
+            response.setNeighborhoodName(location.getNeighborhood().getName());
+        }
+        response.setClassificationFinalizedAt(ticket.getClassificationFinalizedAt());
+        response.setStatusChangedAt(ticket.getStatusChangedAt());
+        response.setCreatedAt(ticket.getCreatedAt());
+        response.setUpdatedAt(ticket.getUpdatedAt());
+        return response;
+    }
+
+    private void applySlaSignals(TicketResponse response, TicketSla firstResponseSla,
+                                 TicketSla resolutionSla) {
+        if (firstResponseSla == null) {
+            response.setFirstResponseDueAt(null);
+            response.setFirstResponseNearDue(false);
+            response.setFirstResponseBreached(false);
+        } else {
+            response.setFirstResponseDueAt(firstResponseSla.getDueAt());
+            response.setFirstResponseNearDue(firstResponseSla.getStatus() == SlaStatus.NEAR_DUE);
+            response.setFirstResponseBreached(firstResponseSla.getStatus() == SlaStatus.BREACHED);
+        }
+        if (resolutionSla == null) {
+            response.setResolutionDueAt(null);
+            response.setSlaNearDue(false);
+            response.setSlaBreached(false);
+            response.setResolutionNearDueAt(null);
+            return;
+        }
+        response.setResolutionDueAt(resolutionSla.getDueAt());
+        response.setSlaNearDue(resolutionSla.getStatus() == SlaStatus.NEAR_DUE);
+        response.setSlaBreached(resolutionSla.getStatus() == SlaStatus.BREACHED);
+        response.setResolutionNearDueAt(resolutionSla.getNearDueAt());
+    }
+
+    private Page<TicketResponse> mapPage(Page<Ticket> page,
+                                         Map<UUID, TicketLocation> locationsByTicket,
+                                         Map<UUID, TicketSla> latestFirstResponseByTicket,
+                                         Map<UUID, TicketSla> latestResolutionByTicket) {
+        return page.map(ticket -> toResponse(ticket, locationsByTicket.get(ticket.getId()),
+                latestFirstResponseByTicket.get(ticket.getId()), latestResolutionByTicket.get(ticket.getId())));
+    }
+
+    private void validateLocation(RequestType type, CreateTicketRequest.LocationData location) {
+        if (type.isRequiresLocation() && location == null) {
+            throw new InvalidTicketRequestException("La ubicación es obligatoria para el Request Type seleccionado");
+        }
+        if (location == null) return;
+        boolean hasLatitude = location.latitude() != null;
+        boolean hasLongitude = location.longitude() != null;
+        if (hasLatitude != hasLongitude) {
+            throw new InvalidTicketRequestException("La latitud y longitud deben informarse juntas");
+        }
+        boolean hasCoordinates = hasLatitude;
+        boolean hasUsefulLocation = location.addressLine() != null && !location.addressLine().isBlank()
+                || location.neighborhoodId() != null || hasCoordinates;
+        if (type.isRequiresLocation() && !hasUsefulLocation) {
+            throw new InvalidTicketRequestException("La ubicación es obligatoria para el Request Type seleccionado");
+        }
+        if (hasCoordinates && (location.latitude().doubleValue() < -90 || location.latitude().doubleValue() > 90
+                || location.longitude().doubleValue() < -180 || location.longitude().doubleValue() > 180)) {
+            throw new InvalidTicketRequestException("Las coordenadas de ubicación son inválidas");
+        }
+        if (location.neighborhoodId() != null && !neighborhoodRepository.existsById(location.neighborhoodId())) {
+            throw new ResourceNotFoundException("Barrio no encontrado");
+        }
+    }
+
+    private TicketLocation toLocation(Ticket ticket, CreateTicketRequest.LocationData data) {
+        TicketLocation location = new TicketLocation();
+        location.setTicket(ticket);
+        location.setAddressLine(data.addressLine());
+        location.setStreet(data.street());
+        location.setStreetNumber(data.streetNumber());
+        location.setLatitude(data.latitude());
+        location.setLongitude(data.longitude());
+        location.setReference(data.reference());
+        if (data.neighborhoodId() != null) {
+            location.setNeighborhood(neighborhoodRepository.getReferenceById(data.neighborhoodId()));
+        }
+        return location;
+    }
+}

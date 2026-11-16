@@ -1,0 +1,225 @@
+package com.reclamos.backend.exception;
+
+import com.reclamos.backend.dto.error.ApiErrorResponse;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.CacheControl;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
+
+/**
+ * La validación de {@code sort} en el listado de tickets no vive acá: se
+ * hace explícita en {@code TicketService.listTickets} contra una whitelist
+ * propia de propiedades ordenables, para no depender de excepciones
+ * internas de Spring Data.
+ */
+@RestControllerAdvice
+public class GlobalExceptionHandler {
+    @ExceptionHandler(OwnerTrackingCodeNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleOwnerTrackingNotFound(OwnerTrackingCodeNotFoundException exception) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).cacheControl(CacheControl.noStore())
+                .body(new ApiErrorResponse("NOT_FOUND", exception.getMessage()));
+    }
+
+    @ExceptionHandler(TrackingCodeNotRecoverableException.class)
+    public ResponseEntity<ApiErrorResponse> handleTrackingNotRecoverable(TrackingCodeNotRecoverableException exception) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).cacheControl(CacheControl.noStore())
+                .body(new ApiErrorResponse(TrackingCodeNotRecoverableException.CODE, exception.getMessage()));
+    }
+
+    @ExceptionHandler(TrackingCodeUnavailableException.class)
+    public ResponseEntity<ApiErrorResponse> handleTrackingUnavailable(TrackingCodeUnavailableException exception) {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).cacheControl(CacheControl.noStore())
+                .body(new ApiErrorResponse(TrackingCodeUnavailableException.CODE, exception.getMessage()));
+    }
+
+    @ExceptionHandler(org.springframework.dao.PessimisticLockingFailureException.class)
+    public ResponseEntity<ApiErrorResponse> handleConcurrentLifecycle(RuntimeException exception) {
+        return response(HttpStatus.CONFLICT, "TICKET_STATE_CONFLICT",
+                "El conjunto de tickets está siendo modificado; vuelva a consultar y reintente");
+    }
+    @ExceptionHandler(FormValidationException.class)
+    public ResponseEntity<ApiErrorResponse> handleValidation(FormValidationException exception) {
+        return response(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", exception.getMessage());
+    }
+
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleNotFound(ResourceNotFoundException exception) {
+        return response(HttpStatus.NOT_FOUND, "NOT_FOUND", exception.getMessage());
+    }
+
+    @ExceptionHandler(StoredFileNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleStoredFileNotFound(StoredFileNotFoundException exception) {
+        return response(HttpStatus.NOT_FOUND, StoredFileNotFoundException.CODE, exception.getMessage());
+    }
+
+    @ExceptionHandler(TrackingTicketNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleTrackingNotFound(TrackingTicketNotFoundException exception) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .cacheControl(CacheControl.noStore())
+                .body(new ApiErrorResponse(TrackingTicketNotFoundException.CODE, exception.getMessage()));
+    }
+
+    @ExceptionHandler(TooManyTrackingAttemptsException.class)
+    public ResponseEntity<ApiErrorResponse> handleTooManyTrackingAttempts(
+            TooManyTrackingAttemptsException exception) {
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header(HttpHeaders.RETRY_AFTER, String.valueOf(exception.getRetryAfterSeconds()))
+                .cacheControl(CacheControl.noStore())
+                .body(new ApiErrorResponse(TooManyTrackingAttemptsException.CODE, exception.getMessage()));
+    }
+
+    @ExceptionHandler(com.reclamos.backend.ai.TooManyAiRequestsException.class)
+    public ResponseEntity<ApiErrorResponse> handleTooManyAiRequests(
+            com.reclamos.backend.ai.TooManyAiRequestsException exception) {
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header(HttpHeaders.RETRY_AFTER, String.valueOf(exception.getRetryAfterSeconds()))
+                .cacheControl(CacheControl.noStore())
+                .body(new ApiErrorResponse(com.reclamos.backend.ai.TooManyAiRequestsException.CODE, exception.getMessage()));
+    }
+
+    @ExceptionHandler(InvalidAnonymousTicketCredentialsException.class)
+    public ResponseEntity<ApiErrorResponse> handleInvalidAnonymousCredentials(
+            InvalidAnonymousTicketCredentialsException exception) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .cacheControl(CacheControl.noStore())
+                .body(new ApiErrorResponse(InvalidAnonymousTicketCredentialsException.CODE, exception.getMessage()));
+    }
+
+    @ExceptionHandler({InvalidTicketRequestException.class, InvalidCatalogRequestException.class,
+            MethodArgumentNotValidException.class})
+    public ResponseEntity<ApiErrorResponse> handleBadRequest(Exception exception) {
+        String message = exception instanceof MethodArgumentNotValidException validation
+                ? validation.getBindingResult().getFieldErrors().stream().findFirst()
+                .map(error -> error.getField() + ": " + error.getDefaultMessage())
+                .orElse("El request es inválido")
+                : exception.getMessage();
+        return response(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", message);
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ApiErrorResponse> handleUnreadableBody(HttpMessageNotReadableException exception) {
+        return response(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", "El cuerpo de la solicitud es inválido");
+    }
+
+    @ExceptionHandler(MissingServletRequestPartException.class)
+    public ResponseEntity<ApiErrorResponse> handleMissingRequestPart(MissingServletRequestPartException exception) {
+        return response(HttpStatus.BAD_REQUEST, "INVALID_REQUEST",
+                "Falta el part obligatorio '" + exception.getRequestPartName() + "'");
+    }
+
+    @ExceptionHandler(TicketResolutionConflictException.class)
+    public ResponseEntity<ApiErrorResponse> handleResolutionConflict(TicketResolutionConflictException exception) {
+        return response(HttpStatus.CONFLICT, TicketResolutionConflictException.CODE, exception.getMessage());
+    }
+
+    @ExceptionHandler(SatisfactionSurveyConflictException.class)
+    public ResponseEntity<ApiErrorResponse> handleSatisfactionSurveyConflict(
+            SatisfactionSurveyConflictException exception) {
+        return response(HttpStatus.CONFLICT, SatisfactionSurveyConflictException.CODE, exception.getMessage());
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiErrorResponse> handleTypeMismatch(MethodArgumentTypeMismatchException exception) {
+        return response(HttpStatus.BAD_REQUEST, "INVALID_REQUEST",
+                "El parámetro '" + exception.getName() + "' tiene un valor inválido");
+    }
+
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ApiErrorResponse> handleMethodNotAllowed(HttpRequestMethodNotSupportedException exception) {
+        return response(HttpStatus.METHOD_NOT_ALLOWED, "METHOD_NOT_ALLOWED", "Método HTTP no permitido");
+    }
+
+    @ExceptionHandler({HttpMediaTypeNotSupportedException.class, UnsupportedAttachmentMediaTypeException.class})
+    public ResponseEntity<ApiErrorResponse> handleUnsupportedMediaType(Exception exception) {
+        return response(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "UNSUPPORTED_MEDIA_TYPE",
+                "Tipo de contenido no soportado");
+    }
+
+    @ExceptionHandler(InvalidAttachmentException.class)
+    public ResponseEntity<ApiErrorResponse> handleInvalidAttachment(InvalidAttachmentException exception) {
+        return response(HttpStatus.BAD_REQUEST, InvalidAttachmentException.CODE, exception.getMessage());
+    }
+
+    @ExceptionHandler({AttachmentPayloadTooLargeException.class, MaxUploadSizeExceededException.class})
+    public ResponseEntity<ApiErrorResponse> handlePayloadTooLarge(Exception exception) {
+        String message = exception instanceof AttachmentPayloadTooLargeException
+                ? exception.getMessage()
+                : "La evidencia supera el tamaño máximo permitido.";
+        return response(HttpStatus.PAYLOAD_TOO_LARGE, AttachmentPayloadTooLargeException.CODE, message);
+    }
+
+    @ExceptionHandler(AttachmentStorageUnavailableException.class)
+    public ResponseEntity<ApiErrorResponse> handleAttachmentStorageUnavailable(
+            AttachmentStorageUnavailableException exception) {
+        return response(HttpStatus.SERVICE_UNAVAILABLE, AttachmentStorageUnavailableException.CODE,
+                exception.getMessage());
+    }
+
+    @ExceptionHandler(EvidenceRequiredException.class)
+    public ResponseEntity<ApiErrorResponse> handleEvidenceRequired(EvidenceRequiredException exception) {
+        return response(HttpStatus.UNPROCESSABLE_ENTITY, EvidenceRequiredException.CODE, exception.getMessage());
+    }
+
+    @ExceptionHandler(TicketStateConflictException.class)
+    public ResponseEntity<ApiErrorResponse> handleTicketStateConflict(TicketStateConflictException exception) {
+        return response(HttpStatus.CONFLICT, "TICKET_STATE_CONFLICT", exception.getMessage());
+    }
+
+    @ExceptionHandler(InformationRequestConflictException.class)
+    public ResponseEntity<ApiErrorResponse> handleConflict(InformationRequestConflictException exception) {
+        return response(HttpStatus.CONFLICT, "INFORMATION_REQUEST_CONFLICT", exception.getMessage());
+    }
+
+    @ExceptionHandler(InformationRequestExpiredException.class)
+    public ResponseEntity<ApiErrorResponse> handleExpired(InformationRequestExpiredException exception) {
+        return response(HttpStatus.GONE, "INFORMATION_REQUEST_EXPIRED", exception.getMessage());
+    }
+
+    @ExceptionHandler(UnauthorizedTicketOperationException.class)
+    public ResponseEntity<ApiErrorResponse> handleForbidden(UnauthorizedTicketOperationException exception) {
+        return response(HttpStatus.FORBIDDEN, "FORBIDDEN", exception.getMessage());
+    }
+
+    @ExceptionHandler(InvalidAuthenticationException.class)
+    public ResponseEntity<ApiErrorResponse> handleInvalidAuthentication(InvalidAuthenticationException exception) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .cacheControl(CacheControl.noStore())
+                .body(new ApiErrorResponse("INVALID_TOKEN", exception.getMessage()));
+    }
+
+    /**
+     * QA (FAIL de "validaciones de datos y relaciones jerárquicas del
+     * catálogo"): altas concurrentes con el mismo nombre/código terminaban
+     * en 500 porque nada mapeaba las violaciones de constraints de base
+     * (unique/check) que sí existen en el schema — {@code
+     * CatalogAdminService} sólo hace un pre-check existsBy... antes de
+     * guardar, que es TOCTOU-racy bajo concurrencia real. La constraint de
+     * base sigue siendo la última línea de defensa (correcta: es atómica,
+     * el pre-check no); acá se traduce a un 409 controlado en vez de dejar
+     * que la excepción cruda de Hibernate/JDBC llegue como 500.
+     */
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ApiErrorResponse> handleDataIntegrityViolation(DataIntegrityViolationException exception) {
+        return response(HttpStatus.CONFLICT, "DATA_INTEGRITY_CONFLICT",
+                "La operación entra en conflicto con datos existentes");
+    }
+
+    private ResponseEntity<ApiErrorResponse> response(HttpStatus status, String code, String message) {
+        return ResponseEntity.status(status).body(new ApiErrorResponse(code, message));
+    }
+
+    @ExceptionHandler(LabelConflictException.class)
+    public ResponseEntity<ApiErrorResponse> handleLabelConflict(LabelConflictException exception) {
+        return response(HttpStatus.CONFLICT, "LABEL_CONFLICT", exception.getMessage());
+    }
+}

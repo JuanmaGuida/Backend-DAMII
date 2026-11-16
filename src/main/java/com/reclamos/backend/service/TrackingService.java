@@ -1,0 +1,167 @@
+package com.reclamos.backend.service;
+
+import com.reclamos.backend.dto.response.TicketAttachmentResponse;
+import com.reclamos.backend.dto.response.TicketMessageResponse;
+import com.reclamos.backend.dto.response.TrackingTicketResponse;
+import com.reclamos.backend.entity.Attachment;
+import com.reclamos.backend.entity.Category;
+import com.reclamos.backend.entity.MessageVisibility;
+import com.reclamos.backend.entity.RequestType;
+import com.reclamos.backend.entity.Subcategory;
+import com.reclamos.backend.entity.Ticket;
+import com.reclamos.backend.entity.TicketLocation;
+import com.reclamos.backend.entity.TicketMessage;
+import com.reclamos.backend.exception.TrackingTicketNotFoundException;
+import com.reclamos.backend.repository.AttachmentRepository;
+import com.reclamos.backend.repository.TicketLocationRepository;
+import com.reclamos.backend.repository.TicketMessageRepository;
+import com.reclamos.backend.repository.TicketRepository;
+import com.reclamos.backend.security.TrackingAttemptLimiter;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
+import java.util.UUID;
+
+@Service
+@RequiredArgsConstructor
+public class TrackingService {
+    private final TicketRepository ticketRepository;
+    private final TrackingCodeService trackingCodeService;
+    private final TicketSlaService ticketSlaService;
+    private final InformationRequestProjectionService informationRequestProjectionService;
+    private final AttachmentRepository attachmentRepository;
+    private final AttachmentReferenceService attachmentReferenceService;
+    private final TicketLocationRepository locationRepository;
+    private final TicketMessageRepository messageRepository;
+    private final TrackingAttemptLimiter attemptLimiter;
+
+    @Transactional(readOnly = true)
+    public TrackingTicketResponse findByTrackingCode(String trackingCode) {
+        attemptLimiter.assertAllowed(null);
+        if (!trackingCodeService.isValid(trackingCode)) {
+            throw notFound();
+        }
+        String trackingCodeHash = trackingCodeService.hash(trackingCode);
+        Ticket ticket = ticketRepository.findByTrackingCodeHash(trackingCodeHash)
+                .orElseThrow(this::notFound);
+        return toPublicResponse(ticket, false);
+    }
+
+    private TrackingTicketNotFoundException notFound() {
+        attemptLimiter.recordFailure(null);
+        return new TrackingTicketNotFoundException();
+    }
+
+    @Transactional(readOnly = true)
+    public TrackingTicketResponse findAnonymousByAccess(UUID authenticatedTicketId) {
+        Ticket ticket = ticketRepository.findById(authenticatedTicketId).filter(Ticket::isAnonymous)
+                .orElseThrow(TrackingTicketNotFoundException::new);
+        return toPublicResponse(ticket, true);
+    }
+
+    private TrackingTicketResponse toPublicResponse(Ticket ticket, boolean accredited) {
+        RequestType requestType = ticket.getRequestType();
+        Subcategory subcategory = requestType.getSubcategory();
+        Category category = subcategory.getCategory();
+        TicketSlaService.DeadlineSnapshot deadlines = ticketSlaService.findDeadlineSnapshot(ticket);
+        return new TrackingTicketResponse(
+                ticket.getPublicId(),
+                ticket.getCurrentStatus(),
+                ticket.getSummary(),
+                ticket.getDescription(),
+                ticket.getCreatedAt(),
+                ticket.getStatusChangedAt(),
+                new TrackingTicketResponse.RequestTypeSummary(requestType.getName()),
+                new TrackingTicketResponse.CategorySummary(category.getName()),
+                new TrackingTicketResponse.SubcategorySummary(subcategory.getName()),
+                new TrackingTicketResponse.SlaSummary(
+                        deadlines.firstResponseDueAt(),
+                        deadlines.resolutionDueAt()),
+                publicAttachments(ticket),
+                projection(ticket, accredited),
+                neighborhoodName(ticket),
+                publicMessages(ticket)
+        );
+    }
+
+    /**
+     * Barrio resuelto de la location del ticket (mismo criterio que
+     * TicketService usa para TicketDetailResponse.neighborhoodName): la
+     * location es null-safe (no todo ticket la tiene cargada) y el barrio
+     * también lo es (carga libre en mapa, sin un Neighborhood catalogado
+     * que la contenga).
+     */
+    private String neighborhoodName(Ticket ticket) {
+        TicketLocation location = locationRepository.findByTicket_Id(ticket.getId()).orElse(null);
+        return location != null && location.getNeighborhood() != null
+                ? location.getNeighborhood().getName()
+                : null;
+    }
+
+    /**
+     * Antes de esto, TrackingTicketResponse no incluía attachments (ni
+     * description): el propietario anónimo perdía la galería de adjuntos al
+     * volver a consultar su ticket por /tracking/access, aunque el archivo
+     * existiera. Sólo PUBLIC — nunca INTERNAL, que puede existir en un ticket
+     * anónimo si lo sube staff — mismo criterio que TicketService para la
+     * vista ciudadana. El downloadUrl que trae cada TicketAttachmentResponse
+     * apunta al GET autenticado (igual que en cualquier otra respuesta); un
+     * propietario anónimo no tiene Bearer token, así que para descargar debe
+     * usar el id acá expuesto contra POST /tracking/actions/attachments/
+     * {attachmentId}/content con trackingCode+password, no seguir esa URL
+     * directamente.
+     */
+    private List<TicketAttachmentResponse> publicAttachments(Ticket ticket) {
+        return attachmentRepository.findAllByTicket_IdAndVisibilityOrderByCreatedAtAsc(
+                        ticket.getId(), MessageVisibility.PUBLIC).stream()
+                .map(this::toAttachmentResponse)
+                .toList();
+    }
+
+    private TicketAttachmentResponse toAttachmentResponse(Attachment attachment) {
+        return new TicketAttachmentResponse(attachment.getId(), attachment.getFileName(),
+                attachment.getContentType(), attachment.getSizeBytes(), attachment.getVisibility(),
+                attachment.getCreatedAt(), attachmentReferenceService.downloadUrl(attachment));
+    }
+
+    /**
+     * Chat del ticket para el propietario anónimo: sólo PUBLIC, mismo criterio
+     * que publicAttachments (nunca INTERNAL, que puede existir si lo agregó
+     * staff). Un vecino anónimo no tiene JWT, así que no puede pasar por
+     * GET /api/tickets/{id}/messages (requireReadAuthority ahí exige
+     * AuthenticatedIdentity) — esto es lo que le permite leer su propio chat.
+     * Para escribir, ver TicketMessageService.createAnonymous y
+     * POST /api/tracking/actions/messages.
+     */
+    private List<TicketMessageResponse> publicMessages(Ticket ticket) {
+        return messageRepository.findAllByTicket_IdAndVisibilityOrderByCreatedAtAsc(
+                        ticket.getId(), MessageVisibility.PUBLIC).stream()
+                .map(this::toMessageResponse)
+                .toList();
+    }
+
+    /**
+     * El seguimiento por código es público, así que no se publica el
+     * identificador del autor (CDX-01): el tipo de autor alcanza para que la
+     * pantalla distinga quién escribió cada mensaje.
+     */
+    private TicketMessageResponse toMessageResponse(TicketMessage message) {
+        return new TicketMessageResponse(message.getId(), message.getAuthorType(), null,
+                message.getVisibility(), message.getText(), message.getCreatedAt(), message.getUpdatedAt());
+    }
+
+    private com.reclamos.backend.dto.response.PendingInformationRequestResponse projection(Ticket ticket, boolean accredited) {
+        InformationRequestProjectionService.Projection pending =
+                informationRequestProjectionService.findPending(ticket.getId());
+        if (pending == null) return null;
+        var citizen = pending.citizen();
+        if (!accredited && citizen.reclassification() != null) {
+            return new com.reclamos.backend.dto.response.PendingInformationRequestResponse(citizen.status(),
+                    citizen.messageForCitizen(), citizen.requestedAt(), citizen.dueAt(), citizen.attachments(),
+                    citizen.purpose(), null);
+        }
+        return citizen;
+    }
+}

@@ -1,0 +1,16 @@
+package com.reclamos.backend.entity;
+
+/** Internal lifecycle operations, independent of HTTP and message delivery policy. */
+public enum TicketAction {
+    START_REVIEW, CLASSIFY, ROUTE,
+    CANCEL_OWNER, CANCEL_ADMIN, CANCEL_EXTERNAL_REVIEW, CANCEL_DUPLICATE,
+    REQUEST_INFORMATION, ANSWER_INFORMATION, EXPIRE_INFORMATION, REVIEW_INFORMATION,
+    LINK_DUPLICATE, ACCEPT_DUPLICATE, CLOSE_DUPLICATE, PROMOTE_DUPLICATE,
+    RESOLVE_MANUALLY, CLOSE_RESOLUTION, REOPEN,
+    EXTERNAL_STARTED, EXTERNAL_PROGRESS, EXTERNAL_INFORMATION_REQUIRED,
+    EXTERNAL_RETURNED, EXTERNAL_RESOLVED, EXTERNAL_REJECTED;
+
+    public static TicketAction external(UpdateTicketStatusType updateType) {
+        return valueOf("EXTERNAL_" + updateType.name());
+    }
+}

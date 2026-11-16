@@ -1,0 +1,23 @@
+{
+  "eventId": "000000ca-0000-4000-8000-0000000000ca",
+  "eventType": "updateTicketStatus",
+  "eventVersion": "1.0",
+  "occurredAt": "2026-10-01T12:00:00Z",
+  "sourceModule": "transito",
+  "correlationId": "00000384-0000-4000-8000-000000000384",
+  "causationId": null,
+  "data": {
+    "ticketId": "00000001-0000-4000-8000-000000000001",
+    "updateType": "INFORMATION_REQUIRED",
+    "updatedBy": {
+      "type": "SYSTEM",
+      "id": null
+    },
+    "updateOccurredAt": "2026-10-01T12:00:00Z",
+    "details": {
+      "informationRequest": {
+        "messageForCitizen": "Ejemplo local: aporte información adicional."
+      }
+    }
+  }
+}

@@ -47,7 +47,22 @@ logs/
 .env.*
 !.env.example
 
+### Claves privadas y certificados ###
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+
 ### Configuración local ###
 application-local.properties
 application-local.yml
 application-local.yaml
+/mockCategories.js
+
+### Storage local de evidencia ###
+/data/attachments/
+
+# Local Sonar scanner state (may contain service metadata).
+.scannerwork/
+__pycache__/

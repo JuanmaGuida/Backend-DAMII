@@ -1,0 +1,23 @@
+{
+  "eventId": "7c2e9a14-3b5d-4f81-9e06-2a8d4c1f7b53",
+  "eventType": "updateTicketStatus",
+  "eventVersion": "1.0",
+  "occurredAt": "2026-08-18T15:00:00-03:00",
+  "sourceModule": "desarrollo-social",
+  "correlationId": "e9d24b7a-1f5c-4a38-8b6e-0c7f3a9d5e21",
+  "causationId": "2f8b6d14-9c3e-4a71-b5d0-7e1a4c9f3b62",
+  "data": {
+    "ticketId": "a7c3e915-4d2b-4f86-9e10-3b5d8f2c6a47",
+    "updateType": "STARTED",
+    "publicMessage": "Desarrollo Social está analizando tu pedido.",
+    "internalMessage": null,
+    "progress": 10,
+    "details": null,
+    "attachments": [],
+    "updatedBy": {
+      "type": "EXTERNAL_USER",
+      "id": null
+    },
+    "updateOccurredAt": "2026-08-18T15:00:00-03:00"
+  }
+}
