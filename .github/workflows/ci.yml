@@ -58,7 +58,20 @@ jobs:
         with:
           persist-credentials: false
       - name: Test CD contracts without remote access
-        run: python3 -m unittest discover -s .github/tests -v
+        env:
+          COVERAGE_FILE: ${{ runner.temp }}/ci-python.coverage
+        run: |
+          python3 -m venv "$RUNNER_TEMP/ci-python"
+          "$RUNNER_TEMP/ci-python/bin/pip" install --disable-pip-version-check -r .github/requirements-ci.txt
+          "$RUNNER_TEMP/ci-python/bin/python" -m coverage run -m unittest discover -s .github/tests -v
+          "$RUNNER_TEMP/ci-python/bin/python" -m coverage xml -o "$RUNNER_TEMP/python-coverage.xml"
+          "$RUNNER_TEMP/ci-python/bin/python" -m coverage report
+      - name: Upload real Python coverage
+        uses: actions/upload-artifact@v7
+        with:
+          name: python-coverage
+          path: ${{ runner.temp }}/python-coverage.xml
+          if-no-files-found: error
       - name: Resolve identity provider
         id: mode
         env:
@@ -261,11 +274,17 @@ jobs:
         with:
           name: jacoco-report
           path: target/site/jacoco
+      - uses: actions/download-artifact@v7
+        if: env.SONAR_MODE != 'existing'
+        with:
+          name: python-coverage
+          path: target/python-coverage
       - name: Analyze compiled Backend and wait for service gate
         if: env.SONAR_MODE != 'existing'
         shell: bash
         run: |
           test -s target/site/jacoco/jacoco.xml
+          test -s target/python-coverage/python-coverage.xml
           test -d target/classes
           chmod +x mvnw
           args=()
