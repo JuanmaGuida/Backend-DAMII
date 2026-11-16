@@ -13,6 +13,8 @@ import com.reclamos.backend.exception.ResourceNotFoundException;
 import com.reclamos.backend.exception.UnauthorizedTicketOperationException;
 import com.reclamos.backend.identity.AuthenticatedIdentity;
 import com.reclamos.backend.identity.ModuleRole;
+import com.reclamos.backend.entity.ModuleUser;
+import com.reclamos.backend.repository.ModuleUserRepository;
 import com.reclamos.backend.repository.TicketActivityRepository;
 import com.reclamos.backend.repository.TicketMessageRepository;
 import com.reclamos.backend.repository.TicketRepository;
@@ -345,6 +347,56 @@ class TicketMessageServiceTest {
         assertEquals(2, messages.size());
         verify(messageRepository, never())
                 .findAllByTicket_IdAndVisibilityOrderByCreatedAtAsc(any(), any());
+    }
+
+    @Test
+    void staffSeesTheRegisteredAuthorNameButTheCitizenDoesNot() {
+        ModuleUserRepository users = mock(ModuleUserRepository.class);
+        service.setModuleUserRepository(users);
+        ModuleUser citizen = new ModuleUser();
+        citizen.setActorId(ownerId);
+        citizen.setFirstName(" Mateo ");
+        citizen.setLastName("Pérez");
+        when(users.findAllByActorIdIn(any())).thenReturn(List.of(citizen));
+        TicketMessage fromCitizen = existingMessage(MessageVisibility.PUBLIC);
+        TicketMessage fromExternalModule = existingMessage(MessageVisibility.PUBLIC);
+        fromExternalModule.setAuthorType(ActorType.EXTERNAL_USER);
+        fromExternalModule.setAuthorId("m5-operator");
+        when(messageRepository.findAllByTicket_IdOrderByCreatedAtAsc(ticketId))
+                .thenReturn(List.of(fromCitizen, fromExternalModule));
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(otherTicket));
+        otherTicket.setCitizenId(ownerId);
+        AuthenticatedIdentity agent = new AuthenticatedIdentity(
+                "agent", UUID.randomUUID(), "Agente", null, ModuleRole.AGENT);
+
+        List<TicketMessageResponse> staffView = service.list(ticketId, agent);
+
+        assertEquals("Mateo Pérez", staffView.get(0).authorName());
+        assertNull(staffView.get(1).authorName());
+        verify(users).findAllByActorIdIn(java.util.Set.of(ownerId));
+
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ownTicket));
+        when(messageRepository.findAllByTicket_IdAndVisibilityOrderByCreatedAtAsc(ticketId, MessageVisibility.PUBLIC))
+                .thenReturn(List.of(fromCitizen));
+        assertNull(service.list(ticketId, owner).getFirst().authorName());
+        verifyNoMoreInteractions(users);
+    }
+
+    @Test
+    void authorWithoutAnyNameStaysAnonymous() {
+        ModuleUserRepository users = mock(ModuleUserRepository.class);
+        service.setModuleUserRepository(users);
+        ModuleUser nameless = new ModuleUser();
+        nameless.setActorId(ownerId);
+        nameless.setFirstName(" ");
+        when(users.findAllByActorIdIn(any())).thenReturn(List.of(nameless));
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(otherTicket));
+        when(messageRepository.findAllByTicket_IdOrderByCreatedAtAsc(ticketId))
+                .thenReturn(List.of(existingMessage(MessageVisibility.INTERNAL)));
+        AuthenticatedIdentity admin = new AuthenticatedIdentity(
+                "admin", UUID.randomUUID(), "Admin", null, ModuleRole.ADMIN);
+
+        assertNull(service.list(ticketId, admin).getFirst().authorName());
     }
 
     @Test
