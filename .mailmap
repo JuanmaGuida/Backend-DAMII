@@ -1,0 +1,12 @@
+# Unifica las identidades duplicadas del equipo (ADM-12).
+# Formato: Nombre Canónico <email canónico> [Nombre de commit] <email de commit>
+# Sin nombre de commit, el nombre canónico se aplica a todos los commits con ese email.
+# Verificar con: git shortlog -sne --all
+
+Santi Mussi <santimussi1959@gmail.com>
+Santi Mussi <santimussi1959@gmail.com> <66830160+SantiMussi@users.noreply.github.com>
+Agustin Nari <agusnari21@gmail.com>
+Agustin Nari <agusnari21@gmail.com> <166565864+AgustinNari@users.noreply.github.com>
+Juan Manuel Guida <juanmanuelguida@gmail.com>
+Nicolás Szafranko <nicolas.szafranko@gmail.com>
+Nehuelin <nehuelmarcos2005@gmail.com>
