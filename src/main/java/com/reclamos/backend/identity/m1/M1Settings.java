@@ -14,6 +14,8 @@ import java.util.Base64;
 @Component
 @ConditionalOnProperty(name = "app.identity.provider", havingValue = "M1")
 public final class M1Settings {
+    public static final Duration MAX_HTTP_TIMEOUT = Duration.ofSeconds(5);
+
     private final URI baseUrl;
     private final String browserOrigin;
     private final SecretKey verificationKey;
@@ -27,8 +29,8 @@ public final class M1Settings {
                       @Value("${app.identity.m1.read-timeout}") Duration readTimeout) {
         this.baseUrl = httpsOrigin(baseUrl);
         this.browserOrigin = httpsOrigin(browserOrigin).toString();
-        this.connectTimeout = positive(connectTimeout);
-        this.readTimeout = positive(readTimeout);
+        this.connectTimeout = bounded(connectTimeout);
+        this.readTimeout = bounded(readTimeout);
         byte[] bytes = null;
         try {
             bytes = Base64.getDecoder().decode(encodedKey);
@@ -57,9 +59,10 @@ public final class M1Settings {
         }
     }
 
-    private static Duration positive(Duration duration) {
-        if (duration == null || duration.isZero() || duration.isNegative()) {
-            throw new IllegalStateException("M1 HTTP timeouts must be positive");
+    private static Duration bounded(Duration duration) {
+        if (duration == null || duration.compareTo(Duration.ofMillis(1)) < 0
+                || duration.compareTo(MAX_HTTP_TIMEOUT) > 0) {
+            throw new IllegalStateException("M1 HTTP timeouts must be between 1ms and 5s");
         }
         return duration;
     }
