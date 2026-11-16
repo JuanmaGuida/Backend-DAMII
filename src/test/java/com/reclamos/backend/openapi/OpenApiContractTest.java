@@ -54,6 +54,7 @@ class OpenApiContractTest {
             "GET /api/catalog/subcategories/{subcategoryId}/request-types",
             "GET /api/catalog/request-types/{requestTypeId}/form",
             "GET /api/admin/catalog/categories",
+            "GET /api/admin/agents",
             "POST /api/admin/catalog/categories",
             "PUT /api/admin/catalog/categories/{categoryId}",
             "GET /api/admin/catalog/categories/{categoryId}/subcategories",
@@ -138,6 +139,7 @@ class OpenApiContractTest {
             "POST /api/staff/tickets/{ticketId}/reclassification-proposals/{proposalId}/abandon",
             "GET /api/auth/me",
             "GET /api/admin/catalog/categories",
+            "GET /api/admin/agents",
             "POST /api/admin/catalog/categories",
             "PUT /api/admin/catalog/categories/{categoryId}",
             "GET /api/admin/catalog/categories/{categoryId}/subcategories",
@@ -199,6 +201,7 @@ class OpenApiContractTest {
             "ApiError",
             "LoginResponse",
             "IdentityResponse",
+            "AgentDirectoryEntry",
             "CategoryResponse",
             "NeighborhoodResponse",
             "SubcategoryResponse",
@@ -291,7 +294,7 @@ class OpenApiContractTest {
     void versionedFileIsAValidOpenApi3DocumentWithExactlyTheCurrentBusinessOperations() {
         assertTrue(string(spec.get("openapi")).startsWith("3."));
         assertEquals("3.0.3", parsedOpenApi.getOpenapi());
-        assertEquals(82, parsedOpenApi.getPaths().size());
+        assertEquals(83, parsedOpenApi.getPaths().size());
         assertNotNull(map(spec, "info").get("title"));
         assertNotNull(map(spec, "components").get("schemas"));
         assertEquals(EXPECTED_OPERATIONS, documentedOperations());
@@ -595,6 +598,10 @@ class OpenApiContractTest {
         }
 
         assertTrue(nullableProperty(schemas, "IdentityResponse", "areaId"));
+        assertTrue(nullableProperty(schemas, "AgentDirectoryEntry", "email"));
+        assertTrue(nullableProperty(schemas, "AgentDirectoryEntry", "areaId"));
+        assertTrue(nullableProperty(schemas, "AgentDirectoryEntry", "firstName"));
+        assertFalse(nullableProperty(schemas, "AgentDirectoryEntry", "activeTickets"));
         assertTrue(nullableProperty(schemas, "SubcategoryResponse", "description"));
         assertTrue(nullableProperty(schemas, "InformationRequestResponse", "responseMessage"));
         assertTrue(nullableProperty(schemas, "InformationRequestResponse", "answeredAt"));
