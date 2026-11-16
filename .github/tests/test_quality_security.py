@@ -1,5 +1,6 @@
 """Failure propagation and evidence boundaries for TST-04 and SEG-08."""
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -54,6 +55,33 @@ class PathBoundaryTests(unittest.TestCase):
 
 
 class SCATests(unittest.TestCase):
+    def test_npm_findings_and_audit_errors_block_without_exporting_raw_output(self):
+        for invalid in (False, True):
+            with self.subTest(invalid=invalid), tempfile.TemporaryDirectory() as directory:
+                output = Path(directory) / 'safe'
+                def run(command, **kwargs):
+                    if 'audit' in command:
+                        data = {'metadata': {'dependencies': {'total': 2}}, 'vulnerabilities': {
+                            'package': {'severity': 'high', 'isDirect': False, 'range': '<2',
+                                        'via': ['dependency', {'name': 'package', 'source': 42, 'range': '<2'}],
+                                        'fixAvailable': True}}}
+                        return subprocess.CompletedProcess(command, 2 if invalid else 1, json.dumps(data), 'DO_NOT_EXPORT')
+                    if '--version' in command:
+                        return subprocess.CompletedProcess(command, 0, json.dumps({'Version': SCA.VERSION}), '')
+                    Path(command[command.index('--output') + 1]).write_text(json.dumps({'Results': [{'Packages': [{}]}]}))
+                    return subprocess.CompletedProcess(command, 0, '', '')
+                with patch.object(sys, 'argv', ['scan', '--npm', '.', '--fs', '.', '--output', str(output)]), \
+                     patch.object(SCA.subprocess, 'run', side_effect=run), patch.dict(os.environ, {}, clear=True):
+                    self.assertEqual(SCA.main(), 1)
+                report = json.loads((output / 'vulnerabilities.json').read_text())
+                self.assertNotIn('DO_NOT_EXPORT', json.dumps(report))
+                if invalid:
+                    self.assertIn('npm audit failed', report['errors'][0])
+                else:
+                    self.assertEqual(report['errors'], [])
+                    self.assertEqual(report['blocking'], 1)
+                    self.assertFalse(report['scans'][0]['findings'][0]['Direct'])
+
     def test_inventory_is_required_even_when_no_vulnerabilities_are_reported(self):
         for raw in ({}, {'Results': []}, {'Results': [{'Packages': []}]}):
             with self.assertRaises(ValueError):
@@ -105,6 +133,38 @@ class SCATests(unittest.TestCase):
 
 @unittest.skipIf(SONAR is None, 'Infra has no application Sonar project')
 class SonarTests(unittest.TestCase):
+    def test_api_uses_only_the_fixed_https_host_and_authorization_header(self):
+        with patch.dict(os.environ, {'SONAR_TOKEN': 'transport-fixture'}), \
+             patch.object(SONAR, 'urlopen') as opened:
+            opened.return_value.__enter__.return_value = io.StringIO('{"task": {"status": "SUCCESS"}}')
+            self.assertEqual(SONAR.api('ce/task', id='a/b')['task']['status'], 'SUCCESS')
+        request = opened.call_args.args[0]
+        self.assertEqual(request.full_url, 'https://sonarcloud.io/api/ce/task?id=a%2Fb')
+        self.assertEqual(request.get_header('Authorization'), 'Bearer transport-fixture')
+        self.assertEqual(opened.call_args.kwargs['timeout'], 30)
+
+    def test_cli_writes_exact_evidence_and_fails_closed_on_service_errors(self):
+        for failure in (None, SONAR.EvidenceError('Invalid revision'), RuntimeError('DO_NOT_EXPORT')):
+            with self.subTest(failure=type(failure).__name__), tempfile.TemporaryDirectory() as directory:
+                output = Path(directory) / 'evidence.json'
+                task = Path(directory) / 'task.txt'
+                task.write_text('task fixture')
+                report = {'scope': 'overall-code', 'qualityGate': 'OK', 'overallVerified': True, 'errors': []}
+                env = {'SONAR_TOKEN': 'DO_NOT_EXPORT', 'SONAR_PROJECT_KEY': 'project',
+                       'SONAR_ORGANIZATION': 'org', 'GITHUB_SHA': 'revision', 'RUNNER_TEMP': directory}
+                with patch.object(sys, 'argv', ['check', '--task', str(task), '--output', str(output)]), \
+                     patch.dict(os.environ, env, clear=True), \
+                     patch.object(SONAR, 'verify', side_effect=failure, return_value=report), \
+                     patch('sys.stdout', new_callable=io.StringIO) as stdout:
+                    self.assertEqual(SONAR.main(), int(failure is not None))
+                saved = json.loads(output.read_text())
+                self.assertNotIn('DO_NOT_EXPORT', output.read_text() + stdout.getvalue())
+                if failure is None:
+                    self.assertEqual(saved, report)
+                else:
+                    self.assertFalse(saved['overallVerified'])
+                    self.assertTrue(saved['errors'])
+
     def good_metrics(self):
         return {'ncloc': 100, 'bugs': 0, 'vulnerabilities': 0, 'duplicated_lines_density': 3,
                 'reliability_rating': 1, 'security_rating': 1, 'security_hotspots': 0, 'line_coverage': 85}
@@ -235,6 +295,28 @@ class SonarTests(unittest.TestCase):
             report = output.read_text()
             self.assertNotIn('DO_NOT_EXPORT', report)
             self.assertIn('NOT_VERIFIED', report)
+
+
+class SecretCLITests(unittest.TestCase):
+    def test_cli_preserves_failure_and_never_exports_exception_details(self):
+        scanner = module('check-secrets')
+        for status in ('clean', 'findings', 'exception', 'wrong-version'):
+            with self.subTest(status=status), tempfile.TemporaryDirectory() as directory:
+                output = Path(directory) / 'safe.json'
+                report = {'status': status, 'history': [], 'working_tree': []}
+                with patch.object(sys, 'argv', ['scan', '--gitleaks', str(Path(directory) / 'gitleaks'),
+                                               '--self-test', '--output', str(output)]), \
+                     patch.dict(os.environ, {'RUNNER_TEMP': directory}), \
+                     patch.object(scanner.subprocess, 'check_output', return_value=(scanner.VERSION if status != 'wrong-version' else '0').encode()), \
+                     patch.object(scanner, 'self_test') as detector, \
+                     patch.object(scanner, 'scan', return_value=report, side_effect=RuntimeError('DO_NOT_EXPORT') if status == 'exception' else None), \
+                     patch('sys.stdout', new_callable=io.StringIO) as stdout:
+                    self.assertEqual(scanner.main(), int(status != 'clean'))
+                self.assertNotIn('DO_NOT_EXPORT', output.read_text() + stdout.getvalue())
+                saved = json.loads(output.read_text())
+                self.assertEqual(saved['status'], 'error' if status in ('exception', 'wrong-version') else status)
+                if status != 'wrong-version':
+                    detector.assert_called_once()
 
 
 class WorkflowTests(unittest.TestCase):
