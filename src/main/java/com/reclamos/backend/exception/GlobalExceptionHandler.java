@@ -24,6 +24,12 @@ import org.springframework.web.multipart.support.MissingServletRequestPartExcept
  */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+    @ExceptionHandler(IdempotencyConflictException.class)
+    public ResponseEntity<ApiErrorResponse> handleIdempotencyConflict(IdempotencyConflictException exception) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).cacheControl(CacheControl.noStore())
+                .body(new ApiErrorResponse("IDEMPOTENCY_KEY_CONFLICT", exception.getMessage()));
+    }
+
     @ExceptionHandler(OwnerTrackingCodeNotFoundException.class)
     public ResponseEntity<ApiErrorResponse> handleOwnerTrackingNotFound(OwnerTrackingCodeNotFoundException exception) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).cacheControl(CacheControl.noStore())

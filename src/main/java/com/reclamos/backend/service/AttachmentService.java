@@ -221,6 +221,16 @@ public class AttachmentService {
         public String fileName() { return fileName; }
         public String contentType() { return contentType; }
         public long sizeBytes() { return content.length; }
+
+        /** Digest of the immutable bytes that will actually be stored. */
+        public String contentDigest() {
+            try {
+                return java.util.HexFormat.of().formatHex(
+                        java.security.MessageDigest.getInstance("SHA-256").digest(content));
+            } catch (java.security.NoSuchAlgorithmException exception) {
+                throw new IllegalStateException("SHA-256 unavailable");
+            }
+        }
     }
 
     public record UploadActor(ActorType type, String id) {

@@ -1154,6 +1154,23 @@ paths:
         inválido, malformado o expirado devuelve 401 y nunca se degrada a creación anónima.
         La misma operación acepta JSON puro o multipart.
 
+        Idempotency-Key es opcional (1 a 200 caracteres ASCII visibles sin espacios).
+        La clave se limita a esta operación y al citizenId autenticado; las creaciones sin
+        autenticación comparten un scope anónimo. Usar claves aleatorias de alta entropía
+        por creación anónima, conservarlas para reintentos y no compartirlas.
+        Misma clave, identidad y contenido devuelve 201 con el mismo ticket y estado inicial
+        REGISTERED, sin repetir efectos. Cambiar campos, contraseña, contacto o evidencias
+        devuelve 409 IDEMPOTENCY_KEY_CONFLICT. El orden de objetos JSON y la representación
+        numérica no importan; sí importan el orden de arrays/archivos, nombre, MIME normalizado
+        y bytes de cada archivo. JSON y multipart sin evidencias son equivalentes.
+        Los reintentos identificados recuperan el código original cifrado para su propietario.
+        Los reintentos anónimos sólo preservan el recurso: trackingCode y
+        generatedAnonymousAccessPassword son null, incluso si se perdió la primera respuesta.
+        No regeneran ni reproducen credenciales anónimas. La clave no habilita acceso al ticket.
+        Se retiene el registro sin vencimiento automático durante la vida del ticket;
+        los errores con rollback no consumen la clave. Las solicitudes concurrentes esperan
+        la transacción precedente. Sin encabezado se conserva la creación habitual.
+
         La contraseña y el contacto anónimos no aplican a tickets identificados. Si el ciudadano
         anónimo omite la contraseña, Backend genera una individual y la devuelve una única vez.
 
@@ -1161,6 +1178,16 @@ paths:
         responde 422 EVIDENCE_REQUIRED. En multipart, `data` es un part JSON obligatorio y
         `evidence` admite hasta 5 archivos opcionales, de 10 MB cada uno y 50 MB en total.
         MIME admitidos: image/jpeg, image/png, image/webp, image/heic, image/heif y application/pdf.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          description: Clave opaca por creación; reutilizar exactamente en cada reintento.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 200
+            pattern: '^[!-~]{1,200}$'
       operationId: createTicket
       security:
         - {}
@@ -1192,7 +1219,7 @@ paths:
                 contentType: image/jpeg, image/png, image/webp, image/heic, image/heif, application/pdf
       responses:
         '201':
-          description: Ticket creado.
+          description: Ticket creado o resultado original preservado por Idempotency-Key.
           headers:
             Cache-Control:
               description: Impide almacenar la respuesta que contiene credenciales one-time.
@@ -1222,6 +1249,14 @@ paths:
           $ref: '#/components/responses/InvalidToken'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          description: IDEMPOTENCY_KEY_CONFLICT; misma clave e identidad con otro contenido.
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
         '413':
           description: Límite de adjuntos excedido; sólo aplica a multipart.
           content:
@@ -4685,7 +4720,8 @@ components:
           $ref: '#/components/schemas/TicketPublicId'
         trackingCode:
           type: string
-          description: Código que permite consultar el ticket mediante el endpoint público de tracking.
+          nullable: true
+          description: Código original; null al reintentar una creación anónima con Idempotency-Key.
         status:
           $ref: '#/components/schemas/TicketStatus'
         generatedAnonymousAccessPassword:
@@ -4693,7 +4729,8 @@ components:
           nullable: true
           description: |
             Contraseña plaintext entregada una única vez sólo cuando Backend la generó para un
-            ticket anónimo. Es null para tickets identificados y cuando el usuario eligió la contraseña.
+            ticket anónimo. Es null para tickets identificados, cuando el usuario eligió la contraseña
+            y en todos los reintentos idempotentes anónimos.
     CreateInformationRequest:
       type: object
       required: [messageForCitizen]

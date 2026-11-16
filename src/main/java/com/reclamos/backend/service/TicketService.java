@@ -71,6 +71,7 @@ public class TicketService {
             "currentProgress", "createdAt", "updatedAt"
     );
 
+    private final TicketCreationIdempotencyService creationIdempotency;
     private final RequestTypeRepository requestTypeRepository;
     private final TicketRepository ticketRepository;
     private final TicketActivityRepository activityRepository;
@@ -106,6 +107,12 @@ public class TicketService {
     @Transactional
     public CreateTicketResponse create(CreateTicketRequest request, AuthenticatedIdentity identity,
                                        MultipartFile[] evidence) {
+        return create(request, identity, evidence, null);
+    }
+
+    @Transactional
+    public CreateTicketResponse create(CreateTicketRequest request, AuthenticatedIdentity identity,
+                                       MultipartFile[] evidence, String idempotencyKey) {
         boolean anonymous = identity == null;
         if (!anonymous && !identity.hasCitizenIdentity()) {
             throw new UnauthorizedTicketOperationException();
@@ -113,6 +120,16 @@ public class TicketService {
         if (!anonymous && request.containsAnonymousData()) {
             throw new InvalidTicketRequestException(
                     "Los datos de acceso o contacto anónimo no aplican a un ticket identificado");
+        }
+        List<AttachmentService.ValidatedAttachment> validatedAttachments = null;
+        TicketCreationIdempotencyService.Reservation reservation = null;
+        if (idempotencyKey != null) {
+            creationIdempotency.validateKey(idempotencyKey);
+            validatedAttachments = attachmentService.validate(evidence);
+            reservation = creationIdempotency.reserve(idempotencyKey, identity, request, validatedAttachments);
+            if (reservation.ticketId() != null) {
+                return creationIdempotency.replay(reservation, identity);
+            }
         }
         RequestType requestType = requestTypeRepository.findByIdForUpdate(request.requestTypeId())
                 .orElseThrow(() -> new ResourceNotFoundException("Request Type no encontrado"));
@@ -125,7 +142,7 @@ public class TicketService {
         ResolvedForm resolvedForm = formValidationService.resolveAndValidate(requestType, request.formData());
         RiskAssessment assessment = riskCalculationService.calculateRisk(requestType, resolvedForm);
         Risk risk = assessment.calculatedRisk();
-        List<AttachmentService.ValidatedAttachment> validatedAttachments = attachmentService.validate(evidence);
+        if (validatedAttachments == null) validatedAttachments = attachmentService.validate(evidence);
         if ((risk == Risk.HIGH || risk == Risk.CRITICAL) && validatedAttachments.isEmpty()) {
             throw new EvidenceRequiredException();
         }
@@ -207,6 +224,7 @@ public class TicketService {
                 resolutionSla.map(TicketSla::getDueAt).orElse(null));
         notificationService.queue(ticket, NotificationType.TICKET_REGISTERED);
         ticketRepository.flush();
+        if (reservation != null) creationIdempotency.complete(reservation, ticket.getId(), ticket.getPublicId());
         return new CreateTicketResponse(ticket.getId(), ticket.getPublicId(), trackingCode,
                 TicketStatus.REGISTERED, anonymous ? anonymousCredential.generatedPassword() : null);
     }
