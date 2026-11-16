@@ -18,6 +18,10 @@ FLOW = (ROOT / '.github/workflows/ci.yml').read_text(encoding='utf-8')
 SPEC = importlib.util.spec_from_file_location('secret_scan', ROOT / '.github/scripts/check-secrets.py')
 SCANNER = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(SCANNER)
+SONAR_SPEC = importlib.util.spec_from_file_location('sonar_policy', ROOT / '.github/scripts/check-sonar.py')
+SONAR_POLICY = importlib.util.module_from_spec(SONAR_SPEC)
+SONAR_SPEC.loader.exec_module(SONAR_POLICY)
+
 
 
 def job(name):
@@ -68,6 +72,10 @@ def outcome(name, event, ref, results=None, cd='true', provider='M1'):
     if any(outcome(parent, event, ref, results, cd, provider) != 'success'
            for parent in dependencies(name)):
         return 'skipped'
+    if name == 'sonar':
+        main = 'master' if 'Backend CI' in FLOW else 'main'
+        if SONAR_POLICY.analysis_mode(event, ref, '', main) == 'unsupported':
+            return 'skipped'
     if name in ('publish', 'deploy') and not enabled(name, event, ref, cd, provider):
         return 'skipped'
     return 'success'
@@ -75,25 +83,42 @@ def outcome(name, event, ref, results=None, cd='true', provider='M1'):
 
 class ReleasePolicyTests(unittest.TestCase):
     def test_g6_failure_skip_or_cancellation_blocks_every_publication_path(self):
-        for event, ref in (('push', 'refs/heads/dev'),
-                           ('workflow_dispatch', 'refs/heads/dev'),
-                           ('workflow_dispatch', 'refs/heads/main')):
+        for event, ref in (('push', 'refs/heads/master'),
+                           ('workflow_dispatch', 'refs/heads/master')):
             for status in ('failure', 'cancelled', 'skipped'):
                 for name in ('publish', 'deploy'):
                     with self.subTest(event=event, ref=ref, status=status, job=name):
                         self.assertIn('secrets', dependencies(name))
                         self.assertEqual(outcome(name, event, ref, {'secrets': status}), 'skipped')
 
-    def test_g6_success_preserves_dev_cd_and_manual_m1_publication(self):
-        for name in ('publish', 'deploy'):
-            self.assertEqual(outcome(name, 'push', 'refs/heads/dev', {'secrets': 'success'}), 'success')
+    def test_quality_and_sca_failure_skip_or_cancel_block_publication_and_deployment(self):
+        for gate in ('sonar', 'security'):
+            for status in ('failure', 'skipped', 'cancelled'):
+                for event, ref in (('push', 'refs/heads/master'), ('workflow_dispatch', 'refs/heads/master')):
+                    for name in ('publish', 'deploy'):
+                        with self.subTest(gate=gate, status=status, job=name):
+                            self.assertEqual(outcome(name, event, ref, {gate: status}), 'skipped')
+
+    def test_dev_validation_is_independent_of_sonar_but_cannot_publish(self):
+        for event in ('push', 'workflow_dispatch'):
+            for name in ('configuration', 'validate', 'security'):
+                self.assertEqual(outcome(name, event, 'refs/heads/dev'), 'success')
+            self.assertEqual(outcome('sonar', event, 'refs/heads/dev'), 'skipped')
+            for name in ('publish', 'deploy'):
+                self.assertEqual(outcome(name, event, 'refs/heads/dev'), 'skipped')
         self.assertEqual(outcome('deploy', 'push', 'refs/heads/dev', cd='false'), 'skipped')
-        for validation in ('configuration', 'validate') + (('e2e',) if 'Frontend CI' in FLOW else ()):
+        for validation in ('configuration', 'validate', 'sonar', 'security') + (('e2e',) if 'Frontend CI' in FLOW else ()):
             for name in ('publish', 'deploy'):
                 with self.subTest(validation=validation, job=name):
                     self.assertEqual(outcome(name, 'push', 'refs/heads/dev',
                                              {'secrets': 'success', validation: 'failure'}), 'skipped')
+        main = 'master' if 'Backend CI' in FLOW else 'main'
+        self.assertEqual(outcome('sonar', 'push', 'refs/heads/' + main), 'success')
+        self.assertEqual(outcome('sonar', 'push', 'refs/tags/v2.0-entrega4'), 'success')
         if 'Frontend CI' in FLOW:
+            for gate in ('configuration', 'validate', 'e2e', 'secrets', 'sonar', 'security'):
+                for status in ('failure', 'skipped', 'cancelled'):
+                    self.assertEqual(outcome('publish', 'workflow_dispatch', 'refs/heads/main', {gate: status}), 'skipped')
             self.assertEqual(outcome('publish', 'workflow_dispatch', 'refs/heads/main'), 'success')
             self.assertEqual(outcome('deploy', 'workflow_dispatch', 'refs/heads/main'), 'skipped')
         for name in ('publish', 'deploy'):
@@ -126,18 +151,20 @@ class ReleasePolicyTests(unittest.TestCase):
                     with self.subTest(tag=tag, event=event, job=name):
                         self.assertFalse(enabled(name, event, 'refs/tags/' + tag))
 
-    def test_dev_cd_and_manual_publication_policy_is_preserved(self):
-        if job('publish') is None:
-            self.assertIsNone(job('deploy'))
-            return
-        self.assertTrue(enabled('publish', 'push', 'refs/heads/dev'))
-        self.assertTrue(enabled('deploy', 'push', 'refs/heads/dev'))
-        self.assertFalse(enabled('deploy', 'push', 'refs/heads/dev', cd='false'))
-        self.assertFalse(enabled('publish', 'pull_request', 'refs/pull/1/merge'))
-        self.assertFalse(enabled('deploy', 'workflow_dispatch', 'refs/heads/dev'))
-        if 'Frontend CI' in FLOW:
-            self.assertTrue(enabled('publish', 'workflow_dispatch', 'refs/heads/main'))
-            self.assertFalse(enabled('publish', 'workflow_dispatch', 'refs/heads/main', provider='MOCK'))
+    def test_main_cd_and_manual_publication_policy(self):
+        for name in ('publish', 'deploy'):
+            self.assertFalse(enabled(name, 'push', 'refs/heads/dev'))
+            self.assertTrue(enabled(name, 'push', 'refs/heads/master'))
+            self.assertFalse(enabled(name, 'push', 'refs/tags/v2.0-entrega4'))
+            self.assertFalse(enabled(name, 'pull_request', 'refs/pull/1/merge'))
+        self.assertFalse(enabled('deploy', 'push', 'refs/heads/master', cd='false'))
+        self.assertTrue(enabled('publish', 'workflow_dispatch', 'refs/heads/master'))
+        self.assertFalse(enabled('publish', 'workflow_dispatch', 'refs/heads/master', provider='MOCK'))
+        self.assertFalse(enabled('publish', 'workflow_dispatch', 'refs/heads/dev'))
+        self.assertFalse(enabled('deploy', 'workflow_dispatch', 'refs/heads/master'))
+        self.assertEqual(outcome('deploy', 'push', 'refs/heads/master'), 'success')
+        self.assertNotIn('security', dependencies('sonar'))
+        self.assertNotIn('secrets', dependencies('sonar'))
 
     def test_existing_suites_and_gates_are_not_replaced(self):
         if 'Backend CI' in FLOW:
@@ -149,7 +176,7 @@ class ReleasePolicyTests(unittest.TestCase):
             config = (ROOT / 'Front/frontend-atencion-ciudadana/vitest.config.js').read_text()
             for metric in ('statements', 'branches', 'functions', 'lines'):
                 self.assertRegex(config, metric + r':\s*85')
-            self.assertEqual(dependencies('publish'), ['configuration', 'validate', 'e2e', 'secrets'])
+            self.assertEqual(dependencies('publish'), ['configuration', 'validate', 'e2e', 'secrets', 'sonar', 'security'])
         else:
             self.assertIn('python3 -m unittest discover -s tests -v', FLOW)
             self.assertIn('terraform validate', FLOW)
