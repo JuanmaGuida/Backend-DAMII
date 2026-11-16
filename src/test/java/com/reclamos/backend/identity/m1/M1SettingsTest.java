@@ -33,6 +33,19 @@ class M1SettingsTest {
                 Duration.ofSeconds(1), Duration.ofSeconds(-1))).isInstanceOf(IllegalStateException.class);
     }
 
+    @Test
+    void rejectsTimeoutOverridesThatExceedInt03BudgetOrRoundToZero() {
+        for (Duration invalid : new Duration[]{Duration.ofSeconds(6), Duration.ofSeconds(30),
+                Duration.ofNanos(1), Duration.ofSeconds(Long.MAX_VALUE)}) {
+            assertThatThrownBy(() -> new M1Settings(M1TestTokens.BASE, M1TestTokens.encodedKey(),
+                    M1TestTokens.ORIGIN, invalid, Duration.ofSeconds(5)))
+                    .isInstanceOf(IllegalStateException.class).hasMessageContaining("between 1ms and 5s");
+            assertThatThrownBy(() -> new M1Settings(M1TestTokens.BASE, M1TestTokens.encodedKey(),
+                    M1TestTokens.ORIGIN, Duration.ofSeconds(5), invalid))
+                    .isInstanceOf(IllegalStateException.class).hasMessageContaining("between 1ms and 5s");
+        }
+    }
+
     private M1Settings settings(String base, String key, String origin) {
         return new M1Settings(base, key, origin, Duration.ofSeconds(1), Duration.ofSeconds(2));
     }
