@@ -50,9 +50,12 @@ public class TicketController {
     public ResponseEntity<CreateTicketResponse> create(
             @Valid @RequestBody CreateTicketRequest request,
             @AuthenticationPrincipal AuthenticatedIdentity identity,
-            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorization) {
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorization,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
         rejectInvalidPresentedAuthorization(authorization, identity);
-        return created(ticketService.create(request, identity, new MultipartFile[0]));
+        return created(idempotencyKey == null
+                ? ticketService.create(request, identity, new MultipartFile[0])
+                : ticketService.create(request, identity, new MultipartFile[0], idempotencyKey));
     }
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -60,9 +63,12 @@ public class TicketController {
             @Valid @RequestPart("data") CreateTicketRequest request,
             @RequestPart(value = "evidence", required = false) MultipartFile[] evidence,
             @AuthenticationPrincipal AuthenticatedIdentity identity,
-            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorization) {
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorization,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
         rejectInvalidPresentedAuthorization(authorization, identity);
-        return created(ticketService.create(request, identity, evidence));
+        return created(idempotencyKey == null
+                ? ticketService.create(request, identity, evidence)
+                : ticketService.create(request, identity, evidence, idempotencyKey));
     }
 
     private void rejectInvalidPresentedAuthorization(String authorization, AuthenticatedIdentity identity) {
