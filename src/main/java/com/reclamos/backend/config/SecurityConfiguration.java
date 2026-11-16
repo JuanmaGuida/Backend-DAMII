@@ -207,6 +207,9 @@ public class SecurityConfiguration {
                         // abajo permitiría que cualquier CITIZEN autenticado modifique
                         // el catálogo, así que el gate mínimo se agrega ya acá.
                         .requestMatchers("/api/admin/catalog/**").hasRole("ADMIN")
+                        // Directorio de personal (panel "Agentes"): lista correos y carga de
+                        // trabajo de todo el equipo, así que es exclusivo de ADMIN.
+                        .requestMatchers(HttpMethod.GET, "/api/admin/agents").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(bearerTokenAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
