@@ -1,0 +1,3 @@
+[run]
+source = .github/scripts
+relative_files = True
