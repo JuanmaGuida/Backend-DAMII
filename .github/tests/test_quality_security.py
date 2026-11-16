@@ -141,7 +141,7 @@ class SonarTests(unittest.TestCase):
                 if path == 'measures/component':
                     return {'component': {'measures': [{'metric': k, 'value': str(v)} for k, v in self.good_metrics().items()]}}
                 raise AssertionError('Unexpected endpoint')
-            with patch.object(SONAR, 'api', side_effect=api):
+            with patch.object(SONAR, 'api', side_effect=api), patch.dict(os.environ, {'RUNNER_TEMP': directory}):
                 result = SONAR.verify_existing('project', 'master', 'revision') if existing else SONAR.verify(task, 'project', 'master', 'revision', pr)
             if existing:
                 self.assertNotIn('ce/task', calls)
