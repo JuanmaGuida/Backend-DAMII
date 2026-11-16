@@ -16,6 +16,8 @@ public class M1HttpConfiguration {
         HttpClient http = HttpClient.newBuilder().connectTimeout(settings.connectTimeout())
                 .followRedirects(HttpClient.Redirect.NEVER).build();
         JdkClientHttpRequestFactory requests = new JdkClientHttpRequestFactory(http);
+        // Spring's JDK factory starts one deadline at sendAsync and closes the body
+        // on expiry: connection and body reads share this budget (no retries).
         requests.setReadTimeout(settings.readTimeout());
         return RestClient.builder().baseUrl(settings.baseUrl().toString()).requestFactory(requests).build();
     }

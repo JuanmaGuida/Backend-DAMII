@@ -14,6 +14,7 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -56,7 +57,9 @@ public class M1IdentityProvider implements IdentityProvider {
             return upstreamStatus(failure);
         } catch (ResourceAccessException unavailable) {
             throw new IdentityProviderException(true);
-        } catch (RestClientException | IllegalArgumentException invalid) {
+        } catch (RestClientException invalid) {
+            throw transportOrProtocol(invalid);
+        } catch (IllegalArgumentException invalid) {
             throw protocol();
         }
     }
@@ -81,7 +84,7 @@ public class M1IdentityProvider implements IdentityProvider {
         } catch (ResourceAccessException unavailable) {
             throw new IdentityProviderException(true);
         } catch (RestClientException invalid) {
-            throw protocol();
+            throw transportOrProtocol(invalid);
         }
     }
 
@@ -131,6 +134,12 @@ public class M1IdentityProvider implements IdentityProvider {
     private static String phone(Map<?, ?> body) {
         String value = contact(body, "PHONE");
         return value == null ? contact(body, "TELEFONO") : value;
+    }
+
+    private static IdentityProviderException transportOrProtocol(RestClientException failure) {
+        // Body-read I/O failures are wrapped by RestClient after headers arrive.
+        // Discard the original exception: it may contain URLs, tokens or payloads.
+        return new IdentityProviderException(failure.getMostSpecificCause() instanceof IOException);
     }
 
     private static IdentityProviderException protocol() { return new IdentityProviderException(false); }
