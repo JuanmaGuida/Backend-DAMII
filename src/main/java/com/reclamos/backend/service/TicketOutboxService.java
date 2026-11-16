@@ -1,0 +1,313 @@
+package com.reclamos.backend.service;
+
+import com.reclamos.backend.entity.Attachment;
+import com.reclamos.backend.entity.CancellationReasonCode;
+import com.reclamos.backend.entity.MessageVisibility;
+import com.reclamos.backend.entity.OutboxEvent;
+import com.reclamos.backend.entity.OutboxStatus;
+import com.reclamos.backend.entity.RequestType;
+import com.reclamos.backend.entity.ResolutionType;
+import com.reclamos.backend.entity.Ticket;
+import com.reclamos.backend.entity.TicketLocation;
+import com.reclamos.backend.entity.TicketUpdatedType;
+import com.reclamos.backend.repository.AttachmentRepository;
+import com.reclamos.backend.repository.OutboxEventRepository;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.Clock;
+import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+@Service
+@RequiredArgsConstructor
+public class TicketOutboxService {
+    private static final String MODULE_ID = "M2";
+
+    private final OutboxEventRepository outboxEventRepository;
+    private final Clock clock;
+    private final AttachmentReferenceService attachmentReferenceService;
+    private final AttachmentRepository attachmentRepository;
+    private final FormValidationService formValidationService;
+    private final com.reclamos.backend.outbox.CorePublicationPolicy corePublicationPolicy;
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void ticketCreated(Ticket ticket, TicketLocation location, List<Attachment> attachments,
+                              Instant resolutionDueAt) {
+        if (ticket.isAnonymous()) {
+            return;
+        }
+
+        RequestType requestType = ticket.getRequestType();
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("ticketId", ticket.getId());
+        data.put("publicId", ticket.getPublicId());
+        data.put("citizenId", ticket.getCitizenId());
+        data.put("isAnonymous", false);
+        data.put("requestType", requestType.getName());
+        data.put("category", requestType.getSubcategory().getCategory().getName());
+        data.put("subcategory", requestType.getSubcategory().getName());
+        data.put("ticketType", ticket.getTicketType().name());
+        data.put("summary", ticket.getSummary());
+        data.put("description", ticket.getDescription());
+        data.put("formData", ticket.getFormData());
+        data.put("status", ticket.getCurrentStatus().name());
+        data.put("priority", ticket.getCurrentPriority().name());
+        data.put("responsibleAreaId", ticket.getResponsibleAreaId());
+        data.put("location", eventLocation(location));
+        data.put("resolutionDueAt", instant(resolutionDueAt));
+        data.put("attachments", eventAttachments(attachments));
+        data.put("createdAt", ticket.getCreatedAt().toString());
+        save(ticket, "ticketCreated", null, data);
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void statusChanged(Ticket ticket, String publicMessage, Instant updatedAt) {
+        if (ticket.isAnonymous()) {
+            return;
+        }
+        saveUpdated(ticket, TicketUpdatedType.STATUS_CHANGED, publicMessage, null, List.of(), updatedAt);
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void routed(Ticket ticket, TicketLocation location, Instant resolutionDueAt, Instant updatedAt) {
+        routed(ticket, location, resolutionDueAt, updatedAt, false);
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void routed(Ticket ticket, TicketLocation location, Instant resolutionDueAt, Instant updatedAt,
+                       boolean reassignment) {
+        if (isSelfManaged(ticket)) return;
+        Map<String, Object> routing = routingSnapshot(ticket, location, resolutionDueAt);
+        routing.put("reassignment", reassignment);
+        // ROUTED starts management: PUBLIC evidence accumulated on this ticket is relevant.
+        // Incremental events continue to use only the attachments supplied by their caller.
+        List<Attachment> attachments = attachmentRepository
+                .findAllByTicket_IdAndVisibilityOrderByCreatedAtAsc(ticket.getId(), MessageVisibility.PUBLIC);
+        saveUpdated(ticket, TicketUpdatedType.ROUTED,
+                "El ticket fue derivado al área responsable.", Map.of("routing", routing),
+                eventAttachments(attachments), updatedAt);
+    }
+
+    /** Shared snapshot for initial routing and confirmed exceptional reassignment. */
+    private Map<String, Object> routingSnapshot(Ticket ticket, TicketLocation location, Instant resolutionDueAt) {
+        RequestType requestType = ticket.getRequestType();
+        Map<String, Object> routing = new LinkedHashMap<>();
+        routing.put("requestType", requestType.getName());
+        routing.put("category", requestType.getSubcategory().getCategory().getName());
+        routing.put("subcategory", requestType.getSubcategory().getName());
+        routing.put("ticketType", ticket.getTicketType().name());
+        routing.put("summary", ticket.getSummary());
+        routing.put("description", ticket.getDescription());
+        routing.put("formData", formValidationService.snapshotAnswers(ticket));
+        routing.put("location", eventLocation(location));
+        routing.put("resolutionDueAt", instant(resolutionDueAt));
+        routing.put("escalation", eventEscalation(ticket));
+        // The caller overrides this flag only for a confirmed exceptional proposal.
+        routing.put("reassignment", false);
+        return routing;
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void contentUpdated(Ticket ticket, Instant resolutionDueAt, Instant updatedAt) {
+        if (ticket.isAnonymous()) {
+            return;
+        }
+
+        RequestType requestType = ticket.getRequestType();
+        Map<String, Object> content = new LinkedHashMap<>();
+        content.put("requestType", requestType.getName());
+        content.put("category", requestType.getSubcategory().getCategory().getName());
+        content.put("subcategory", requestType.getSubcategory().getName());
+        content.put("ticketType", ticket.getTicketType().name());
+        content.put("summary", ticket.getSummary());
+        content.put("description", ticket.getDescription());
+        content.put("formData", ticket.getFormData());
+        content.put("resolutionDueAt", instant(resolutionDueAt));
+        saveUpdated(ticket, TicketUpdatedType.CONTENT_UPDATED, null,
+                Map.of("content", content), List.of(), updatedAt);
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void informationRequired(Ticket ticket, String messageForCitizen, Instant requiredBy, Instant updatedAt) {
+        // Eventos v1.77 §7.2: an M2 request updates M1's identified-ticket projection.
+        if (ticket.isAnonymous()) {
+            return;
+        }
+        Map<String, Object> request = new LinkedHashMap<>();
+        request.put("messageForCitizen", messageForCitizen);
+        request.put("requiredBy", instant(requiredBy));
+        saveUpdated(ticket, TicketUpdatedType.INFORMATION_REQUIRED, messageForCitizen,
+                Map.of("informationRequest", request), List.of(), updatedAt);
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void reclassificationInformationRequired(Ticket ticket, String message, Instant dueAt, Instant now) {
+        if (ticket.isAnonymous()) return;
+        saveUpdated(ticket, TicketUpdatedType.INFORMATION_REQUIRED, message,
+                Map.of("informationRequest", Map.of("messageForCitizen", message,
+                        "requiredBy", dueAt.toString(), "purpose", "RECLASSIFICATION")), List.of(), now);
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void reclassificationInformationProvided(Ticket ticket, Instant now) {
+        if (ticket.isAnonymous()) return;
+        String message = "El ciudadano completó la información para revisión de la clasificación.";
+        saveUpdated(ticket, TicketUpdatedType.INFORMATION_PROVIDED, message,
+                Map.of("informationResponse", Map.of("message", message, "purpose", "RECLASSIFICATION")), List.of(), now);
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void informationProvided(Ticket ticket, String responseMessage,
+                                    boolean requestedByExternalArea, Instant updatedAt) {
+        informationProvided(ticket, responseMessage, List.of(), requestedByExternalArea, updatedAt);
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void informationProvided(Ticket ticket, String responseMessage, List<Attachment> attachments,
+                                    boolean requestedByExternalArea, Instant updatedAt) {
+        if (ticket.isAnonymous() && (!requestedByExternalArea || isSelfManaged(ticket))) {
+            return;
+        }
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("message", responseMessage);
+        saveUpdated(ticket, TicketUpdatedType.INFORMATION_PROVIDED,
+                "El ciudadano aportó la información solicitada.",
+                Map.of("informationResponse", response), eventAttachments(attachments), updatedAt);
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void resolved(Ticket ticket, ResolutionType type, String publicMessage, Instant updatedAt) {
+        if (ticket.isAnonymous()) {
+            return;
+        }
+        saveUpdated(ticket, TicketUpdatedType.RESOLVED, publicMessage,
+                Map.of("resolution", Map.of("type", type.name())), List.of(), updatedAt);
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void reopened(Ticket ticket, String reason, Instant updatedAt) {
+        if (ticket.isAnonymous() && isSelfManaged(ticket)) {
+            return;
+        }
+        Map<String, Object> reopen = new LinkedHashMap<>();
+        reopen.put("reason", reason);
+        saveUpdated(ticket, TicketUpdatedType.REOPENED, reason,
+                Map.of("reopen", reopen), List.of(), updatedAt);
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void duplicateLinked(Ticket ticket, Instant updatedAt) {
+        saveUpdated(ticket, TicketUpdatedType.DUPLICATE_LINKED, null,
+                Map.of("duplicate", Map.of("mainTicketId", ticket.getMainTicket().getId())),
+                List.of(), updatedAt);
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void closed(Ticket ticket, String reasonCode, Instant updatedAt) {
+        if (ticket.isAnonymous() && isSelfManaged(ticket)) {
+            return;
+        }
+        saveUpdated(ticket, TicketUpdatedType.CLOSED, null,
+                Map.of("closure", Map.of("reasonCode", reasonCode)), List.of(), updatedAt);
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void cancelled(Ticket ticket, CancellationReasonCode reasonCode, String publicMessage,
+                          boolean originatedByM2, Instant updatedAt) {
+        if (!originatedByM2 || (ticket.isAnonymous() && isSelfManaged(ticket))) {
+            return;
+        }
+        saveUpdated(ticket, TicketUpdatedType.CANCELLED, publicMessage,
+                Map.of("cancellation", Map.of("reasonCode", reasonCode.name())), List.of(), updatedAt);
+    }
+
+    private void saveUpdated(Ticket ticket, TicketUpdatedType updateType, String publicMessage,
+                             Map<String, Object> details, List<Map<String, Object>> attachments,
+                             Instant updatedAt) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("ticketId", ticket.getId());
+        data.put("publicId", ticket.getPublicId());
+        data.put("citizenId", ticket.getCitizenId());
+        data.put("isAnonymous", ticket.isAnonymous());
+        data.put("responsibleAreaId", ticket.getResponsibleAreaId());
+        data.put("updateType", updateType.name());
+        data.put("currentStatus", ticket.getCurrentStatus().name());
+        data.put("currentPriority", ticket.getCurrentPriority().name());
+        data.put("progress", ticket.getCurrentProgress());
+        data.put("publicMessage", publicMessage);
+        data.put("details", details);
+        data.put("attachments", attachments);
+        data.put("updatedAt", updatedAt.toString());
+        save(ticket, "ticketUpdated", updateType, data);
+    }
+
+    private void save(Ticket ticket, String eventType, TicketUpdatedType updateType,
+                      Map<String, Object> data) {
+        UUID eventId = UUID.randomUUID();
+        Instant occurredAt = clock.instant();
+        Map<String, Object> payload = OutgoingEventEnvelope.create(eventId, eventType, occurredAt, data);
+
+        OutboxEvent event = new OutboxEvent();
+        event.setEventId(eventId);
+        event.setEventType(eventType);
+        event.setUpdateType(updateType);
+        event.setTicket(ticket);
+        event.setPayload(payload);
+        event.setStatus(OutboxStatus.PENDING);
+        event.setRetryCount(0);
+        event.setAutoPublishEligible(corePublicationPolicy.eligibleNewEvent(ticket));
+        outboxEventRepository.save(event);
+    }
+
+    private boolean isSelfManaged(Ticket ticket) {
+        return MODULE_ID.equalsIgnoreCase(ticket.getResponsibleAreaId());
+    }
+
+    private Map<String, Object> eventLocation(TicketLocation location) {
+        if (location == null) {
+            return null;
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("addressLine", location.getAddressLine());
+        result.put("street", location.getStreet());
+        result.put("streetNumber", location.getStreetNumber());
+        result.put("neighborhoodId", location.getNeighborhood() == null ? null : location.getNeighborhood().getId());
+        result.put("reference", location.getReference());
+        return result;
+    }
+
+    private List<Map<String, Object>> eventAttachments(List<Attachment> attachments) {
+        if (attachments == null || attachments.isEmpty()) {
+            return List.of();
+        }
+        return attachments.stream()
+                .filter(attachment -> attachment.getVisibility() == MessageVisibility.PUBLIC)
+                .map(attachment -> {
+                    Map<String, Object> result = new LinkedHashMap<>();
+                    result.put("fileName", attachment.getFileName());
+                    result.put("contentType", attachment.getContentType());
+                    result.put("url", attachmentReferenceService.downloadUrl(attachment));
+                    result.put("sizeBytes", attachment.getSizeBytes());
+                    return result;
+                }).toList();
+    }
+
+    private Map<String, Object> eventEscalation(Ticket ticket) {
+        Map<String, Object> escalation = new LinkedHashMap<>();
+        escalation.put("active", ticket.isEscalated());
+        escalation.put("reasonCode", ticket.getEscalationReasonCode() == null
+                ? null : ticket.getEscalationReasonCode().name());
+        escalation.put("escalatedAt", instant(ticket.getEscalatedAt()));
+        return escalation;
+    }
+
+    private String instant(Instant value) {
+        return value == null ? null : value.toString();
+    }
+}

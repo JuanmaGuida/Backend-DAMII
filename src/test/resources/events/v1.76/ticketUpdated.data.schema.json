@@ -1,0 +1,688 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://municipalidad-uade.example/m2/events/v1.76/ticketUpdated.data.schema.json",
+  "title": "ticketUpdated · data - consolidada v1.76",
+  "description": "Sólo el objeto data de ticketUpdated. Sirve para registrarlo como jsonSchema del tipo de evento en el Core (si el Core valida data) y para validar el payload por separado. Ver ticketUpdated.schema.json para el evento completo.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "ticketId",
+    "publicId",
+    "citizenId",
+    "isAnonymous",
+    "responsibleAreaId",
+    "updateType",
+    "currentStatus",
+    "currentPriority",
+    "updatedAt"
+  ],
+  "properties": {
+    "ticketId": {
+      "$ref": "common.schema.json#/$defs/uuid"
+    },
+    "publicId": {
+      "$ref": "common.schema.json#/$defs/publicId"
+    },
+    "citizenId": {
+      "anyOf": [
+        {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "null si el ticket es anónimo."
+    },
+    "isAnonymous": {
+      "type": "boolean"
+    },
+    "responsibleAreaId": {
+      "$ref": "common.schema.json#/$defs/moduleId"
+    },
+    "updateType": {
+      "enum": [
+        "STATUS_CHANGED",
+        "ROUTED",
+        "PROGRESS",
+        "PRIORITY_CHANGED",
+        "ESCALATION_CHANGED",
+        "INFORMATION_REQUIRED",
+        "INFORMATION_PROVIDED",
+        "DUPLICATE_LINKED",
+        "REOPENED",
+        "RESOLVED",
+        "CLOSED",
+        "CANCELLED",
+        "CONTENT_UPDATED"
+      ]
+    },
+    "currentStatus": {
+      "$ref": "common.schema.json#/$defs/ticketStatus"
+    },
+    "currentPriority": {
+      "$ref": "common.schema.json#/$defs/priority"
+    },
+    "progress": {
+      "$ref": "common.schema.json#/$defs/progress"
+    },
+    "publicMessage": {
+      "$ref": "common.schema.json#/$defs/textOrNull"
+    },
+    "details": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Objeto específico de cada updateType; ver allOf."
+    },
+    "attachments": {
+      "$ref": "common.schema.json#/$defs/attachments"
+    },
+    "updatedAt": {
+      "$ref": "common.schema.json#/$defs/dateTime"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "isAnonymous": {
+            "const": true
+          }
+        },
+        "required": [
+          "isAnonymous"
+        ]
+      },
+      "then": {
+        "properties": {
+          "citizenId": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "isAnonymous": {
+            "const": false
+          }
+        },
+        "required": [
+          "isAnonymous"
+        ]
+      },
+      "then": {
+        "properties": {
+          "citizenId": {
+            "$ref": "common.schema.json#/$defs/uuid"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "updateType": {
+            "enum": [
+              "STATUS_CHANGED",
+              "PROGRESS",
+              "PRIORITY_CHANGED"
+            ]
+          }
+        },
+        "required": [
+          "updateType"
+        ]
+      },
+      "then": {
+        "properties": {
+          "details": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "updateType": {
+            "const": "ROUTED"
+          }
+        },
+        "required": [
+          "updateType"
+        ]
+      },
+      "then": {
+        "required": [
+          "details"
+        ],
+        "properties": {
+          "currentStatus": {
+            "const": "ROUTED"
+          },
+          "details": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "routing"
+            ],
+            "properties": {
+              "routing": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "requestType",
+                  "ticketType",
+                  "summary",
+                  "description",
+                  "category",
+                  "subcategory"
+                ],
+                "properties": {
+                  "requestType": {
+                    "$ref": "common.schema.json#/$defs/text"
+                  },
+                  "ticketType": {
+                    "$ref": "common.schema.json#/$defs/ticketType"
+                  },
+                  "summary": {
+                    "$ref": "common.schema.json#/$defs/text"
+                  },
+                  "description": {
+                    "$ref": "common.schema.json#/$defs/text"
+                  },
+                  "formData": {
+                    "$ref": "common.schema.json#/$defs/formData"
+                  },
+                  "location": {
+                    "$ref": "common.schema.json#/$defs/locationOrNull"
+                  },
+                  "resolutionDueAt": {
+                    "$ref": "common.schema.json#/$defs/dateTimeOrNull"
+                  },
+                  "escalation": {
+                    "$ref": "common.schema.json#/$defs/escalationOrNull"
+                  },
+                  "category": {
+                    "$ref": "common.schema.json#/$defs/text"
+                  },
+                  "subcategory": {
+                    "$ref": "common.schema.json#/$defs/text"
+                  },
+                  "reassignment": {
+                    "type": "boolean",
+                    "description": "true cuando es nueva derivación tras reclasificación excepcional; ausente/false en la primera."
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "updateType": {
+            "const": "ESCALATION_CHANGED"
+          }
+        },
+        "required": [
+          "updateType"
+        ]
+      },
+      "then": {
+        "required": [
+          "details"
+        ],
+        "properties": {
+          "details": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "escalation"
+            ],
+            "properties": {
+              "escalation": {
+                "$ref": "common.schema.json#/$defs/escalation"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "updateType": {
+            "const": "INFORMATION_REQUIRED"
+          }
+        },
+        "required": [
+          "updateType"
+        ]
+      },
+      "then": {
+        "required": [
+          "details"
+        ],
+        "properties": {
+          "currentStatus": {
+            "const": "PENDING_INFORMATION"
+          },
+          "details": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "informationRequest"
+            ],
+            "properties": {
+              "informationRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "messageForCitizen"
+                ],
+                "properties": {
+                  "messageForCitizen": {
+                    "$ref": "common.schema.json#/$defs/text"
+                  },
+                  "requiredBy": {
+                    "$ref": "common.schema.json#/$defs/dateTimeOrNull"
+                  },
+                  "purpose": {
+                    "const": "RECLASSIFICATION",
+                    "description": "Publicación administrativa de información estructurada; los módulos operativos la ignoran."
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "updateType": {
+            "const": "INFORMATION_PROVIDED"
+          }
+        },
+        "required": [
+          "updateType"
+        ]
+      },
+      "then": {
+        "description": "INFORMATION_PROVIDED debe traer informationResponse.message no vacío o al menos un archivo en attachments (puede traer ambos).",
+        "required": [
+          "details"
+        ],
+        "properties": {
+          "currentStatus": {
+            "enum": [
+              "ROUTED",
+              "IN_PROGRESS",
+              "IN_REVIEW"
+            ]
+          },
+          "details": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "informationResponse"
+            ],
+            "properties": {
+              "informationResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "message": {
+                    "$ref": "common.schema.json#/$defs/textOrNull"
+                  },
+                  "purpose": {
+                    "const": "RECLASSIFICATION",
+                    "description": "Respuesta administrativa de reclasificación; sólo estado/mensaje para M1, sin formulario."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "anyOf": [
+          {
+            "properties": {
+              "details": {
+                "properties": {
+                  "informationResponse": {
+                    "required": [
+                      "message"
+                    ],
+                    "properties": {
+                      "message": {
+                        "$ref": "common.schema.json#/$defs/text"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "required": [
+              "attachments"
+            ],
+            "properties": {
+              "attachments": {
+                "minItems": 1
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "updateType": {
+            "const": "DUPLICATE_LINKED"
+          }
+        },
+        "required": [
+          "updateType"
+        ]
+      },
+      "then": {
+        "required": [
+          "details"
+        ],
+        "properties": {
+          "currentStatus": {
+            "const": "DUPLICATE"
+          },
+          "details": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "duplicate"
+            ],
+            "properties": {
+              "duplicate": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "mainTicketId"
+                ],
+                "properties": {
+                  "mainTicketId": {
+                    "$ref": "common.schema.json#/$defs/uuid"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "updateType": {
+            "const": "REOPENED"
+          }
+        },
+        "required": [
+          "updateType"
+        ]
+      },
+      "then": {
+        "required": [
+          "details"
+        ],
+        "properties": {
+          "currentStatus": {
+            "const": "IN_PROGRESS"
+          },
+          "details": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "reopen"
+            ],
+            "properties": {
+              "reopen": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "reason": {
+                    "$ref": "common.schema.json#/$defs/textOrNull"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "updateType": {
+            "const": "RESOLVED"
+          }
+        },
+        "required": [
+          "updateType"
+        ]
+      },
+      "then": {
+        "required": [
+          "details",
+          "publicMessage"
+        ],
+        "properties": {
+          "currentStatus": {
+            "const": "RESOLVED"
+          },
+          "publicMessage": {
+            "$ref": "common.schema.json#/$defs/text"
+          },
+          "details": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "resolution"
+            ],
+            "properties": {
+              "resolution": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "type"
+                ],
+                "properties": {
+                  "type": {
+                    "enum": [
+                      "ACTION_COMPLETED",
+                      "REQUEST_FULFILLED",
+                      "INQUIRY_ANSWERED",
+                      "ACKNOWLEDGED",
+                      "NO_FURTHER_ACTION_REQUIRED"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "updateType": {
+            "const": "CLOSED"
+          }
+        },
+        "required": [
+          "updateType"
+        ]
+      },
+      "then": {
+        "required": [
+          "details"
+        ],
+        "properties": {
+          "currentStatus": {
+            "const": "CLOSED"
+          },
+          "details": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "closure"
+            ],
+            "properties": {
+              "closure": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "reasonCode"
+                ],
+                "properties": {
+                  "reasonCode": {
+                    "enum": [
+                      "CITIZEN_CONFIRMED",
+                      "CONFIRMATION_TIMEOUT",
+                      "ADMINISTRATIVE_CLOSE"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "updateType": {
+            "const": "CANCELLED"
+          }
+        },
+        "required": [
+          "updateType"
+        ]
+      },
+      "then": {
+        "required": [
+          "details"
+        ],
+        "properties": {
+          "currentStatus": {
+            "const": "CANCELLED"
+          },
+          "details": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "cancellation"
+            ],
+            "properties": {
+              "cancellation": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "reasonCode"
+                ],
+                "properties": {
+                  "reasonCode": {
+                    "$ref": "#/$defs/cancellationReasonCode"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "updateType": {
+            "const": "CONTENT_UPDATED"
+          }
+        },
+        "required": [
+          "updateType"
+        ]
+      },
+      "then": {
+        "required": [
+          "details"
+        ],
+        "properties": {
+          "details": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "content"
+            ],
+            "properties": {
+              "content": {
+                "type": "object",
+                "additionalProperties": false,
+                "minProperties": 1,
+                "properties": {
+                  "requestType": {
+                    "$ref": "common.schema.json#/$defs/text"
+                  },
+                  "category": {
+                    "$ref": "common.schema.json#/$defs/text"
+                  },
+                  "subcategory": {
+                    "$ref": "common.schema.json#/$defs/text"
+                  },
+                  "ticketType": {
+                    "$ref": "common.schema.json#/$defs/ticketType"
+                  },
+                  "summary": {
+                    "$ref": "common.schema.json#/$defs/text"
+                  },
+                  "description": {
+                    "$ref": "common.schema.json#/$defs/text"
+                  },
+                  "formData": {
+                    "$ref": "common.schema.json#/$defs/formData"
+                  },
+                  "resolutionDueAt": {
+                    "$ref": "common.schema.json#/$defs/dateTimeOrNull"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "cancellationReasonCode": {
+      "enum": [
+        "OUT_OF_SCOPE",
+        "DOES_NOT_APPLY",
+        "INVALID_REQUEST_TYPE",
+        "INVALID_DATA",
+        "REJECTED_BY_AREA",
+        "WITHDRAWN_BY_CITIZEN",
+        "DATA_ENTRY_ERROR",
+        "INFO_TIMEOUT",
+        "OTHER"
+      ]
+    }
+  }
+}

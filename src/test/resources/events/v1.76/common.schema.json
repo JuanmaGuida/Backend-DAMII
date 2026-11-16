@@ -1,0 +1,309 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://municipalidad-uade.example/m2/events/v1.76/common.schema.json",
+  "title": "M2 · Tipos comunes del contrato de eventos (Eventos v1.76)",
+  "description": "Tipos reutilizables por ticketCreated, ticketUpdated y updateTicketStatus. Referencias: Eventos v1.76 §4 (envelope), §5 (objetos reutilizables) y §3 (estados).",
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    },
+    "dateTime": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$",
+      "description": "ISO 8601 con UTC (Z) u offset explícito (§4 y §12). No se acepta fecha sin zona horaria."
+    },
+    "dateTimeOrNull": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/dateTime"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "text": {
+      "type": "string",
+      "pattern": "\\S",
+      "description": "Texto no vacío (al menos un carácter que no sea espacio)."
+    },
+    "textOrNull": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/text"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "moduleId": {
+      "type": "string",
+      "pattern": "^M[1-9]$",
+      "description": "Código de módulo/área M1…M9 usado DENTRO de data (responsibleAreaId). Equivalencia con el sourceModule del Core: M1 ciudadanos · M2 atencion-ciudadana · M3 obras · M4 habilitaciones · M5 rentas · M6 ambiente · M7 transito · M8 desarrollo-social · M9 core."
+    },
+    "publicId": {
+      "type": "string",
+      "pattern": "^TK-\\d{4}-\\d{6}$",
+      "description": "Referencia humana TK-AAAA-NNNNNN (Decisiones §1). No es credencial."
+    },
+    "ticketStatus": {
+      "enum": [
+        "REGISTERED",
+        "IN_REVIEW",
+        "ROUTED",
+        "IN_PROGRESS",
+        "PENDING_INFORMATION",
+        "DUPLICATE",
+        "RESOLVED",
+        "CLOSED",
+        "CANCELLED"
+      ]
+    },
+    "priority": {
+      "enum": [
+        "LOW",
+        "MEDIUM",
+        "HIGH",
+        "CRITICAL"
+      ]
+    },
+    "ticketType": {
+      "enum": [
+        "COMPLAINT",
+        "REQUEST",
+        "INQUIRY",
+        "SUGGESTION"
+      ]
+    },
+    "progress": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 100
+    },
+    "formData": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Respuestas dinámicas del formulario. Puede ser {} y puede contener null como respuesta explícita 'No sé/No responde'."
+    },
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "CITIZEN",
+            "AGENT",
+            "AREA_RESPONSIBLE",
+            "ADMIN",
+            "EXTERNAL_USER",
+            "SYSTEM"
+          ]
+        },
+        "id": {
+          "type": [
+            "string",
+            "integer",
+            "null"
+          ],
+          "description": "Identificador del actor en su sistema de origen. Para EXTERNAL_USER es un id opaco que se interpreta junto con el sourceModule del evento. Puede ser null para SYSTEM o cuando no hay una persona concreta identificable."
+        }
+      }
+    },
+    "externalActor": {
+      "$ref": "#/$defs/actor",
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "EXTERNAL_USER",
+            "SYSTEM"
+          ]
+        }
+      },
+      "description": "updatedBy de updateTicketStatus: una persona que actúa desde otro módulo es EXTERNAL_USER; un proceso automático es SYSTEM (Eventos §5.2 y §8.1)."
+    },
+    "attachment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fileName",
+        "contentType",
+        "url"
+      ],
+      "properties": {
+        "fileName": {
+          "$ref": "#/$defs/text"
+        },
+        "contentType": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+$",
+          "description": "MIME type, por ejemplo image/jpeg o application/pdf."
+        },
+        "url": {
+          "$ref": "#/$defs/text",
+          "description": "Referencia segura o URL temporal/autorizada que M2 pueda descargar. Nunca se envía el binario."
+        },
+        "sizeBytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
+      }
+    },
+    "attachments": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/attachment"
+      },
+      "description": "Sólo archivos nuevos o relevantes para ESTA actualización; no se reenvía el historial."
+    },
+    "location": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "addressLine": {
+          "$ref": "#/$defs/textOrNull"
+        },
+        "street": {
+          "$ref": "#/$defs/textOrNull"
+        },
+        "streetNumber": {
+          "$ref": "#/$defs/textOrNull"
+        },
+        "neighborhoodId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reference": {
+          "$ref": "#/$defs/textOrNull"
+        }
+      },
+      "description": "No incluye latitud/longitud: las coordenadas son internas de M2 (Decisiones §7)."
+    },
+    "locationOrNull": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/location"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "escalation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "active"
+      ],
+      "properties": {
+        "active": {
+          "type": "boolean"
+        },
+        "reasonCode": {
+          "enum": [
+            "CRITICAL_PRIORITY",
+            "SLA_BREACHED",
+            "MANUAL",
+            null
+          ]
+        },
+        "escalatedAt": {
+          "$ref": "#/$defs/dateTimeOrNull"
+        }
+      },
+      "if": {
+        "properties": {
+          "active": {
+            "const": true
+          }
+        },
+        "required": [
+          "active"
+        ]
+      },
+      "then": {
+        "required": [
+          "reasonCode",
+          "escalatedAt"
+        ],
+        "properties": {
+          "reasonCode": {
+            "type": "string"
+          },
+          "escalatedAt": {
+            "$ref": "#/$defs/dateTime"
+          }
+        }
+      }
+    },
+    "escalationOrNull": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/escalation"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "messageRequired": {
+      "description": "Debe existir publicMessage o internalMessage, ambos con texto.",
+      "anyOf": [
+        {
+          "required": [
+            "publicMessage"
+          ],
+          "properties": {
+            "publicMessage": {
+              "$ref": "#/$defs/text"
+            }
+          }
+        },
+        {
+          "required": [
+            "internalMessage"
+          ],
+          "properties": {
+            "internalMessage": {
+              "$ref": "#/$defs/text"
+            }
+          }
+        }
+      ]
+    },
+    "uuidV4": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+      "description": "UUID versión 4 (FAQ Core #2: eventId es un UUIDv4)."
+    },
+    "moduleSlug": {
+      "type": "string",
+      "maxLength": 60,
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "description": "Identificador del módulo en el Core (sourceModule), p. ej. \"obras\" o \"atencion-ciudadana\". Debe coincidir con el módulo del token (FAQ Core #4). No confundir con moduleId (M1…M9), que se usa dentro de data."
+    }
+  }
+}

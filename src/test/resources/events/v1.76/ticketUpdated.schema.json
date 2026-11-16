@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://municipalidad-uade.example/m2/events/v1.76/ticketUpdated.schema.json",
+  "title": "ticketUpdated",
+  "description": "M2 → todos los suscriptores (broadcast lógico). Comunica hechos originados en M2 y la derivaciones operativas iniciales o posteriores a reclasificación excepcional. Cada consumidor filtra por responsibleAreaId (Eventos v1.76 §2 y §7). Nunca incluye internalMessage.",
+  "allOf": [
+    {
+      "$ref": "envelope.schema.json"
+    }
+  ],
+  "required": [
+    "data"
+  ],
+  "properties": {
+    "eventType": {
+      "const": "ticketUpdated"
+    },
+    "eventVersion": {
+      "const": "1.0"
+    },
+    "data": {
+      "$ref": "ticketUpdated.data.schema.json"
+    },
+    "sourceModule": {
+      "const": "atencion-ciudadana"
+    }
+  }
+}

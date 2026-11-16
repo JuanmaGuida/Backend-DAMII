@@ -1,0 +1,158 @@
+title = "M2 secret checks"
+[extend]
+useDefault = true
+
+# No baselines, commit-wide exceptions or whole test-directory exclusions.
+# Literal passwords in the old MOCK provider require a human reuse decision.
+[[rules]]
+id = "m2-historical-mock-password"
+description = "Literal MOCK credential; assess historical reuse before release"
+path = '''(^|/)MockIdentityProvider\.java$'''
+regex = '''(?i)\b[A-Z_]+_PASSWORD\s*=\s*["']([^"'\r\n]{6,})["']'''
+secretGroup = 1
+keywords = ["password"]
+
+# Supplemental rules have new IDs: the legacy rules above/below remain unchanged
+# so their existing commit/path/rule/line fingerprints are stable.
+[[rules]]
+id = "m2-quoted-credential-assignment"
+description = "Literal credential assignment in code, JSON, YAML or configuration"
+regex = '''(?i)\b[a-z0-9_.-]*(?:password|passwd|pwd|api[_-]?key|client[_-]?secret|jwt[_-]?secret)[a-z0-9_.-]*["']?\s*[:=]\s*["']([^"'\r\n]{6,})["']'''
+secretGroup = 1
+keywords = ["password", "passwd", "pwd", "key", "secret"]
+[[rules.allowlists]]
+description = "Complete variable references and explicit replacement placeholders only"
+regexTarget = "secret"
+regexes = ['''^(?:\$\{[A-Za-z_][A-Za-z0-9_.-]*(?::?\?[^}\r\n]*)?\}|\$[A-Za-z_][A-Za-z0-9_]*|%[A-Za-z_][A-Za-z0-9_]*%|<[\p{L}_ .-]+>|replace_with_[A-Za-z0-9_]+|CHANGEME|REDACTED|\*{6,}|\s*\+\s*[A-Za-z_][A-Za-z0-9_.]*(?:\s*[, +]\s*)?)$''']
+
+# This literal is supplied to a local fake verifier in this test; it is not an
+# M1 password. Both the complete value and the exact test path must match.
+[[rules.allowlists]]
+description = "Reviewed fake-verifier fixture only"
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^synthetic$''']
+paths = ['''^scripts/m1-lab-https\.test\.mjs$''']
+
+
+[[rules.allowlists]]
+description = "Reviewed fixture: deliberately failing login requests, not valid account credentials"
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^(?:password\-incorrecta)$''']
+paths = ['''^endpoint\ test/auth\-mock\.http$''']
+
+[[rules.allowlists]]
+description = "Reviewed fixture: AuthService Mockito stub, no real identity server"
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^(?:controller\-test\-password)$''']
+paths = ['''^src/test/java/com/reclamos/backend/controller/AuthControllerSecurityTest\.java$''']
+
+[[rules.allowlists]]
+description = "Reviewed fixture: Mockito access-service success/failure inputs"
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^(?:any\-password|correct\-password|wrong\-password)$''']
+paths = ['''^src/test/java/com/reclamos/backend/controller/TrackingControllerTest\.java$''']
+
+[[rules.allowlists]]
+description = "Reviewed fixture: MockRestServiceServer request expectation"
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^(?:synthetic\-password)$''']
+paths = ['''^src/test/java/com/reclamos/backend/identity/m1/M1IdentityProviderTest\.java$''']
+
+[[rules.allowlists]]
+description = "Reviewed fixture: credentials injected into a local test provider"
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^(?:admin\-test\-password|agent\-test\-password|area\-test\-password|citizen\-test\-password)$''']
+paths = ['''^src/test/java/com/reclamos/backend/identity/mock/MockIdentityProviderTest\.java$''']
+
+[[rules.allowlists]]
+description = "Reviewed fixture: test-only provider override and Mockito access inputs"
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^(?:citizen\-test\-password|correct\-password)$''']
+paths = ['''^src/test/java/com/reclamos/backend/security/SecurityHardeningIntegrationTest\.java$''']
+
+[[rules.allowlists]]
+description = "Reviewed fixture: BCrypt input/output in memory only"
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^(?:\ clave\ segura\ )$''']
+paths = ['''^src/test/java/com/reclamos/backend/service/AnonymousTicketCredentialServiceTest\.java$''']
+
+[[rules.allowlists]]
+description = "Reviewed fixture: random ticket owner and transactional rollback fixture"
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^(?:h31\-anonymous\-password)$''']
+paths = ['''^src/test/java/com/reclamos/backend/service/AttachmentUploadContentPostgresIntegrationTest\.java$''']
+
+[[rules.allowlists]]
+description = "Reviewed fixture: dummy hash returned by the mocked credential service"
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^(?:\$2a\$10\$anonymous\-hash)$''']
+paths = ['''^src/test/java/com/reclamos/backend/service/TicketServiceTest\.java$''']
+
+[[rules]]
+id = "m2-unquoted-config-credential"
+description = "Unquoted credential in environment, properties, YAML or INI-style configuration"
+# Format extensions, not particular filenames or directories. Quoted assignments
+# are covered in every file by m2-quoted-credential-assignment.
+path = '''(?i)(^|/)(?:[^/]*\.env(?:\.[^/]*)?|[^/]+\.(?:properties|ya?ml|json|ini|conf|cfg|txt|md))$'''
+regex = '''(?im)^[ \t]*(?:export[ \t]+)?[a-z0-9_.-]*(?:password|passwd|pwd|api[_-]?key|client[_-]?secret|jwt[_-]?secret)[a-z0-9_.-]*[ \t]*[:=][ \t]*([^\s#"'`$<>{}][^\s#"'`{}]{5,})[ \t]*(?:[#;].*)?\r?$'''
+secretGroup = 1
+keywords = ["password", "passwd", "pwd", "key", "secret"]
+[[rules.allowlists]]
+description = "Complete environment references and explicit replacement placeholders only"
+regexTarget = "secret"
+regexes = ['''^(?:%[A-Za-z_][A-Za-z0-9_]*%|replace_with_[A-Za-z0-9_]+|CHANGEME|REDACTED|\*{6,})$''']
+
+
+[[rules.allowlists]]
+description = "Reviewed fixture: ephemeral localhost PostgreSQL service and test-step-only MOCK environment"
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^(?:ci\-admin\-password|ci\-agent\-password|ci\-area\-password|ci\-citizen\-password|m2_ci_password)$''']
+paths = ['''^\.github/workflows/ci\.yml$''']
+
+[[rules]]
+id = "m2-credential-reference-default"
+description = "Credential embedded in an environment-reference default"
+regex = '''(?i)\b[a-z0-9_.-]*(?:password|passwd|pwd|api[_-]?key|client[_-]?secret|jwt[_-]?secret)[a-z0-9_.-]*["']?\s*[:=]\s*["']?\$\{[A-Za-z_][A-Za-z0-9_]*:-?([^?}"'\r\n][^}"'\r\n]{5,})\}'''
+secretGroup = 1
+keywords = ["password", "passwd", "pwd", "key", "secret"]
+[[rules.allowlists]]
+description = "Explicit replacement placeholders only, never literal defaults"
+regexTarget = "secret"
+regexes = ['''^(?:replace_with_[A-Za-z0-9_]+|CHANGEME|REDACTED|\*{6,})$''']
+
+# A one-token Password: line in README is a credential, not an instruction
+# such as the current 'Password: valor de MOCK_...'. No literal is allowlisted.
+[[rules]]
+id = "m2-documented-password"
+description = "Documented literal password; assess historical reuse before release"
+path = '''(^|/)README\.md$'''
+regex = '''(?im)^\s*Password:\s*([^\s`<>${}]{6,})[ \t]*\r?$'''
+secretGroup = 1
+keywords = ["password"]
+
+# Verified fixture: Base64 of the public byte sequence 0..31, not a generated
+# runtime key. Require BOTH exact extracted value AND one reviewed file path.
+[[rules]]
+id = "generic-api-key"
+[[rules.allowlists]]
+description = "Public 0..31 fixture in the reviewed CI/test files only"
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=$''']
+paths = [
+  '''^\.github/workflows/ci\.yml$''',
+  '''^src/test/java/com/reclamos/backend/config/TrackingEncryptionConfigurationTest\.java$''',
+  '''^src/test/java/com/reclamos/backend/service/TrackingCodeCipherTest\.java$''',
+  '''^src/test/java/com/reclamos/backend/outbox/AutomaticOutboxPostgresIntegrationTest\.java$''',
+]

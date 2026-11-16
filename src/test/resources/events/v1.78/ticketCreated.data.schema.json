@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://municipalidad-uade.example/m2/events/v1.78/ticketCreated.data.schema.json",
+  "title": "ticketCreated · data",
+  "description": "Sólo el objeto data de ticketCreated. Sirve para registrarlo como jsonSchema del tipo de evento en el Core (si el Core valida data) y para validar el payload por separado. Ver ticketCreated.schema.json para el evento completo.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "ticketId",
+    "publicId",
+    "citizenId",
+    "isAnonymous",
+    "requestType",
+    "category",
+    "subcategory",
+    "ticketType",
+    "summary",
+    "description",
+    "status",
+    "priority",
+    "responsibleAreaId",
+    "createdAt"
+  ],
+  "properties": {
+    "ticketId": {
+      "$ref": "common.schema.json#/$defs/uuid"
+    },
+    "publicId": {
+      "$ref": "common.schema.json#/$defs/publicId"
+    },
+    "citizenId": {
+      "$ref": "common.schema.json#/$defs/uuid"
+    },
+    "isAnonymous": {
+      "const": false,
+      "description": "ticketCreated no se publica para tickets anónimos."
+    },
+    "requestType": {
+      "$ref": "common.schema.json#/$defs/text"
+    },
+    "category": {
+      "$ref": "common.schema.json#/$defs/text"
+    },
+    "subcategory": {
+      "$ref": "common.schema.json#/$defs/text"
+    },
+    "ticketType": {
+      "$ref": "common.schema.json#/$defs/ticketType"
+    },
+    "summary": {
+      "allOf": [
+        {
+          "$ref": "common.schema.json#/$defs/text"
+        },
+        {
+          "maxLength": 200
+        }
+      ]
+    },
+    "description": {
+      "$ref": "common.schema.json#/$defs/text"
+    },
+    "formData": {
+      "$ref": "common.schema.json#/$defs/formData"
+    },
+    "status": {
+      "const": "REGISTERED"
+    },
+    "priority": {
+      "$ref": "common.schema.json#/$defs/priority"
+    },
+    "responsibleAreaId": {
+      "$ref": "common.schema.json#/$defs/moduleId"
+    },
+    "location": {
+      "$ref": "common.schema.json#/$defs/locationOrNull"
+    },
+    "resolutionDueAt": {
+      "$ref": "common.schema.json#/$defs/dateTimeOrNull"
+    },
+    "attachments": {
+      "$ref": "common.schema.json#/$defs/attachments"
+    },
+    "createdAt": {
+      "$ref": "common.schema.json#/$defs/dateTime"
+    }
+  }
+}

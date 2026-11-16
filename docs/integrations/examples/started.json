@@ -1,0 +1,18 @@
+{
+  "eventId": "7195d022-6cf3-4c0e-baed-797dd6365ce5",
+  "eventType": "updateTicketStatus",
+  "eventVersion": "1.0",
+  "occurredAt": "2026-11-13T12:00:00Z",
+  "sourceModule": "obras",
+  "correlationId": null,
+  "causationId": null,
+  "data": {
+    "ticketId": "11111111-1111-4111-8111-111111111111",
+    "updateType": "STARTED",
+    "updatedBy": {
+      "type": "EXTERNAL_USER",
+      "id": "33333333-3333-4333-8333-333333333333"
+    },
+    "updateOccurredAt": "2026-11-13T12:00:00Z"
+  }
+}

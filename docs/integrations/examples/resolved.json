@@ -1,0 +1,31 @@
+{
+  "eventId": "d771f891-2342-4598-baf1-95aa0ce8791d",
+  "eventType": "updateTicketStatus",
+  "eventVersion": "1.0",
+  "occurredAt": "2026-11-13T12:00:00Z",
+  "sourceModule": "obras",
+  "correlationId": null,
+  "causationId": null,
+  "data": {
+    "ticketId": "11111111-1111-4111-8111-111111111111",
+    "updateType": "RESOLVED",
+    "updatedBy": {
+      "type": "EXTERNAL_USER",
+      "id": "33333333-3333-4333-8333-333333333333"
+    },
+    "updateOccurredAt": "2026-11-13T12:00:00Z",
+    "publicMessage": "Se reparó el bache",
+    "details": {
+      "resolution": {
+        "type": "ACTION_COMPLETED"
+      }
+    },
+    "attachments": [
+      {
+        "fileName": "reparacion.jpg",
+        "contentType": "image/jpeg",
+        "url": "https://m3.example.invalid/evidence/repair-1"
+      }
+    ]
+  }
+}

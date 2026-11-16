@@ -1,0 +1,462 @@
+name: Backend CI
+
+on:
+  pull_request:
+    branches:
+      - dev
+      - master
+  push:
+    branches:
+      - dev
+      - master
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      identity_provider:
+        description: "MOCK validates only. M1 publishes from master; manual runs never deploy."
+        type: choice
+        required: true
+        default: MOCK
+        options:
+          - MOCK
+          - M1
+
+permissions:
+  contents: read
+
+jobs:
+  secrets:
+    name: Scan full history and working tree
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Scan secrets (metadata only)
+        run: python3 .github/scripts/check-secrets.py --output "$RUNNER_TEMP/secrets-summary.json" --self-test
+      - name: Upload safe secret scan summary
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: secrets-summary
+          path: ${{ runner.temp }}/secrets-summary.json
+          if-no-files-found: error
+
+  configuration:
+    name: Resolve provider and validate CD contracts
+    runs-on: ubuntu-latest
+    outputs:
+      identity_provider: ${{ steps.mode.outputs.identity_provider }}
+      sonar_mode: ${{ steps.sonar_scope.outputs.sonar_mode }}
+      sonar_branch: ${{ steps.sonar_scope.outputs.sonar_branch }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Test CD contracts without remote access
+        run: python3 -m unittest discover -s .github/tests -v
+      - name: Resolve identity provider
+        id: mode
+        env:
+          CD_IDENTITY_PROVIDER: ${{ vars.CD_IDENTITY_PROVIDER }}
+          INPUT_IDENTITY_PROVIDER: ${{ inputs.identity_provider }}
+        run: bash .github/scripts/resolve-provider.sh
+
+      - name: Resolve explicit Sonar Free scope
+        id: sonar_scope
+        run: python3 .github/scripts/check-sonar.py --scope --main-branch master
+
+  validate:
+    name: Test, coverage and package
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: configuration
+    concurrency:
+      group: ${{ github.workflow }}-validate-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: true
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: m2_ci
+          POSTGRES_USER: m2_ci
+          POSTGRES_PASSWORD: m2_ci_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U m2_ci -d m2_ci"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    env:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/m2_ci
+      SPRING_DATASOURCE_USERNAME: m2_ci
+      SPRING_DATASOURCE_PASSWORD: m2_ci_password
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Make Maven Wrapper executable
+        run: chmod +x mvnw
+
+      - name: Test, generate coverage and package
+        env:
+          # Synthetic fixture only; no runtime secret is needed by CI or image builds.
+          TRACKING_CODE_ENCRYPTION_KEY_BASE64: AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=
+          TRACKING_CODE_ENCRYPTION_KEY_ID: ci-v1
+          MOCK_CITIZEN_PASSWORD: ci-citizen-password
+          MOCK_AGENT_PASSWORD: ci-agent-password
+          MOCK_AREA_RESPONSIBLE_PASSWORD: ci-area-password
+          MOCK_ADMIN_PASSWORD: ci-admin-password
+          SIMULATOR_ENABLED: "false"
+          IDENTITY_PROVIDER: MOCK
+          CORE_OUTBOX_ENABLED: "false"
+          CORE_INBOX_ENABLED: "false"
+          CORE_OUTBOX_AUTO_APPROVE_NEW_EVENTS: "false"
+          CORE_OUTBOX_APPROVED_EVENT_IDS: ""
+        run: ./mvnw -B clean verify
+
+      - name: Collect Maven dependencies including test scope (no tests rerun)
+        run: ./mvnw -B org.apache.maven.plugins:maven-dependency-plugin:3.11.0:copy-dependencies -DincludeScope=test -DoutputDirectory=target/sca-dependencies
+
+      - name: Upload resolved Maven dependency inventory
+        uses: actions/upload-artifact@v7
+        with:
+          name: maven-dependencies
+          path: target/sca-dependencies/
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
+
+      - name: Publish line coverage summary
+        shell: bash
+        run: |
+          awk -F, '
+            NR > 1 { missed += $8; covered += $9 }
+            END {
+              total = missed + covered
+              percentage = total == 0 ? 0 : (covered * 100 / total)
+              print "### Backend coverage"
+              print ""
+              printf "- Line coverage: **%.2f%%** (%d/%d lines)\n", percentage, covered, total
+              print "- Required LINE coverage gate: **85%**"
+            }
+          ' target/site/jacoco/jacoco.csv >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build Backend container image
+        run: |
+          docker build --pull --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" --label "org.opencontainers.image.revision=$GITHUB_SHA" --tag backend-ci:${{ github.sha }} .
+          docker build --target build --tag backend-builder-ci:${{ github.sha }} .
+
+      - name: Save validated container image
+        run: |
+          docker save backend-ci:${{ github.sha }} --output "$RUNNER_TEMP/backend-image.tar"
+          docker save backend-builder-ci:${{ github.sha }} --output "$RUNNER_TEMP/backend-builder.tar"
+
+      - name: Upload validated container image
+        uses: actions/upload-artifact@v7
+        with:
+          name: backend-image
+          path: ${{ runner.temp }}/backend-image.tar
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
+
+      - name: Upload builder image for SCA
+        uses: actions/upload-artifact@v7
+        with:
+          name: backend-builder
+          path: ${{ runner.temp }}/backend-builder.tar
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
+
+      - name: Upload compiled classes for Sonar (no tests rerun)
+        uses: actions/upload-artifact@v7
+        with:
+          name: sonar-classes
+          path: |
+            target/classes/
+            target/test-classes/
+          retention-days: 1
+          if-no-files-found: error
+
+      - name: Upload JaCoCo report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: jacoco-report
+          path: target/site/jacoco/
+          if-no-files-found: error
+
+      - name: Upload test results and source revision
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: backend-test-results
+          path: target/surefire-reports/TEST-*.xml
+          if-no-files-found: warn
+
+      - name: Record validated revision
+        if: always()
+        env:
+          VALIDATED_REF: ${{ github.ref }}
+          VALIDATED_SHA: ${{ github.sha }}
+        run: printf 'Backend ref=%s commit=%s\n' "$VALIDATED_REF" "$VALIDATED_SHA" >> "$GITHUB_STEP_SUMMARY"
+
+  sonar:
+    name: SonarCloud Quality Gate
+    needs: [configuration, validate]
+    if: needs.configuration.outputs.sonar_mode != 'unsupported'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    concurrency:
+      group: ${{ github.workflow }}-sonar-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: true
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY }}
+      SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION }}
+      SONAR_BRANCH: ${{ needs.configuration.outputs.sonar_branch }}
+      SONAR_MODE: ${{ needs.configuration.outputs.sonar_mode }}
+      SONAR_PULL_REQUEST: ${{ github.event.pull_request.number }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require real Sonar configuration
+        shell: bash
+        run: |
+          : "${SONAR_TOKEN:?Configure SONAR_TOKEN as an Actions secret; fork PRs cannot run trusted analysis}"
+          : "${SONAR_PROJECT_KEY:?Configure SONAR_PROJECT_KEY as an Actions variable}"
+          : "${SONAR_ORGANIZATION:?Configure SONAR_ORGANIZATION as an Actions variable}"
+      - uses: actions/setup-java@v5
+        if: env.SONAR_MODE != 'existing'
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - uses: actions/download-artifact@v7
+        if: env.SONAR_MODE != 'existing'
+        with:
+          name: sonar-classes
+          path: target
+      - uses: actions/download-artifact@v7
+        if: env.SONAR_MODE != 'existing'
+        with:
+          name: jacoco-report
+          path: target/site/jacoco
+      - name: Analyze compiled Backend and wait for service gate
+        if: env.SONAR_MODE != 'existing'
+        shell: bash
+        run: |
+          test -s target/site/jacoco/jacoco.xml
+          test -d target/classes
+          chmod +x mvnw
+          args=()
+          if [[ -z "$SONAR_PULL_REQUEST" ]]; then args+=("-Dsonar.branch.name=$SONAR_BRANCH"); fi
+          ./mvnw -B org.sonarsource.scanner.maven:sonar-maven-plugin:5.8.0.7211:sonar \
+            -Dsonar.host.url=https://sonarcloud.io \
+            "-Dsonar.projectKey=$SONAR_PROJECT_KEY" "-Dsonar.organization=$SONAR_ORGANIZATION" \
+            "-Dsonar.scm.revision=$GITHUB_SHA" -Dsonar.qualitygate.wait=true \
+            -Dsonar.qualitygate.timeout=180 "${args[@]}"
+      - name: Verify academic overall-code limits and revision
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          if [[ "$SONAR_MODE" == existing ]]; then
+            python3 .github/scripts/check-sonar.py --existing-analysis --output "$RUNNER_TEMP/sonar-evidence.json"
+          else
+            python3 .github/scripts/check-sonar.py --task target/sonar/report-task.txt --output "$RUNNER_TEMP/sonar-evidence.json"
+          fi
+      - name: Upload Sonar evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: sonar-evidence
+          path: ${{ runner.temp }}/sonar-evidence.json
+          if-no-files-found: error
+          retention-days: 14
+
+  security:
+    name: SEG-08 dependencies and images
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Restore validated Maven metadata for the POM scan
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - uses: actions/download-artifact@v7
+        with:
+          name: backend-image
+          path: ${{ runner.temp }}/image
+      - uses: actions/download-artifact@v7
+        with:
+          name: maven-dependencies
+          path: ${{ runner.temp }}/maven-dependencies
+      - uses: actions/download-artifact@v7
+        with:
+          name: backend-builder
+          path: ${{ runner.temp }}/image
+      - uses: actions/cache@v5
+        with:
+          path: ${{ runner.temp }}/trivy-cache
+          key: trivy-0.76.2-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: trivy-0.76.2-${{ runner.os }}-
+      - name: Install verified Trivy
+        run: bash .github/scripts/install-trivy.sh
+      - name: Scan dependencies, builder and exact runtime image
+        env:
+          TRIVY_CACHE_DIR: ${{ runner.temp }}/trivy-cache
+        run: >-
+          python3 .github/scripts/scan-vulnerabilities.py
+          --fs . --rootfs "${RUNNER_TEMP}/maven-dependencies"
+          --archive "${RUNNER_TEMP}/image/backend-image.tar"
+          --archive "${RUNNER_TEMP}/image/backend-builder.tar"
+          --output "${RUNNER_TEMP}/sca"
+      - name: Upload sanitized QA vulnerability reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: seg08-reports
+          path: ${{ runner.temp }}/sca/
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish Backend image
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/master') ||
+      (github.event_name == 'workflow_dispatch' && inputs.identity_provider == 'M1' &&
+      github.ref == 'refs/heads/master')
+    needs: [validate, secrets, sonar, security]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: backend-master-publish
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: backend-image
+          path: ${{ runner.temp }}/image
+      - name: Publish scanned Backend image
+        shell: bash
+        run: |
+          docker load --input "$RUNNER_TEMP/image/backend-image.tar"
+          for tag in master "sha-$GITHUB_SHA"; do
+            docker tag "backend-ci:$GITHUB_SHA" "ghcr.io/juanmaguida/backend-damii:$tag"
+            docker push "ghcr.io/juanmaguida/backend-damii:$tag"
+          done
+
+  deploy:
+    name: Deploy Backend to Lightsail
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master' && vars.CD_ENABLED == 'true'
+    needs: [configuration, publish, secrets]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: lightsail-main-backend-deploy
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout deployment guards
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Refuse stale main runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          current_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/master" --jq '.object.sha')"
+          [[ "$current_sha" == "$GITHUB_SHA" ]] || { echo 'Stale main run; no deployment allowed.' >&2; exit 65; }
+
+      - name: Validate selected CD provider
+        env:
+          SELECTED_PROVIDER: ${{ needs.configuration.outputs.identity_provider }}
+          CONFIGURED_CD_PROVIDER: ${{ vars.CD_IDENTITY_PROVIDER }}
+        shell: bash
+        run: |
+          [[ "$SELECTED_PROVIDER" == M1 || "$SELECTED_PROVIDER" == MOCK ]]
+          [[ "$SELECTED_PROVIDER" == "$CONFIGURED_CD_PROVIDER" ]] || { echo 'Selected provider differs from configured CD provider.' >&2; exit 65; }
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+
+      - name: Configure SSH
+        env:
+          LIGHTSAIL_SSH_PRIVATE_KEY: ${{ secrets.LIGHTSAIL_SSH_PRIVATE_KEY }}
+          LIGHTSAIL_KNOWN_HOSTS: ${{ vars.LIGHTSAIL_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          : "${LIGHTSAIL_SSH_PRIVATE_KEY:?LIGHTSAIL_SSH_PRIVATE_KEY is required}"
+          : "${LIGHTSAIL_KNOWN_HOSTS:?LIGHTSAIL_KNOWN_HOSTS is required}"
+          umask 077
+          printf '%s\n' "$LIGHTSAIL_SSH_PRIVATE_KEY" > "$RUNNER_TEMP/lightsail_cd"
+          printf '%s\n' "$LIGHTSAIL_KNOWN_HOSTS" > "$RUNNER_TEMP/lightsail_known_hosts"
+          chmod 600 "$RUNNER_TEMP/lightsail_cd" "$RUNNER_TEMP/lightsail_known_hosts"
+
+      - name: Deploy published Backend SHA
+        env:
+          LIGHTSAIL_HOST: ${{ vars.LIGHTSAIL_HOST }}
+          LIGHTSAIL_USER: ${{ vars.LIGHTSAIL_USER }}
+          LIGHTSAIL_DEPLOY_PATH: ${{ vars.LIGHTSAIL_DEPLOY_PATH }}
+          CD_PROVIDER: ${{ needs.configuration.outputs.identity_provider }}
+        shell: bash
+        run: |
+          : "${LIGHTSAIL_HOST:?LIGHTSAIL_HOST is required}"
+          : "${LIGHTSAIL_USER:?LIGHTSAIL_USER is required}"
+          : "${LIGHTSAIL_DEPLOY_PATH:?LIGHTSAIL_DEPLOY_PATH is required}"
+          [[ "$LIGHTSAIL_HOST" =~ ^[A-Za-z0-9.-]+$ ]]
+          [[ "$LIGHTSAIL_USER" =~ ^[a-z_][a-z0-9_-]*$ ]]
+          [[ "$LIGHTSAIL_DEPLOY_PATH" =~ ^/[A-Za-z0-9._/-]+$ ]]
+          ssh \
+            -i "$RUNNER_TEMP/lightsail_cd" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$RUNNER_TEMP/lightsail_known_hosts" \
+            "$LIGHTSAIL_USER@$LIGHTSAIL_HOST" \
+            "bash -s -- '$LIGHTSAIL_DEPLOY_PATH' backend '$GITHUB_SHA' '$CD_PROVIDER'" \
+            < .github/scripts/deploy-cd.sh
+
+      - name: Remove temporary SSH files
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/lightsail_cd" "$RUNNER_TEMP/lightsail_known_hosts"
