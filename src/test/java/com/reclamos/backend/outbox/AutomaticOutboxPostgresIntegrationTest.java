@@ -140,6 +140,23 @@ class AutomaticOutboxPostgresIntegrationTest {
         assertThat(db.queryForObject("SELECT count(*) FROM outbox_events WHERE ticket_id=?",Integer.class,ticket.getId())).isZero();
         assertThat(tickets.findById(ticket.getId()).orElseThrow().getSummary()).isEqualTo("Synthetic ticket");
     }
+    @Test void failedNewTicketCreationRollsBackTheTicketAndItsCreatedEvent() {
+        Long type=type();
+        ModuleUser user=user(IdentitySource.M1);
+        var createdTicketIds=new ArrayList<UUID>();
+        assertThatThrownBy(() -> transactions.executeWithoutResult(tx -> {
+            var response=ticketService.create(new CreateTicketRequest(type,"Rollback creation","Synthetic test",Map.of(),null),identity(user),null);
+            UUID ticketId=response.ticketId(); createdTicketIds.add(ticketId); ticketIds.add(ticketId);
+            events.flush();
+            assertThat(db.queryForObject("SELECT count(*) FROM tickets WHERE id=?",Integer.class,ticketId)).isEqualTo(1);
+            assertThat(db.queryForList("SELECT event_type FROM outbox_events WHERE ticket_id=?",String.class,ticketId)).containsExactly("ticketCreated");
+            throw new IllegalStateException("synthetic creation rollback");
+        })).isInstanceOf(IllegalStateException.class).hasMessage("synthetic creation rollback");
+        assertThat(createdTicketIds).hasSize(1);
+        UUID ticketId=createdTicketIds.getFirst();
+        assertThat(db.queryForObject("SELECT count(*) FROM tickets WHERE id=?",Integer.class,ticketId)).isZero();
+        assertThat(db.queryForObject("SELECT count(*) FROM outbox_events WHERE ticket_id=?",Integer.class,ticketId)).isZero();
+    }
     @Test void retryAndReplacementWorkerKeepTheSameEligibleEventIdAndPayload() {
         var event=produce(ticket(false,true),true);
         doThrow(new PublicationFailure(PublicationFailure.Code.CONFIRM_TIMEOUT)).doNothing().when(publisher).publish(any(),any(),any());
