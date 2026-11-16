@@ -1,0 +1,59 @@
+name: Verify Lightsail CD SSH (no deployment)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lightsail-ssh-check-backend
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Verify actual CD identity and allowed read-only command
+        env:
+          CD_ENABLED: ${{ vars.CD_ENABLED }}
+          LIGHTSAIL_HOST: ${{ vars.LIGHTSAIL_HOST }}
+          LIGHTSAIL_USER: ${{ vars.LIGHTSAIL_USER }}
+          LIGHTSAIL_KNOWN_HOSTS: ${{ vars.LIGHTSAIL_KNOWN_HOSTS }}
+          LIGHTSAIL_SSH_PRIVATE_KEY: ${{ secrets.LIGHTSAIL_SSH_PRIVATE_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$CD_ENABLED" == false ]]
+          [[ "$LIGHTSAIL_HOST" == 54.232.233.237 && "$LIGHTSAIL_USER" == ubuntu ]]
+          : "${LIGHTSAIL_KNOWN_HOSTS:?Missing pinned host key}"
+          : "${LIGHTSAIL_SSH_PRIVATE_KEY:?Missing CD identity}"
+          umask 077
+          key="$RUNNER_TEMP/lightsail_cd_probe"
+          hosts="$RUNNER_TEMP/lightsail_cd_probe_hosts"
+          denied="$RUNNER_TEMP/lightsail_cd_probe_denied"
+          trap 'rm -f "$key" "$key.pub" "$hosts" "$denied" "$denied.err"' EXIT
+          printf '%s\n' "$LIGHTSAIL_SSH_PRIVATE_KEY" > "$key"
+          printf '%s\n' "$LIGHTSAIL_KNOWN_HOSTS" > "$hosts"
+          ssh-keygen -y -f "$key" > "$key.pub"
+          fingerprint="$(ssh-keygen -lf "$key.pub" -E sha256 | awk '{print $2}')"
+          [[ "$fingerprint" == SHA256:dUhdDDeY/BhtHKTEPV4JnfViqg9v9fZbcpgh6JXRDiA ]]
+          ssh_args=(-F /dev/null -T -p 22 -i "$key" -o BatchMode=yes -o IdentitiesOnly=yes
+            -o IdentityAgent=none -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$hosts"
+            -o GlobalKnownHostsFile=/dev/null -o UpdateHostKeys=no -o ConnectTimeout=10
+            -o ClearAllForwardings=yes -o ForwardAgent=no)
+          response="$(ssh "${ssh_args[@]}" "$LIGHTSAIL_USER@$LIGHTSAIL_HOST" 'm2-cd-check-v1 backend')"
+          printf '%s' "$response" | python3 -c '
+          import json,sys
+          r=json.load(sys.stdin)
+          assert r["sshCD"]=="PASS" and r["operation"]=="read-only"
+          assert r["service"]=="backend" and r["user"]=="ubuntu"
+          assert r["deploymentExecuted"] is False
+          '
+          status=0
+          ssh "${ssh_args[@]}" "$LIGHTSAIL_USER@$LIGHTSAIL_HOST" id > "$denied" 2> "$denied.err" || status=$?
+          [[ "$status" == 64 && "$(cat "$denied")" == CD_COMMAND_DENIED ]]
+          printf 'SSH CD verified: backend, expected identity, read-only probe PASS, arbitrary command DENIED.\n'
+          printf '### CD SSH verification\nIdentity: `%s`\nService: backend\nDeployment executed: **NO**\n' "$fingerprint" >> "$GITHUB_STEP_SUMMARY"
