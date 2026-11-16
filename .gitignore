@@ -62,3 +62,7 @@ application-local.yaml
 
 ### Storage local de evidencia ###
 /data/attachments/
+
+# Local Sonar scanner state (may contain service metadata).
+.scannerwork/
+__pycache__/

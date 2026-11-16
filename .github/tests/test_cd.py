@@ -58,7 +58,7 @@ class CDTests(unittest.TestCase):
         self.env = {**os.environ, 'PATH': str(self.bin) + os.pathsep + os.environ['PATH'],
                     'FAKE_CONFIG': str(self.config), 'FAKE_DEPLOY_CALL': str(self.called),
                     'FAKE_DOCKER_LOG': str(self.root / 'docker.log'),
-                    'GITHUB_EVENT_NAME': 'push', 'GITHUB_REF': 'refs/heads/dev',
+                    'GITHUB_EVENT_NAME': 'push', 'GITHUB_REF': 'refs/heads/master',
                     'GITHUB_SHA': SHA, 'GITHUB_REPOSITORY': 'owner/test',
                     'CD_IDENTITY_PROVIDER': 'M1', 'INPUT_IDENTITY_PROVIDER': '',
                     'GITHUB_OUTPUT': str(self.root / 'output')}
@@ -92,7 +92,7 @@ else: sys.exit(91)
         if os.name == 'nt':
             # Python subprocess cannot execute the Unix shebang fixture directly on Windows.
             self.write(self.bin / 'docker.cmd', '@"' + str(sys.executable) + '" "%~dp0docker" %*\n')
-        self.write(self.bin / 'gh', '#!/usr/bin/env python3\nimport os\nprint(os.getenv("FAKE_HEAD", ""))\n')
+        self.write(self.bin / 'gh', '#!/usr/bin/env python3\nimport os, sys\nassert "repos/owner/test/git/ref/heads/master" in sys.argv\nprint(os.getenv("FAKE_HEAD", ""))\n')
         self.write(self.server / 'scripts/validate-integration-config.py',
                    'import json,os,sys\njson.load(sys.stdin)\nsys.exit(78 if os.getenv("FAKE_INVALID_CONFIG") else 0)\n')
         self.write(self.server / 'scripts/deploy-service.sh',
@@ -116,7 +116,7 @@ else: sys.exit(91)
         self.assertNotIn(PRIVATE, result.stdout + result.stderr)
         return result
 
-    def resolve(self, event='push', ref='refs/heads/dev', cd='M1', manual=''):
+    def resolve(self, event='push', ref='refs/heads/master', cd='M1', manual=''):
         self.env.update(GITHUB_EVENT_NAME=event, GITHUB_REF=ref, CD_IDENTITY_PROVIDER=cd,
                         INPUT_IDENTITY_PROVIDER=manual)
         return self.execute(REPO / '.github/scripts/resolve-provider.sh')
@@ -128,24 +128,30 @@ else: sys.exit(91)
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(self.called.exists(), 'Guard delegated to deployment after rejecting configuration')
 
-    def test_dev_requires_explicit_valid_provider_even_when_cd_paused(self):
+    def test_main_requires_explicit_valid_provider_even_when_cd_paused(self):
         for value in ('', 'm1', 'M1;echo unsafe', 'unknown'):
             with self.subTest(value=value): self.assertNotEqual(self.resolve(cd=value).returncode, 0)
 
-    def test_dev_selects_m1_and_explicit_mock(self):
+    def test_main_selects_m1_and_explicit_mock(self):
         for value in ('M1', 'MOCK'):
             self.assertEqual(self.resolve(cd=value).returncode, 0)
             self.assertIn('identity_provider='+value, (self.root/'output').read_text())
 
-    def test_pr_and_non_dev_push_do_not_require_cd_variables(self):
-        for event,ref in (('pull_request','refs/pull/1/merge'),('push','refs/heads/main')):
+    def test_pr_and_dev_push_do_not_require_cd_variables(self):
+        for event,ref in (('pull_request','refs/pull/1/merge'),('push','refs/heads/dev')):
             self.assertEqual(self.resolve(event,ref,cd='').returncode, 0)
             self.assertIn('identity_provider=MOCK', (self.root/'output').read_text())
 
     def test_manual_m1_overrides_cd_selection_and_preserves_main(self):
-        self.assertEqual(self.resolve('workflow_dispatch','refs/heads/main',cd='MOCK',manual='M1').returncode, 0)
+        self.assertEqual(self.resolve('workflow_dispatch','refs/heads/master',cd='MOCK',manual='M1').returncode, 0)
         self.assertIn('identity_provider=M1', (self.root/'output').read_text())
         self.assertNotEqual(self.resolve('workflow_dispatch','refs/heads/feature',manual='M1').returncode, 0)
+
+    def test_dev_and_tags_ignore_cd_provider_and_manual_m1_cannot_publish_dev(self):
+        for ref in ('refs/heads/dev','refs/tags/v2.0-entrega4'):
+            self.assertEqual(self.resolve('push',ref,cd='').returncode, 0)
+            self.assertIn('identity_provider=MOCK', (self.root/'output').read_text())
+        self.assertNotEqual(self.resolve('workflow_dispatch','refs/heads/dev',manual='M1').returncode, 0)
 
     def test_manual_mock_remains_validation_mode(self):
         self.assertEqual(self.resolve('workflow_dispatch','refs/heads/dev',manual='MOCK').returncode, 0)
@@ -258,8 +264,8 @@ else: sys.exit(91)
         self.env['FAKE_DEPLOY_EXIT']='2'
         self.assertEqual(self.deploy().returncode, 2)
 
-    def test_stale_dev_run_is_refused_by_actual_workflow_step(self):
-        script=self.root/'stale.sh';self.write(script, workflow_step('Refuse stale dev runs'))
+    def test_stale_main_run_is_refused_by_actual_workflow_step(self):
+        script=self.root/'stale.sh';self.write(script, workflow_step('Refuse stale main runs'))
         self.env['FAKE_HEAD']='b'*40
         self.assertNotEqual(self.execute(script).returncode, 0)
         self.env['FAKE_HEAD']=SHA
@@ -278,7 +284,7 @@ else: sys.exit(91)
 
     def test_workflow_preserves_manual_no_deploy_and_test_gates(self):
         deploy=WORKFLOW.split('\n  deploy:\n',1)[1]
-        self.assertIn("github.event_name == 'push' && github.ref == 'refs/heads/dev' && vars.CD_ENABLED == 'true'", deploy)
+        self.assertIn("github.event_name == 'push' && github.ref == 'refs/heads/master' && vars.CD_ENABLED == 'true'", deploy)
         self.assertIn('StrictHostKeyChecking=yes', deploy)
         self.assertIn('if: always()', deploy)
         self.assertIn('< .github/scripts/deploy-cd.sh', deploy)
