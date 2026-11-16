@@ -62,6 +62,7 @@ class TicketMessageServiceTest {
         otherTicket.setAnonymous(false);
         otherTicket.setResponsibleAreaId("M2");
 
+        when(ticketRepository.findByIdForUpdate(any())).thenReturn(Optional.of(ownTicket));
         owner = new AuthenticatedIdentity("owner", ownerId, "Vecino", null, ModuleRole.CITIZEN);
 
         when(messageRepository.save(any(TicketMessage.class))).thenAnswer(invocation -> {
@@ -376,7 +377,7 @@ class TicketMessageServiceTest {
     @Test
     void authorCanEditTheirOwnMessage() {
         TicketMessage existing = existingMessage(MessageVisibility.PUBLIC);
-        when(messageRepository.findById(9L)).thenReturn(Optional.of(existing));
+        when(messageRepository.findByIdForUpdate(9L)).thenReturn(Optional.of(existing));
 
         TicketMessageResponse response =
                 service.update(ticketId, 9L, updateRequest("texto editado"), owner);
@@ -389,7 +390,7 @@ class TicketMessageServiceTest {
     @Test
     void nonAuthorCannotEditSomeoneElsesMessage() {
         TicketMessage existing = existingMessage(MessageVisibility.PUBLIC);
-        when(messageRepository.findById(9L)).thenReturn(Optional.of(existing));
+        when(messageRepository.findByIdForUpdate(9L)).thenReturn(Optional.of(existing));
         AuthenticatedIdentity someoneElse = new AuthenticatedIdentity(
                 "otro", UUID.randomUUID(), "Otro vecino", null, ModuleRole.CITIZEN);
 
@@ -402,7 +403,7 @@ class TicketMessageServiceTest {
     void messageFromAnotherTicketCannotBeEditedThroughThisTicketId() {
         TicketMessage existing = existingMessage(MessageVisibility.PUBLIC);
         UUID differentTicketId = UUID.randomUUID();
-        when(messageRepository.findById(9L)).thenReturn(Optional.of(existing));
+        when(messageRepository.findByIdForUpdate(9L)).thenReturn(Optional.of(existing));
 
         assertThrows(ResourceNotFoundException.class,
                 () -> service.update(differentTicketId, 9L, updateRequest("x"), owner));
@@ -410,7 +411,7 @@ class TicketMessageServiceTest {
 
     @Test
     void editingAMissingMessageIsNotFound() {
-        when(messageRepository.findById(9L)).thenReturn(Optional.empty());
+        when(messageRepository.findByIdForUpdate(9L)).thenReturn(Optional.empty());
 
         assertThrows(ResourceNotFoundException.class,
                 () -> service.update(ticketId, 9L, updateRequest("x"), owner));
@@ -420,7 +421,7 @@ class TicketMessageServiceTest {
     void aMessageReceivedByIntegrationCannotBeEditedEvenByItsListedAuthor() {
         TicketMessage existing = existingMessage(MessageVisibility.PUBLIC);
         existing.setSourceModuleId("M4");
-        when(messageRepository.findById(9L)).thenReturn(Optional.of(existing));
+        when(messageRepository.findByIdForUpdate(9L)).thenReturn(Optional.of(existing));
 
         assertThrows(UnauthorizedTicketOperationException.class,
                 () -> service.update(ticketId, 9L, updateRequest("x"), owner));
@@ -439,7 +440,7 @@ class TicketMessageServiceTest {
     @Test
     void authorCanDeleteTheirOwnMessage() {
         TicketMessage existing = existingMessage(MessageVisibility.PUBLIC);
-        when(messageRepository.findById(9L)).thenReturn(Optional.of(existing));
+        when(messageRepository.findByIdForUpdate(9L)).thenReturn(Optional.of(existing));
 
         service.delete(ticketId, 9L, owner);
 
@@ -449,7 +450,7 @@ class TicketMessageServiceTest {
     @Test
     void nonAuthorCannotDeleteSomeoneElsesMessage() {
         TicketMessage existing = existingMessage(MessageVisibility.PUBLIC);
-        when(messageRepository.findById(9L)).thenReturn(Optional.of(existing));
+        when(messageRepository.findByIdForUpdate(9L)).thenReturn(Optional.of(existing));
         AuthenticatedIdentity someoneElse = new AuthenticatedIdentity(
                 "otro", UUID.randomUUID(), "Otro vecino", null, ModuleRole.CITIZEN);
 
@@ -460,7 +461,7 @@ class TicketMessageServiceTest {
 
     @Test
     void deletingAMissingMessageIsNotFound() {
-        when(messageRepository.findById(9L)).thenReturn(Optional.empty());
+        when(messageRepository.findByIdForUpdate(9L)).thenReturn(Optional.empty());
 
         assertThrows(ResourceNotFoundException.class, () -> service.delete(ticketId, 9L, owner));
     }
@@ -469,7 +470,7 @@ class TicketMessageServiceTest {
     void aMessageReceivedByIntegrationCannotBeDeletedEvenByItsListedAuthor() {
         TicketMessage existing = existingMessage(MessageVisibility.PUBLIC);
         existing.setSourceModuleId("M4");
-        when(messageRepository.findById(9L)).thenReturn(Optional.of(existing));
+        when(messageRepository.findByIdForUpdate(9L)).thenReturn(Optional.of(existing));
 
         assertThrows(UnauthorizedTicketOperationException.class, () -> service.delete(ticketId, 9L, owner));
         verify(messageRepository, never()).delete(any());

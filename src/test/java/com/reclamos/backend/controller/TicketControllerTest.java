@@ -37,6 +37,7 @@ import java.util.UUID;
 import java.time.Instant;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
@@ -440,7 +441,7 @@ class TicketControllerTest {
         TicketResponse response = new TicketResponse();
         response.setId(ticketId);
         response.setRequestTypeCode("FLOODING");
-        when(ticketService.correctClassification(eq(ticketId), eq(20L), any())).thenReturn(response);
+        when(ticketService.correctClassification(eq(ticketId), eq(20L), any(), isNull())).thenReturn(new com.reclamos.backend.dto.ResourceRevision<>(response, "\"classification-v0\""));
 
         mockMvc.perform(patch("/api/tickets/{ticketId}/classification", ticketId)
                         .with(authentication(AGENT_AUTHENTICATION))
@@ -453,7 +454,7 @@ class TicketControllerTest {
     @Test
     void correctClassificationOnStateConflictReturnsConflict() throws Exception {
         UUID ticketId = UUID.randomUUID();
-        when(ticketService.correctClassification(eq(ticketId), eq(20L), any()))
+        when(ticketService.correctClassification(eq(ticketId), eq(20L), any(), isNull()))
                 .thenThrow(new TicketStateConflictException("La clasificación ya fue finalizada"));
 
         mockMvc.perform(patch("/api/tickets/{ticketId}/classification", ticketId)

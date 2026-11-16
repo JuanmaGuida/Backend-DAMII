@@ -97,6 +97,7 @@ class OpenApiContractTest {
             "POST /api/staff/tickets/{ticketId}/labels",
             "DELETE /api/staff/tickets/{ticketId}/labels/{labelId}",
             "POST /api/tickets/{ticketId}/review",
+            "GET /api/tickets/{ticketId}/classification",
             "PATCH /api/tickets/{ticketId}/classification",
             "POST /api/tickets/{ticketId}/route",
             "POST /api/tickets/{ticketId}/information-request",
@@ -108,6 +109,7 @@ class OpenApiContractTest {
             "POST /api/tickets/{ticketId}/cancel",
             "POST /api/tickets/{ticketId}/messages",
             "GET /api/tickets/{ticketId}/messages",
+            "GET /api/tickets/{ticketId}/messages/{messageId}",
             "PATCH /api/tickets/{ticketId}/messages/{messageId}",
             "DELETE /api/tickets/{ticketId}/messages/{messageId}",
             "GET /api/attachments/{attachmentId}/content",
@@ -180,6 +182,7 @@ class OpenApiContractTest {
             "POST /api/staff/tickets/{ticketId}/labels",
             "DELETE /api/staff/tickets/{ticketId}/labels/{labelId}",
             "POST /api/tickets/{ticketId}/review",
+            "GET /api/tickets/{ticketId}/classification",
             "PATCH /api/tickets/{ticketId}/classification",
             "POST /api/tickets/{ticketId}/route",
             "POST /api/tickets/{ticketId}/information-request",
@@ -191,6 +194,7 @@ class OpenApiContractTest {
             "POST /api/tickets/{ticketId}/satisfaction-survey",
             "POST /api/tickets/{ticketId}/messages",
             "GET /api/tickets/{ticketId}/messages",
+            "GET /api/tickets/{ticketId}/messages/{messageId}",
             "PATCH /api/tickets/{ticketId}/messages/{messageId}",
             "DELETE /api/tickets/{ticketId}/messages/{messageId}",
             "GET /api/attachments/{attachmentId}/content"
@@ -642,6 +646,18 @@ class OpenApiContractTest {
         assertEquals("#/components/responses/Forbidden",
                 map(operation("GET /api/tickets"), "responses", "403").get("$ref"));
         return operations;
+    }
+
+    @Test
+    void conditionalUpdatesDocumentOptionalIfMatchAndPreconditionFailure() {
+        assertEquals(false, map(spec, "components", "parameters", "IfMatch").get("required"));
+        for (String path : Set.of("/api/tickets/{ticketId}/classification", "/api/tickets/{ticketId}/messages/{messageId}")) {
+            assertEquals("#/components/headers/ResourceETag",
+                    map(operation("GET " + path), "responses", "200", "headers", "ETag").get("$ref"));
+            assertEquals("#/components/responses/PreconditionFailed",
+                    map(operation("PATCH " + path), "responses", "412").get("$ref"));
+            assertFalse(map(operation("PATCH " + path), "responses").containsKey("428"));
+        }
     }
 
     @Test

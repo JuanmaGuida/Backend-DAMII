@@ -1,5 +1,7 @@
 package com.reclamos.backend.service;
 
+import com.reclamos.backend.dto.ClassificationCorrectionRequest;
+import com.reclamos.backend.dto.ResourceRevision;
 import com.reclamos.backend.dto.TicketFilter;
 import com.reclamos.backend.dto.TicketResponse;
 import com.reclamos.backend.dto.request.CancelTicketRequest;
@@ -275,19 +277,48 @@ public class TicketService {
         return toResponse(ticket, locationRepository.findByTicket_Id(ticketId).orElse(null));
     }
 
-    /** Compatibility route: unchanged classification is a no-op; changes require an auditable proposal. */
+    @Transactional(readOnly = true)
+    public ResourceRevision<ClassificationCorrectionRequest>
+            getClassification(UUID ticketId, AuthenticatedIdentity actor) {
+        Ticket ticket = ticketRepository.findById(ticketId)
+                .orElseThrow(() -> new ResourceNotFoundException("El ticket solicitado no existe"));
+        requireTriageAuthority(ticket, actor);
+        return new ResourceRevision<>(
+                new ClassificationCorrectionRequest(ticket.getRequestType().getId()),
+                classificationEtag(ticket));
+    }
+
+    /** Compatibility route: changes still require an auditable proposal. */
     @Transactional
     public TicketResponse correctClassification(UUID ticketId, Long newRequestTypeId, AuthenticatedIdentity actor) {
+        return correctClassification(ticketId, newRequestTypeId, actor, null).body();
+    }
+
+    @Transactional
+    public ResourceRevision<TicketResponse> correctClassification(
+            UUID ticketId, Long newRequestTypeId, AuthenticatedIdentity actor, String ifMatch) {
         Ticket ticket = loadForUpdate(ticketId);
         requireTriageAuthority(ticket, actor);
+        ResourcePreconditions.check(ifMatch, classificationEtag(ticket));
         if (!ticket.canPerform(TicketAction.CLASSIFY)) {
             throw new TicketStateConflictException("La clasificación requiere IN_REVIEW");
         }
-        if (Objects.equals(ticket.getRequestType().getId(), newRequestTypeId)) {
-            return toResponse(ticket, locationRepository.findByTicket_Id(ticketId).orElse(null));
+        if (!Objects.equals(ticket.getRequestType().getId(), newRequestTypeId)) {
+            throw new TicketStateConflictException(
+                    "El cambio requiere una propuesta: POST /api/staff/tickets/{ticketId}/reclassification-proposals y confirmación explícita");
         }
-        throw new TicketStateConflictException(
-                "El cambio requiere una propuesta: POST /api/staff/tickets/{ticketId}/reclassification-proposals y confirmación explícita");
+        if (ifMatch != null) {
+            // Consume an accepted conditional revision even for this compatibility no-op.
+            // Unconditional calls retain their existing no-op behavior.
+            ticket.setResourceVersion(ticket.getResourceVersion() + 1);
+            ticketRepository.flush();
+        }
+        return new ResourceRevision<>(
+                toResponse(ticket, locationRepository.findByTicket_Id(ticketId).orElse(null)), classificationEtag(ticket));
+    }
+
+    private String classificationEtag(Ticket ticket) {
+        return ResourcePreconditions.etag("classification", ticket.getId(), ticket.getResourceVersion());
     }
 
     /**

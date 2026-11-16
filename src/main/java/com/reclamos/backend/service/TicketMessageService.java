@@ -1,5 +1,6 @@
 package com.reclamos.backend.service;
 
+import com.reclamos.backend.dto.ResourceRevision;
 import com.reclamos.backend.dto.request.TicketMessageRequest;
 import com.reclamos.backend.dto.request.TicketMessageUpdateRequest;
 import com.reclamos.backend.dto.response.TicketMessageResponse;
@@ -145,9 +146,37 @@ public class TicketMessageService {
     @Transactional
     public TicketMessageResponse update(UUID ticketId, Long messageId, TicketMessageUpdateRequest request,
                                          AuthenticatedIdentity actor) {
+        return update(ticketId, messageId, request, actor, null).body();
+    }
+
+    @Transactional
+    public ResourceRevision<TicketMessageResponse> update(
+            UUID ticketId, Long messageId, TicketMessageUpdateRequest request,
+            AuthenticatedIdentity actor, String ifMatch) {
         TicketMessage message = findOwnMessage(ticketId, messageId, actor);
+        ResourcePreconditions.check(ifMatch, messageEtag(message));
         message.setText(request.getText().trim());
-        return toResponse(messageRepository.save(message));
+        // Ensure a successful conditional write consumes its revision even if text is unchanged.
+        if (ifMatch != null) message.setResourceVersion(message.getResourceVersion() + 1);
+        messageRepository.save(message);
+        messageRepository.flush();
+        return new ResourceRevision<>(toResponse(message), messageEtag(message));
+    }
+
+    @Transactional(readOnly = true)
+    public ResourceRevision<TicketMessageResponse> get(
+            UUID ticketId, Long messageId, AuthenticatedIdentity actor) {
+        Ticket ticket = findTicket(ticketId);
+        boolean internal = requireReadAuthority(ticket, actor);
+        TicketMessage message = messageRepository.findById(messageId)
+                .filter(m -> m.getTicket().getId().equals(ticketId))
+                .filter(m -> internal || m.getVisibility() == MessageVisibility.PUBLIC)
+                .orElseThrow(() -> new ResourceNotFoundException("El mensaje solicitado no existe"));
+        return new ResourceRevision<>(toResponse(message), messageEtag(message));
+    }
+
+    private String messageEtag(TicketMessage message) {
+        return ResourcePreconditions.etag("message", message.getId(), message.getResourceVersion());
     }
 
     /**
@@ -175,7 +204,8 @@ public class TicketMessageService {
         if (actor == null) {
             throw new UnauthorizedTicketOperationException();
         }
-        TicketMessage message = messageRepository.findById(messageId)
+        lockTicket(ticketId);
+        TicketMessage message = messageRepository.findByIdForUpdate(messageId)
                 .orElseThrow(() -> new ResourceNotFoundException("El mensaje solicitado no existe"));
         if (!message.getTicket().getId().equals(ticketId)) {
             throw new ResourceNotFoundException("El mensaje solicitado no existe");
