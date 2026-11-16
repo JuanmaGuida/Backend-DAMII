@@ -223,7 +223,8 @@ def main():
         result = {"version": VERSION, "status": "error", "message": "Secret scan incomplete; check full history, configuration, tool and network availability"}
     safe = json.dumps(result, ensure_ascii=True, indent=2) + "\n"
     if args.output:
-        args.output.write_text(safe, encoding="utf-8")
+        output = checked_path(args.output)
+        output.write_text(safe, encoding="utf-8")
     print(safe, end="")
     return 0 if result["status"] == "clean" else 1
 
