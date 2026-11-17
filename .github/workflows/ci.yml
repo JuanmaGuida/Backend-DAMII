@@ -260,7 +260,7 @@ jobs:
         env:
           POSTGRES_DB: m2_qa
           POSTGRES_USER: m2_qa
-          POSTGRES_PASSWORD: m2_qa_password
+          POSTGRES_PASSWORD: m2_ci_password
         ports:
           - 5432:5432
         options: >-
@@ -272,16 +272,16 @@ jobs:
       SPRING_PROFILES_ACTIVE: dev
       SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/m2_qa
       SPRING_DATASOURCE_USERNAME: m2_qa
-      SPRING_DATASOURCE_PASSWORD: m2_qa_password
-      PGPASSWORD: m2_qa_password
+      SPRING_DATASOURCE_PASSWORD: m2_ci_password
+      PGPASSWORD: m2_ci_password
       POSTGRES_USER: m2_qa
       POSTGRES_DB: m2_qa
       TRACKING_CODE_ENCRYPTION_KEY_BASE64: AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=
-      TRACKING_CODE_ENCRYPTION_KEY_ID: ci-qa-v1
-      MOCK_CITIZEN_PASSWORD: ci-qa-citizen-password
-      MOCK_AGENT_PASSWORD: ci-qa-agent-password
-      MOCK_AREA_RESPONSIBLE_PASSWORD: ci-qa-area-password
-      MOCK_ADMIN_PASSWORD: ci-qa-admin-password
+      TRACKING_CODE_ENCRYPTION_KEY_ID: ci-v1
+      MOCK_CITIZEN_PASSWORD: ci-citizen-password
+      MOCK_AGENT_PASSWORD: ci-agent-password
+      MOCK_AREA_RESPONSIBLE_PASSWORD: ci-area-password
+      MOCK_ADMIN_PASSWORD: ci-admin-password
       IDENTITY_PROVIDER: MOCK
       SIMULATOR_ENABLED: "false"
       AI_ENABLED: "false"
