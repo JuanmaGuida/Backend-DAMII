@@ -9,6 +9,8 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -16,6 +18,8 @@ public interface ModuleUserRepository extends JpaRepository<ModuleUser, Long> {
     Optional<ModuleUser> findByActorId(UUID actorId);
 
     Optional<ModuleUser> findByCitizenId(UUID citizenId);
+
+    List<ModuleUser> findAllByActorIdIn(Collection<UUID> actorIds);
 
     @Transactional
     @Query(value = "SELECT 1 FROM pg_advisory_xact_lock(hashtextextended(CAST(:id AS text), 492))", nativeQuery = true)

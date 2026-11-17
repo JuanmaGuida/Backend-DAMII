@@ -4743,13 +4743,20 @@ components:
           description: visibility no es editable; conservarla evita que un INTERNAL se convierta en PUBLIC sin pasar por la autorización de creación.
     TicketMessageResponse:
       type: object
-      required: [ id, authorType, authorId, visibility, text, createdAt, updatedAt ]
+      required: [ id, authorType, authorId, visibility, text, createdAt, updatedAt, authorName ]
       properties:
         id:
           type: integer
           format: int64
         authorType:
           $ref: '#/components/schemas/ActorType'
+        authorName:
+          type: string
+          nullable: true
+          description: |
+            Nombre del autor registrado en M2. Sólo se completa cuando lee el personal
+            (AGENT, AREA_RESPONSIBLE, ADMIN); el ciudadano y el seguimiento público
+            siempre lo reciben en null.
         authorId:
           type: string
           nullable: true

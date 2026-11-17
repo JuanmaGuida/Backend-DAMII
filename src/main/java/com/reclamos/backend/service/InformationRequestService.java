@@ -9,6 +9,7 @@ import com.reclamos.backend.identity.AuthenticatedIdentity;
 import com.reclamos.backend.identity.ModuleRole;
 import com.reclamos.backend.repository.*;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,6 +36,12 @@ public class InformationRequestService {
     private final InformationRequestAttachmentRepository informationRequestAttachmentRepository;
     private final NotificationService notificationService;
     private final ReclassificationDataService reclassificationDataService;
+    private TicketMessageRepository messageRepository;
+
+    @Autowired
+    void setMessageRepository(TicketMessageRepository messageRepository) {
+        this.messageRepository = messageRepository;
+    }
 
     @Transactional
     public InformationRequestResponse requestInformation(UUID ticketId, CreateInformationRequest request,
@@ -54,7 +61,36 @@ public class InformationRequestService {
         // Only this entry point originates the request in M2; external facts must not be echoed.
         ticketOutboxService.informationRequired(ticket, informationRequest.getMessageForCitizen(),
                 informationRequest.getDueAt(), informationRequest.getRequestedAt());
+        recordInChat(ticket, informationRequest);
         return response(informationRequest);
+    }
+
+    /**
+     * El pedido también queda en el chat del ticket: el mensaje público lo ve el ciudadano y la
+     * nota interna sólo el personal. El historial ya tiene INFORMATION_REQUIRED con el mensaje
+     * público, así que sólo se agrega la nota interna (TicketService la oculta al ciudadano).
+     * No se notifica de nuevo: INFORMATION_REQUIRED ya avisó al ciudadano.
+     */
+    private void recordInChat(Ticket ticket, InformationRequest request) {
+        saveChatMessage(ticket, request, MessageVisibility.PUBLIC, request.getMessageForCitizen());
+        String note = request.getInternalMessage();
+        if (note == null || note.isBlank()) return;
+        saveChatMessage(ticket, request, MessageVisibility.INTERNAL, note);
+        saveActivity(ticket, ActivityType.INTERNAL_MESSAGE_ADDED, null, null, request.getRequestedByActorType(),
+                request.getRequestedByActorId(), MODULE_ID, null, note.trim(), request.getRequestedAt(), null);
+    }
+
+    private void saveChatMessage(Ticket ticket, InformationRequest request, MessageVisibility visibility,
+                                 String text) {
+        if (messageRepository == null || text == null || text.isBlank()) return;
+        TicketMessage message = new TicketMessage();
+        message.setTicket(ticket);
+        message.setAuthorType(request.getRequestedByActorType());
+        message.setAuthorId(request.getRequestedByActorId());
+        message.setSourceModuleId(MODULE_ID);
+        message.setVisibility(visibility);
+        message.setText(text.trim());
+        messageRepository.save(message);
     }
 
     InformationRequest requestInformationFromExternal(Ticket lockedTicket, String sourceModuleId,

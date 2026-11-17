@@ -602,6 +602,7 @@ class OpenApiContractTest {
         }
 
         assertTrue(nullableProperty(schemas, "IdentityResponse", "areaId"));
+        assertTrue(nullableProperty(schemas, "TicketMessageResponse", "authorName"));
         assertTrue(nullableProperty(schemas, "AgentDirectoryEntry", "email"));
         assertTrue(nullableProperty(schemas, "AgentDirectoryEntry", "areaId"));
         assertTrue(nullableProperty(schemas, "AgentDirectoryEntry", "firstName"));

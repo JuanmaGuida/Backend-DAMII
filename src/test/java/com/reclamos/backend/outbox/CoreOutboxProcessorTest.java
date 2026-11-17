@@ -91,6 +91,44 @@ class CoreOutboxProcessorTest {
         assertThat(event.getStatus()).isEqualTo(OutboxStatus.FAILED);
         verifyNoInteractions(publisher);
     }
+    @Test void prolongedTransportOutageRemainsPendingBeyondAttemptLimitAndRecoversWithOriginalEvent() {
+        for (var code : java.util.List.of(BROKER_UNAVAILABLE, CONFIRM_TIMEOUT, INTERRUPTED)) {
+            reset(repository, validator, publisher);
+            var event = event("ticketUpdated"); var processor = ready(event);
+            var snapshot = new java.util.LinkedHashMap<>(event.getPayload());
+            doThrow(new PublicationFailure(code)).when(publisher).publish(any(), any(), any());
+            for (int attempt = 1; attempt <= 8; attempt++) {
+                processor.processNextApproved();
+                assertThat(event.getStatus()).isEqualTo(OutboxStatus.PENDING);
+                assertThat(event.getRetryCount()).isEqualTo(attempt);
+                assertThat(event.getNextAttemptAt()).isAfter(NOW);
+                assertThat(event.getPublishedAt()).isNull();
+            }
+            doNothing().when(publisher).publish(any(), any(), any());
+            processor(Set.of(event.getEventId())).processNextApproved();
+            assertThat(event.getStatus()).isEqualTo(OutboxStatus.PUBLISHED);
+            assertThat(event.getPayload()).isEqualTo(snapshot);
+            verify(publisher, times(9)).publish(eq(event.getEventId()), eq("ticketUpdated"), any());
+        }
+    }
+    @Test void rejectedPublishStillStopsAtLimitAfterTransportRecovery() {
+        var event = event("ticketUpdated"); event.setRetryCount(8);
+        event.setLastFailureCode("BROKER_UNAVAILABLE"); var processor = ready(event);
+        doThrow(new PublicationFailure(UNROUTABLE)).when(publisher).publish(any(), any(), any());
+        processor.processNextApproved();
+        assertThat(event.getStatus()).isEqualTo(OutboxStatus.FAILED);
+        assertThat(event.getNextAttemptAt()).isNull();
+    }
+    @Test void publicationConfigurationErrorsStopAfterTheConfiguredAttempts() {
+        var event = event("ticketUpdated"); var processor = ready(event);
+        doThrow(new PublicationFailure(PUBLICATION_ERROR)).when(publisher).publish(any(), any(), any());
+        processor.processNextApproved(); processor.processNextApproved(); processor.processNextApproved();
+        assertThat(event.getStatus()).isEqualTo(OutboxStatus.FAILED);
+        assertThat(event.getRetryCount()).isEqualTo(3);
+        assertThat(event.getNextAttemptAt()).isNull();
+        processor.processNextApproved();
+        verify(publisher, times(3)).publish(eq(event.getEventId()), eq("ticketUpdated"), any());
+    }
     @Test void workerContainsTransactionFailuresWithoutLoggingSensitiveExceptionText() {
         CoreOutboxProcessor processor = mock(CoreOutboxProcessor.class);
         when(processor.processNextApproved()).thenThrow(new IllegalStateException("private-password"));
