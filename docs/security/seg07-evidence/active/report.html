@@ -1,0 +1,3637 @@
+<!doctype html><html lang="es"><meta charset="utf-8"><title>SEG-07</title><h1>SEG-07</h1><pre>{
+  &quot;status&quot;: &quot;PASS&quot;,
+  &quot;complete&quot;: true,
+  &quot;counts_alert_instances&quot;: {
+    &quot;High&quot;: 0,
+    &quot;Medium&quot;: 0,
+    &quot;Low&quot;: 0,
+    &quot;Informational&quot;: 0
+  },
+  &quot;counts_unique_rules&quot;: {
+    &quot;High&quot;: 0,
+    &quot;Medium&quot;: 0,
+    &quot;Low&quot;: 0,
+    &quot;Informational&quot;: 0
+  },
+  &quot;pending_findings&quot;: [],
+  &quot;coverage&quot;: [
+    {
+      &quot;role&quot;: &quot;CITIZEN&quot;,
+      &quot;method&quot;: &quot;GET&quot;,
+      &quot;path&quot;: &quot;/api/auth/me&quot;,
+      &quot;status&quot;: 200,
+      &quot;response_headers&quot;: {
+        &quot;Content-Type&quot;: &quot;application/json&quot;,
+        &quot;Content-Security-Policy&quot;: &quot;default-src &#x27;none&#x27;; frame-ancestors &#x27;none&#x27;; base-uri &#x27;none&#x27;; form-action &#x27;none&#x27;&quot;,
+        &quot;X-Frame-Options&quot;: &quot;DENY&quot;,
+        &quot;X-Content-Type-Options&quot;: &quot;nosniff&quot;,
+        &quot;Cache-Control&quot;: &quot;no-cache, no-store, max-age=0, must-revalidate&quot;,
+        &quot;Strict-Transport-Security&quot;: &quot;max-age=31536000 ; includeSubDomains&quot;
+      }
+    },
+    {
+      &quot;role&quot;: &quot;CITIZEN&quot;,
+      &quot;method&quot;: &quot;GET&quot;,
+      &quot;path&quot;: &quot;/api/me/tickets?page=0&amp;size=5&quot;,
+      &quot;status&quot;: 200,
+      &quot;response_headers&quot;: {
+        &quot;Content-Type&quot;: &quot;application/json&quot;,
+        &quot;Content-Security-Policy&quot;: &quot;default-src &#x27;none&#x27;; frame-ancestors &#x27;none&#x27;; base-uri &#x27;none&#x27;; form-action &#x27;none&#x27;&quot;,
+        &quot;X-Frame-Options&quot;: &quot;DENY&quot;,
+        &quot;X-Content-Type-Options&quot;: &quot;nosniff&quot;,
+        &quot;Cache-Control&quot;: &quot;no-cache, no-store, max-age=0, must-revalidate&quot;,
+        &quot;Strict-Transport-Security&quot;: &quot;max-age=31536000 ; includeSubDomains&quot;
+      }
+    },
+    {
+      &quot;role&quot;: &quot;AGENT&quot;,
+      &quot;method&quot;: &quot;GET&quot;,
+      &quot;path&quot;: &quot;/api/auth/me&quot;,
+      &quot;status&quot;: 200,
+      &quot;response_headers&quot;: {
+        &quot;Content-Type&quot;: &quot;application/json&quot;,
+        &quot;Content-Security-Policy&quot;: &quot;default-src &#x27;none&#x27;; frame-ancestors &#x27;none&#x27;; base-uri &#x27;none&#x27;; form-action &#x27;none&#x27;&quot;,
+        &quot;X-Frame-Options&quot;: &quot;DENY&quot;,
+        &quot;X-Content-Type-Options&quot;: &quot;nosniff&quot;,
+        &quot;Cache-Control&quot;: &quot;no-cache, no-store, max-age=0, must-revalidate&quot;,
+        &quot;Strict-Transport-Security&quot;: &quot;max-age=31536000 ; includeSubDomains&quot;
+      }
+    },
+    {
+      &quot;role&quot;: &quot;AGENT&quot;,
+      &quot;method&quot;: &quot;GET&quot;,
+      &quot;path&quot;: &quot;/api/tickets?page=0&amp;size=5&amp;search=seg07&quot;,
+      &quot;status&quot;: 200,
+      &quot;response_headers&quot;: {
+        &quot;Content-Type&quot;: &quot;application/json&quot;,
+        &quot;Content-Security-Policy&quot;: &quot;default-src &#x27;none&#x27;; frame-ancestors &#x27;none&#x27;; base-uri &#x27;none&#x27;; form-action &#x27;none&#x27;&quot;,
+        &quot;X-Frame-Options&quot;: &quot;DENY&quot;,
+        &quot;X-Content-Type-Options&quot;: &quot;nosniff&quot;,
+        &quot;Cache-Control&quot;: &quot;no-cache, no-store, max-age=0, must-revalidate&quot;,
+        &quot;Strict-Transport-Security&quot;: &quot;max-age=31536000 ; includeSubDomains&quot;
+      }
+    },
+    {
+      &quot;role&quot;: &quot;AGENT&quot;,
+      &quot;method&quot;: &quot;GET&quot;,
+      &quot;path&quot;: &quot;/api/staff/labels&quot;,
+      &quot;status&quot;: 200,
+      &quot;response_headers&quot;: {
+        &quot;Content-Type&quot;: &quot;application/json&quot;,
+        &quot;Content-Security-Policy&quot;: &quot;default-src &#x27;none&#x27;; frame-ancestors &#x27;none&#x27;; base-uri &#x27;none&#x27;; form-action &#x27;none&#x27;&quot;,
+        &quot;X-Frame-Options&quot;: &quot;DENY&quot;,
+        &quot;X-Content-Type-Options&quot;: &quot;nosniff&quot;,
+        &quot;Cache-Control&quot;: &quot;no-cache, no-store, max-age=0, must-revalidate&quot;,
+        &quot;Strict-Transport-Security&quot;: &quot;max-age=31536000 ; includeSubDomains&quot;
+      }
+    },
+    {
+      &quot;role&quot;: &quot;AREA_RESPONSIBLE&quot;,
+      &quot;method&quot;: &quot;GET&quot;,
+      &quot;path&quot;: &quot;/api/auth/me&quot;,
+      &quot;status&quot;: 200,
+      &quot;response_headers&quot;: {
+        &quot;Content-Type&quot;: &quot;application/json&quot;,
+        &quot;Content-Security-Policy&quot;: &quot;default-src &#x27;none&#x27;; frame-ancestors &#x27;none&#x27;; base-uri &#x27;none&#x27;; form-action &#x27;none&#x27;&quot;,
+        &quot;X-Frame-Options&quot;: &quot;DENY&quot;,
+        &quot;X-Content-Type-Options&quot;: &quot;nosniff&quot;,
+        &quot;Cache-Control&quot;: &quot;no-cache, no-store, max-age=0, must-revalidate&quot;,
+        &quot;Strict-Transport-Security&quot;: &quot;max-age=31536000 ; includeSubDomains&quot;
+      }
+    },
+    {
+      &quot;role&quot;: &quot;AREA_RESPONSIBLE&quot;,
+      &quot;method&quot;: &quot;GET&quot;,
+      &quot;path&quot;: &quot;/api/staff/tickets/area?page=0&amp;size=5&amp;search=seg07&quot;,
+      &quot;status&quot;: 200,
+      &quot;response_headers&quot;: {
+        &quot;Content-Type&quot;: &quot;application/json&quot;,
+        &quot;Content-Security-Policy&quot;: &quot;default-src &#x27;none&#x27;; frame-ancestors &#x27;none&#x27;; base-uri &#x27;none&#x27;; form-action &#x27;none&#x27;&quot;,
+        &quot;X-Frame-Options&quot;: &quot;DENY&quot;,
+        &quot;X-Content-Type-Options&quot;: &quot;nosniff&quot;,
+        &quot;Cache-Control&quot;: &quot;no-cache, no-store, max-age=0, must-revalidate&quot;,
+        &quot;Strict-Transport-Security&quot;: &quot;max-age=31536000 ; includeSubDomains&quot;
+      }
+    },
+    {
+      &quot;role&quot;: &quot;ADMIN&quot;,
+      &quot;method&quot;: &quot;GET&quot;,
+      &quot;path&quot;: &quot;/api/auth/me&quot;,
+      &quot;status&quot;: 200,
+      &quot;response_headers&quot;: {
+        &quot;Content-Type&quot;: &quot;application/json&quot;,
+        &quot;Content-Security-Policy&quot;: &quot;default-src &#x27;none&#x27;; frame-ancestors &#x27;none&#x27;; base-uri &#x27;none&#x27;; form-action &#x27;none&#x27;&quot;,
+        &quot;X-Frame-Options&quot;: &quot;DENY&quot;,
+        &quot;X-Content-Type-Options&quot;: &quot;nosniff&quot;,
+        &quot;Cache-Control&quot;: &quot;no-cache, no-store, max-age=0, must-revalidate&quot;,
+        &quot;Strict-Transport-Security&quot;: &quot;max-age=31536000 ; includeSubDomains&quot;
+      }
+    },
+    {
+      &quot;role&quot;: &quot;ADMIN&quot;,
+      &quot;method&quot;: &quot;GET&quot;,
+      &quot;path&quot;: &quot;/api/admin/agents&quot;,
+      &quot;status&quot;: 200,
+      &quot;response_headers&quot;: {
+        &quot;Content-Type&quot;: &quot;application/json&quot;,
+        &quot;Content-Security-Policy&quot;: &quot;default-src &#x27;none&#x27;; frame-ancestors &#x27;none&#x27;; base-uri &#x27;none&#x27;; form-action &#x27;none&#x27;&quot;,
+        &quot;X-Frame-Options&quot;: &quot;DENY&quot;,
+        &quot;X-Content-Type-Options&quot;: &quot;nosniff&quot;,
+        &quot;Cache-Control&quot;: &quot;no-store&quot;,
+        &quot;Strict-Transport-Security&quot;: &quot;max-age=31536000 ; includeSubDomains&quot;
+      }
+    },
+    {
+      &quot;role&quot;: &quot;ADMIN&quot;,
+      &quot;method&quot;: &quot;GET&quot;,
+      &quot;path&quot;: &quot;/api/staff/labels&quot;,
+      &quot;status&quot;: 200,
+      &quot;response_headers&quot;: {
+        &quot;Content-Type&quot;: &quot;application/json&quot;,
+        &quot;Content-Security-Policy&quot;: &quot;default-src &#x27;none&#x27;; frame-ancestors &#x27;none&#x27;; base-uri &#x27;none&#x27;; form-action &#x27;none&#x27;&quot;,
+        &quot;X-Frame-Options&quot;: &quot;DENY&quot;,
+        &quot;X-Content-Type-Options&quot;: &quot;nosniff&quot;,
+        &quot;Cache-Control&quot;: &quot;no-cache, no-store, max-age=0, must-revalidate&quot;,
+        &quot;Strict-Transport-Security&quot;: &quot;max-age=31536000 ; includeSubDomains&quot;
+      }
+    }
+  ],
+  &quot;authentication&quot;: [
+    {
+      &quot;scope_guard&quot;: {
+        &quot;counts&quot;: {
+          &quot;forwarded:GET:/api/auth/me&quot;: 10,
+          &quot;forwarded:GET:/api/me/tickets&quot;: 263,
+          &quot;forwarded:POST:/api/auth/login&quot;: 1,
+          &quot;blocked_before_application&quot;: 74
+        },
+        &quot;allowed_get&quot;: [
+          &quot;/api/auth/me&quot;,
+          &quot;/api/me/tickets&quot;
+        ]
+      },
+      &quot;role&quot;: &quot;CITIZEN&quot;,
+      &quot;anonymous_control&quot;: 401,
+      &quot;invalid_bearer_control&quot;: 401,
+      &quot;checks&quot;: [
+        {
+          &quot;phase&quot;: &quot;before&quot;,
+          &quot;status&quot;: 200,
+          &quot;role&quot;: &quot;CITIZEN&quot;,
+          &quot;expected_subject&quot;: &quot;m1-dev-citizen&quot;,
+          &quot;subject_matches&quot;: true,
+          &quot;area_matches&quot;: true,
+          &quot;time_utc&quot;: &quot;2026-11-17T04:50:15.406949+00:00&quot;
+        },
+        {
+          &quot;phase&quot;: &quot;during:/api/me/tickets?page=0&amp;size=5&quot;,
+          &quot;status&quot;: 200,
+          &quot;role&quot;: &quot;CITIZEN&quot;,
+          &quot;expected_subject&quot;: &quot;m1-dev-citizen&quot;,
+          &quot;subject_matches&quot;: true,
+          &quot;area_matches&quot;: true,
+          &quot;time_utc&quot;: &quot;2026-11-17T04:50:15.706600+00:00&quot;
+        },
+        {
+          &quot;phase&quot;: &quot;during:/api/me/tickets?page=0&amp;size=5&quot;,
+          &quot;status&quot;: 200,
+          &quot;role&quot;: &quot;CITIZEN&quot;,
+          &quot;expected_subject&quot;: &quot;m1-dev-citizen&quot;,
+          &quot;subject_matches&quot;: true,
+          &quot;area_matches&quot;: true,
+          &quot;time_utc&quot;: &quot;2026-11-17T04:50:31.768842+00:00&quot;
+        },
+        {
+          &quot;phase&quot;: &quot;during:/api/me/tickets?page=0&amp;size=5&quot;,
+          &quot;status&quot;: 200,
+          &quot;role&quot;: &quot;CITIZEN&quot;,
+          &quot;expected_subject&quot;: &quot;m1-dev-citizen&quot;,
+          &quot;subject_matches&quot;: true,
+          &quot;area_matches&quot;: true,
+          &quot;time_utc&quot;: &quot;2026-11-17T04:50:47.801062+00:00&quot;
+        },
+        {
+          &quot;phase&quot;: &quot;during:/api/me/tickets?page=0&amp;size=5&quot;,
+          &quot;status&quot;: 200,
+          &quot;role&quot;: &quot;CITIZEN&quot;,
+          &quot;expected_subject&quot;: &quot;m1-dev-citizen&quot;,
+          &quot;subject_matches&quot;: true,
+          &quot;area_matches&quot;: true,
+          &quot;time_utc&quot;: &quot;2026-11-17T04:51:03.840117+00:00&quot;
+        },
+        {
+          &quot;phase&quot;: &quot;after&quot;,
+          &quot;status&quot;: 200,
+          &quot;role&quot;: &quot;CITIZEN&quot;,
+          &quot;expected_subject&quot;: &quot;m1-dev-citizen&quot;,
+          &quot;subject_matches&quot;: true,
+          &quot;area_matches&quot;: true,
+          &quot;time_utc&quot;: &quot;2026-11-17T04:51:11.897793+00:00&quot;
+        }
+      ],
+      &quot;active_messages_with_expected_bearer&quot;: 261,
+      &quot;out_of_scope_messages_blocked_before_application&quot;: 74,
+      &quot;active_response_statuses&quot;: {
+        &quot;200&quot;: 259,
+        &quot;400&quot;: 2
+      },
+      &quot;evaluated_requests&quot;: {
+        &quot;GET /api/me/tickets&quot;: 261
+      },
+      &quot;scans&quot;: [
+        {
+          &quot;path&quot;: &quot;/api/me/tickets?page=0&amp;size=5&quot;,
+          &quot;scan_id&quot;: &quot;0&quot;,
+          &quot;progress&quot;: {
+            &quot;scanProgress&quot;: [
+              &quot;http://backend:8080&quot;,
+              {
+                &quot;HostProcess&quot;: [
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Path Traversal&quot;,
+                      &quot;6&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;2442&quot;,
+                      &quot;14&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Remote File Inclusion&quot;,
+                      &quot;7&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1638&quot;,
+                      &quot;10&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Source Code Disclosure - /WEB-INF Folder&quot;,
+                      &quot;10045&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;309&quot;,
+                      &quot;2&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Heartbleed OpenSSL Vulnerability&quot;,
+                      &quot;20015&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;410&quot;,
+                      &quot;3&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Source Code Disclosure - CVE-2012-1823&quot;,
+                      &quot;20017&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;376&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Remote Code Execution - CVE-2012-1823&quot;,
+                      &quot;20018&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;306&quot;,
+                      &quot;2&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;External Redirect&quot;,
+                      &quot;20019&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;988&quot;,
+                      &quot;6&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Server Side Include&quot;,
+                      &quot;40009&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1308&quot;,
+                      &quot;8&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Cross Site Scripting (Reflected)&quot;,
+                      &quot;40012&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1636&quot;,
+                      &quot;10&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Cross Site Scripting (Persistent) - Prime&quot;,
+                      &quot;40016&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;327&quot;,
+                      &quot;2&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Cross Site Scripting (Persistent) - Spider&quot;,
+                      &quot;40017&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;168&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Cross Site Scripting (Persistent)&quot;,
+                      &quot;40014&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;3&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SQL Injection&quot;,
+                      &quot;40018&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;3263&quot;,
+                      &quot;20&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SQL Injection - MySQL (Time Based)&quot;,
+                      &quot;40019&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1954&quot;,
+                      &quot;12&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SQL Injection - Hypersonic SQL (Time Based)&quot;,
+                      &quot;40020&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1977&quot;,
+                      &quot;12&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SQL Injection - Oracle (Time Based)&quot;,
+                      &quot;40021&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;974&quot;,
+                      &quot;6&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SQL Injection - PostgreSQL (Time Based)&quot;,
+                      &quot;40022&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;976&quot;,
+                      &quot;6&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SQL Injection - SQLite (Time Based)&quot;,
+                      &quot;40024&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;666&quot;,
+                      &quot;4&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SQL Injection - MsSQL (Time Based)&quot;,
+                      &quot;40027&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1961&quot;,
+                      &quot;12&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Spring4Shell&quot;,
+                      &quot;40045&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;319&quot;,
+                      &quot;2&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Remote Code Execution (React2Shell)&quot;,
+                      &quot;40048&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;154&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Server Side Code Injection&quot;,
+                      &quot;90019&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;2779&quot;,
+                      &quot;16&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Remote OS Command Injection&quot;,
+                      &quot;90020&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;2877&quot;,
+                      &quot;18&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;XPath Injection&quot;,
+                      &quot;90021&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;984&quot;,
+                      &quot;6&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;XML External Entity Attack&quot;,
+                      &quot;90023&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Generic Padding Oracle&quot;,
+                      &quot;90024&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;2&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Cloud Metadata Potentially Exposed&quot;,
+                      &quot;90034&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1383&quot;,
+                      &quot;9&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Server Side Template Injection&quot;,
+                      &quot;90035&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;2397&quot;,
+                      &quot;6&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Server Side Template Injection (Blind)&quot;,
+                      &quot;90036&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;3858&quot;,
+                      &quot;24&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Remote OS Command Injection (Time Based)&quot;,
+                      &quot;90037&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1934&quot;,
+                      &quot;12&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Directory Browsing&quot;,
+                      &quot;0&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;154&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Buffer Overflow&quot;,
+                      &quot;30001&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;331&quot;,
+                      &quot;2&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Format String Error&quot;,
+                      &quot;30002&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;966&quot;,
+                      &quot;6&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;CRLF Injection&quot;,
+                      &quot;40003&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;2323&quot;,
+                      &quot;14&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Parameter Tampering&quot;,
+                      &quot;40008&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;2264&quot;,
+                      &quot;14&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;ELMAH Information Leak&quot;,
+                      &quot;40028&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;155&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Trace.axd Information Leak&quot;,
+                      &quot;40029&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;361&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;.htaccess Information Leak&quot;,
+                      &quot;40032&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;154&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;.env Information Leak&quot;,
+                      &quot;40034&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;153&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Hidden File Finder&quot;,
+                      &quot;40035&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;7967&quot;,
+                      &quot;52&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Spring Actuator Information Leak&quot;,
+                      &quot;40042&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;8310&quot;,
+                      &quot;2&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;XSLT Injection&quot;,
+                      &quot;90017&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1385&quot;,
+                      &quot;6&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;GET for POST&quot;,
+                      &quot;10058&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;2&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;User Agent Fuzzer&quot;,
+                      &quot;10104&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1944&quot;,
+                      &quot;12&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SOAP Action Spoofing&quot;,
+                      &quot;90026&quot;,
+                      &quot;beta&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SOAP XML Injection&quot;,
+                      &quot;90029&quot;,
+                      &quot;beta&quot;,
+                      &quot;Complete&quot;,
+                      &quot;4&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      &quot;scope_guard&quot;: {
+        &quot;counts&quot;: {
+          &quot;forwarded:GET:/api/auth/me&quot;: 21,
+          &quot;forwarded:GET:/api/me/tickets&quot;: 263,
+          &quot;forwarded:POST:/api/auth/login&quot;: 2,
+          &quot;blocked_before_application&quot;: 222,
+          &quot;forwarded:GET:/api/tickets&quot;: 380,
+          &quot;forwarded:GET:/api/staff/labels&quot;: 17
+        },
+        &quot;allowed_get&quot;: [
+          &quot;/api/auth/me&quot;,
+          &quot;/api/staff/labels&quot;,
+          &quot;/api/tickets&quot;
+        ]
+      },
+      &quot;role&quot;: &quot;AGENT&quot;,
+      &quot;anonymous_control&quot;: 401,
+      &quot;invalid_bearer_control&quot;: 401,
+      &quot;checks&quot;: [
+        {
+          &quot;phase&quot;: &quot;before&quot;,
+          &quot;status&quot;: 200,
+          &quot;role&quot;: &quot;AGENT&quot;,
+          &quot;expected_subject&quot;: &quot;m1-dev-agent&quot;,
+          &quot;subject_matches&quot;: true,
+          &quot;area_matches&quot;: true,
+          &quot;time_utc&quot;: &quot;2026-11-17T04:51:15.066079+00:00&quot;
+        },
+        {
+          &quot;phase&quot;: &quot;during:/api/tickets?page=0&amp;size=5&amp;search=seg07&quot;,
+          &quot;status&quot;: 200,
+          &quot;role&quot;: &quot;AGENT&quot;,
+          &quot;expected_subject&quot;: &quot;m1-dev-agent&quot;,
+          &quot;subject_matches&quot;: true,
+          &quot;area_matches&quot;: true,
+          &quot;time_utc&quot;: &quot;2026-11-17T04:51:15.290015+00:00&quot;
+        },
+        {
+          &quot;phase&quot;: &quot;during:/api/tickets?page=0&amp;size=5&amp;search=seg07&quot;,
+          &quot;status&quot;: 200,
+          &quot;role&quot;: &quot;AGENT&quot;,
+          &quot;expected_subject&quot;: &quot;m1-dev-agent&quot;,
+          &quot;subject_matches&quot;: true,
+          &quot;area_matches&quot;: true,
+          &quot;time_utc&quot;: &quot;2026-11-17T04:51:31.330854+00:00&quot;
+        },
+        {
+          &quot;phase&quot;: &quot;during:/api/tickets?page=0&amp;size=5&amp;search=seg07&quot;,
+          &quot;status&quot;: 200,
+          &quot;role&quot;: &quot;AGENT&quot;,
+          &quot;expected_subject&quot;: &quot;m1-dev-agent&quot;,
+          &quot;subject_matches&quot;: true,
+          &quot;area_matches&quot;: true,
+          &quot;time_utc&quot;: &quot;2026-11-17T04:51:47.402573+00:00&quot;
+        },
+        {
+          &quot;phase&quot;: &quot;during:/api/tickets?page=0&amp;size=5&amp;search=seg07&quot;,
+          &quot;status&quot;: 200,
+          &quot;role&quot;: &quot;AGENT&quot;,
+          &quot;expected_subject&quot;: &quot;m1-dev-agent&quot;,
+          &quot;subject_matches&quot;: true,
+          &quot;area_matches&quot;: true,
+          &quot;time_utc&quot;: &quot;2026-11-17T04:52:03.433444+00:00&quot;
+        },
+        {
+          &quot;phase&quot;: &quot;during:/api/tickets?page=0&amp;size=5&amp;search=seg07&quot;,
+          &quot;status&quot;: 200,
+          &quot;role&quot;: &quot;AGENT&quot;,
+          &quot;expected_subject&quot;: &quot;m1-dev-agent&quot;,
+          &quot;subject_matches&quot;: true,
+          &quot;area_matches&quot;: true,
+          &quot;time_utc&quot;: &quot;2026-11-17T04:52:19.468543+00:00&quot;
+        },
+        {
+          &quot;phase&quot;: &quot;during:/api/staff/labels&quot;,
+          &quot;status&quot;: 200,
+          &quot;role&quot;: &quot;AGENT&quot;,
+          &quot;expected_subject&quot;: &quot;m1-dev-agent&quot;,
+          &quot;subject_matches&quot;: true,
+          &quot;area_matches&quot;: true,
+          &quot;time_utc&quot;: &quot;2026-11-17T04:52:31.545236+00:00&quot;
+        },
+        {
+          &quot;phase&quot;: &quot;after&quot;,
+          &quot;status&quot;: 200,
+          &quot;role&quot;: &quot;AGENT&quot;,
+          &quot;expected_subject&quot;: &quot;m1-dev-agent&quot;,
+          &quot;subject_matches&quot;: true,
+          &quot;area_matches&quot;: true,
+          &quot;time_utc&quot;: &quot;2026-11-17T04:52:47.632747+00:00&quot;
+        }
+      ],
+      &quot;active_messages_with_expected_bearer&quot;: 393,
+      &quot;out_of_scope_messages_blocked_before_application&quot;: 148,
+      &quot;active_response_statuses&quot;: {
+        &quot;200&quot;: 389,
+        &quot;400&quot;: 3,
+        &quot;409&quot;: 1
+      },
+      &quot;evaluated_requests&quot;: {
+        &quot;GET /api/tickets&quot;: 378,
+        &quot;GET /api/staff/labels&quot;: 15
+      },
+      &quot;scans&quot;: [
+        {
+          &quot;path&quot;: &quot;/api/tickets?page=0&amp;size=5&amp;search=seg07&quot;,
+          &quot;scan_id&quot;: &quot;0&quot;,
+          &quot;progress&quot;: {
+            &quot;scanProgress&quot;: [
+              &quot;http://backend:8080&quot;,
+              {
+                &quot;HostProcess&quot;: [
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Path Traversal&quot;,
+                      &quot;6&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;3465&quot;,
+                      &quot;21&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Remote File Inclusion&quot;,
+                      &quot;7&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;2688&quot;,
+                      &quot;15&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Source Code Disclosure - /WEB-INF Folder&quot;,
+                      &quot;10045&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;341&quot;,
+                      &quot;2&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Heartbleed OpenSSL Vulnerability&quot;,
+                      &quot;20015&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;413&quot;,
+                      &quot;3&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Source Code Disclosure - CVE-2012-1823&quot;,
+                      &quot;20017&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;388&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Remote Code Execution - CVE-2012-1823&quot;,
+                      &quot;20018&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;308&quot;,
+                      &quot;2&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;External Redirect&quot;,
+                      &quot;20019&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1599&quot;,
+                      &quot;9&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Server Side Include&quot;,
+                      &quot;40009&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;2123&quot;,
+                      &quot;12&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Cross Site Scripting (Reflected)&quot;,
+                      &quot;40012&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;2627&quot;,
+                      &quot;15&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Cross Site Scripting (Persistent) - Prime&quot;,
+                      &quot;40016&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;502&quot;,
+                      &quot;3&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Cross Site Scripting (Persistent) - Spider&quot;,
+                      &quot;40017&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;168&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Cross Site Scripting (Persistent)&quot;,
+                      &quot;40014&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SQL Injection&quot;,
+                      &quot;40018&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;4534&quot;,
+                      &quot;27&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SQL Injection - MySQL (Time Based)&quot;,
+                      &quot;40019&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;3058&quot;,
+                      &quot;18&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SQL Injection - Hypersonic SQL (Time Based)&quot;,
+                      &quot;40020&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;3043&quot;,
+                      &quot;18&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SQL Injection - Oracle (Time Based)&quot;,
+                      &quot;40021&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1498&quot;,
+                      &quot;9&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SQL Injection - PostgreSQL (Time Based)&quot;,
+                      &quot;40022&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1628&quot;,
+                      &quot;9&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SQL Injection - SQLite (Time Based)&quot;,
+                      &quot;40024&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;959&quot;,
+                      &quot;6&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SQL Injection - MsSQL (Time Based)&quot;,
+                      &quot;40027&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;2852&quot;,
+                      &quot;18&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Spring4Shell&quot;,
+                      &quot;40045&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;311&quot;,
+                      &quot;2&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Remote Code Execution (React2Shell)&quot;,
+                      &quot;40048&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;171&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Server Side Code Injection&quot;,
+                      &quot;90019&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;4042&quot;,
+                      &quot;24&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Remote OS Command Injection&quot;,
+                      &quot;90020&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;4463&quot;,
+                      &quot;27&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;XPath Injection&quot;,
+                      &quot;90021&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1436&quot;,
+                      &quot;9&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;XML External Entity Attack&quot;,
+                      &quot;90023&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Generic Padding Oracle&quot;,
+                      &quot;90024&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;3&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Cloud Metadata Potentially Exposed&quot;,
+                      &quot;90034&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1370&quot;,
+                      &quot;9&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Server Side Template Injection&quot;,
+                      &quot;90035&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;2868&quot;,
+                      &quot;9&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Server Side Template Injection (Blind)&quot;,
+                      &quot;90036&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;5753&quot;,
+                      &quot;36&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Remote OS Command Injection (Time Based)&quot;,
+                      &quot;90037&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;2957&quot;,
+                      &quot;18&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Directory Browsing&quot;,
+                      &quot;0&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;155&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Buffer Overflow&quot;,
+                      &quot;30001&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;500&quot;,
+                      &quot;3&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Format String Error&quot;,
+                      &quot;30002&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1447&quot;,
+                      &quot;9&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;CRLF Injection&quot;,
+                      &quot;40003&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;3337&quot;,
+                      &quot;21&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Parameter Tampering&quot;,
+                      &quot;40008&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;3342&quot;,
+                      &quot;21&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;ELMAH Information Leak&quot;,
+                      &quot;40028&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;154&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Trace.axd Information Leak&quot;,
+                      &quot;40029&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;352&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;.htaccess Information Leak&quot;,
+                      &quot;40032&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;159&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;.env Information Leak&quot;,
+                      &quot;40034&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;153&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Hidden File Finder&quot;,
+                      &quot;40035&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;7941&quot;,
+                      &quot;52&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Spring Actuator Information Leak&quot;,
+                      &quot;40042&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;8310&quot;,
+                      &quot;2&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;XSLT Injection&quot;,
+                      &quot;90017&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1551&quot;,
+                      &quot;6&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;GET for POST&quot;,
+                      &quot;10058&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;5&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;User Agent Fuzzer&quot;,
+                      &quot;10104&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1990&quot;,
+                      &quot;12&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SOAP Action Spoofing&quot;,
+                      &quot;90026&quot;,
+                      &quot;beta&quot;,
+                      &quot;Complete&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SOAP XML Injection&quot;,
+                      &quot;90029&quot;,
+                      &quot;beta&quot;,
+                      &quot;Complete&quot;,
+                      &quot;2&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          &quot;path&quot;: &quot;/api/staff/labels&quot;,
+          &quot;scan_id&quot;: &quot;1&quot;,
+          &quot;progress&quot;: {
+            &quot;scanProgress&quot;: [
+              &quot;http://backend:8080&quot;,
+              {
+                &quot;HostProcess&quot;: [
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Path Traversal&quot;,
+                      &quot;6&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;3&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Remote File Inclusion&quot;,
+                      &quot;7&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;2&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Source Code Disclosure - /WEB-INF Folder&quot;,
+                      &quot;10045&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;306&quot;,
+                      &quot;2&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Heartbleed OpenSSL Vulnerability&quot;,
+                      &quot;20015&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;404&quot;,
+                      &quot;3&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Source Code Disclosure - CVE-2012-1823&quot;,
+                      &quot;20017&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;364&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Remote Code Execution - CVE-2012-1823&quot;,
+                      &quot;20018&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;312&quot;,
+                      &quot;2&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;External Redirect&quot;,
+                      &quot;20019&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;2&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Server Side Include&quot;,
+                      &quot;40009&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Cross Site Scripting (Reflected)&quot;,
+                      &quot;40012&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Cross Site Scripting (Persistent) - Prime&quot;,
+                      &quot;40016&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Cross Site Scripting (Persistent) - Spider&quot;,
+                      &quot;40017&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;166&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Cross Site Scripting (Persistent)&quot;,
+                      &quot;40014&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SQL Injection&quot;,
+                      &quot;40018&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SQL Injection - MySQL (Time Based)&quot;,
+                      &quot;40019&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SQL Injection - Hypersonic SQL (Time Based)&quot;,
+                      &quot;40020&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;3&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SQL Injection - Oracle (Time Based)&quot;,
+                      &quot;40021&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;2&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SQL Injection - PostgreSQL (Time Based)&quot;,
+                      &quot;40022&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SQL Injection - SQLite (Time Based)&quot;,
+                      &quot;40024&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SQL Injection - MsSQL (Time Based)&quot;,
+                      &quot;40027&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Spring4Shell&quot;,
+                      &quot;40045&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;310&quot;,
+                      &quot;2&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Remote Code Execution (React2Shell)&quot;,
+                      &quot;40048&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;153&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Server Side Code Injection&quot;,
+                      &quot;90019&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;201&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Remote OS Command Injection&quot;,
+                      &quot;90020&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;XPath Injection&quot;,
+                      &quot;90021&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;XML External Entity Attack&quot;,
+                      &quot;90023&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Generic Padding Oracle&quot;,
+                      &quot;90024&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Cloud Metadata Potentially Exposed&quot;,
+                      &quot;90034&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1414&quot;,
+                      &quot;9&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Server Side Template Injection&quot;,
+                      &quot;90035&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1607&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Server Side Template Injection (Blind)&quot;,
+                      &quot;90036&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;2&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Remote OS Command Injection (Time Based)&quot;,
+                      &quot;90037&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;2&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Directory Browsing&quot;,
+                      &quot;0&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;153&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Buffer Overflow&quot;,
+                      &quot;30001&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Format String Error&quot;,
+                      &quot;30002&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;CRLF Injection&quot;,
+                      &quot;40003&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;2&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Parameter Tampering&quot;,
+                      &quot;40008&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;ELMAH Information Leak&quot;,
+                      &quot;40028&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;154&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Trace.axd Information Leak&quot;,
+                      &quot;40029&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;354&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;.htaccess Information Leak&quot;,
+                      &quot;40032&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;153&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;.env Information Leak&quot;,
+                      &quot;40034&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;153&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Hidden File Finder&quot;,
+                      &quot;40035&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;7989&quot;,
+                      &quot;52&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Spring Actuator Information Leak&quot;,
+                      &quot;40042&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;8318&quot;,
+                      &quot;2&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;XSLT Injection&quot;,
+                      &quot;90017&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;403&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;GET for POST&quot;,
+                      &quot;10058&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;User Agent Fuzzer&quot;,
+                      &quot;10104&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1940&quot;,
+                      &quot;12&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SOAP Action Spoofing&quot;,
+                      &quot;90026&quot;,
+                      &quot;beta&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SOAP XML Injection&quot;,
+                      &quot;90029&quot;,
+                      &quot;beta&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      &quot;scope_guard&quot;: {
+        &quot;counts&quot;: {
+          &quot;forwarded:GET:/api/auth/me&quot;: 31,
+          &quot;forwarded:GET:/api/me/tickets&quot;: 263,
+          &quot;forwarded:POST:/api/auth/login&quot;: 3,
+          &quot;blocked_before_application&quot;: 296,
+          &quot;forwarded:GET:/api/tickets&quot;: 380,
+          &quot;forwarded:GET:/api/staff/labels&quot;: 17,
+          &quot;forwarded:GET:/api/staff/tickets/area&quot;: 380
+        },
+        &quot;allowed_get&quot;: [
+          &quot;/api/auth/me&quot;,
+          &quot;/api/staff/tickets/area&quot;
+        ]
+      },
+      &quot;role&quot;: &quot;AREA_RESPONSIBLE&quot;,
+      &quot;anonymous_control&quot;: 401,
+      &quot;invalid_bearer_control&quot;: 401,
+      &quot;checks&quot;: [
+        {
+          &quot;phase&quot;: &quot;before&quot;,
+          &quot;status&quot;: 200,
+          &quot;role&quot;: &quot;AREA_RESPONSIBLE&quot;,
+          &quot;expected_subject&quot;: &quot;m1-dev-area-responsible&quot;,
+          &quot;subject_matches&quot;: true,
+          &quot;area_matches&quot;: true,
+          &quot;time_utc&quot;: &quot;2026-11-17T04:52:50.945703+00:00&quot;
+        },
+        {
+          &quot;phase&quot;: &quot;during:/api/staff/tickets/area?page=0&amp;size=5&amp;search=seg07&quot;,
+          &quot;status&quot;: 200,
+          &quot;role&quot;: &quot;AREA_RESPONSIBLE&quot;,
+          &quot;expected_subject&quot;: &quot;m1-dev-area-responsible&quot;,
+          &quot;subject_matches&quot;: true,
+          &quot;area_matches&quot;: true,
+          &quot;time_utc&quot;: &quot;2026-11-17T04:52:51.057535+00:00&quot;
+        },
+        {
+          &quot;phase&quot;: &quot;during:/api/staff/tickets/area?page=0&amp;size=5&amp;search=seg07&quot;,
+          &quot;status&quot;: 200,
+          &quot;role&quot;: &quot;AREA_RESPONSIBLE&quot;,
+          &quot;expected_subject&quot;: &quot;m1-dev-area-responsible&quot;,
+          &quot;subject_matches&quot;: true,
+          &quot;area_matches&quot;: true,
+          &quot;time_utc&quot;: &quot;2026-11-17T04:53:07.094399+00:00&quot;
+        },
+        {
+          &quot;phase&quot;: &quot;during:/api/staff/tickets/area?page=0&amp;size=5&amp;search=seg07&quot;,
+          &quot;status&quot;: 200,
+          &quot;role&quot;: &quot;AREA_RESPONSIBLE&quot;,
+          &quot;expected_subject&quot;: &quot;m1-dev-area-responsible&quot;,
+          &quot;subject_matches&quot;: true,
+          &quot;area_matches&quot;: true,
+          &quot;time_utc&quot;: &quot;2026-11-17T04:53:23.126524+00:00&quot;
+        },
+        {
+          &quot;phase&quot;: &quot;during:/api/staff/tickets/area?page=0&amp;size=5&amp;search=seg07&quot;,
+          &quot;status&quot;: 200,
+          &quot;role&quot;: &quot;AREA_RESPONSIBLE&quot;,
+          &quot;expected_subject&quot;: &quot;m1-dev-area-responsible&quot;,
+          &quot;subject_matches&quot;: true,
+          &quot;area_matches&quot;: true,
+          &quot;time_utc&quot;: &quot;2026-11-17T04:53:39.153541+00:00&quot;
+        },
+        {
+          &quot;phase&quot;: &quot;during:/api/staff/tickets/area?page=0&amp;size=5&amp;search=seg07&quot;,
+          &quot;status&quot;: 200,
+          &quot;role&quot;: &quot;AREA_RESPONSIBLE&quot;,
+          &quot;expected_subject&quot;: &quot;m1-dev-area-responsible&quot;,
+          &quot;subject_matches&quot;: true,
+          &quot;area_matches&quot;: true,
+          &quot;time_utc&quot;: &quot;2026-11-17T04:53:55.441797+00:00&quot;
+        },
+        {
+          &quot;phase&quot;: &quot;after&quot;,
+          &quot;status&quot;: 200,
+          &quot;role&quot;: &quot;AREA_RESPONSIBLE&quot;,
+          &quot;expected_subject&quot;: &quot;m1-dev-area-responsible&quot;,
+          &quot;subject_matches&quot;: true,
+          &quot;area_matches&quot;: true,
+          &quot;time_utc&quot;: &quot;2026-11-17T04:54:11.515863+00:00&quot;
+        }
+      ],
+      &quot;active_messages_with_expected_bearer&quot;: 378,
+      &quot;out_of_scope_messages_blocked_before_application&quot;: 74,
+      &quot;active_response_statuses&quot;: {
+        &quot;200&quot;: 374,
+        &quot;400&quot;: 3,
+        &quot;409&quot;: 1
+      },
+      &quot;evaluated_requests&quot;: {
+        &quot;GET /api/staff/tickets/area&quot;: 378
+      },
+      &quot;scans&quot;: [
+        {
+          &quot;path&quot;: &quot;/api/staff/tickets/area?page=0&amp;size=5&amp;search=seg07&quot;,
+          &quot;scan_id&quot;: &quot;0&quot;,
+          &quot;progress&quot;: {
+            &quot;scanProgress&quot;: [
+              &quot;http://backend:8080&quot;,
+              {
+                &quot;HostProcess&quot;: [
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Path Traversal&quot;,
+                      &quot;6&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;3423&quot;,
+                      &quot;21&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Remote File Inclusion&quot;,
+                      &quot;7&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;2552&quot;,
+                      &quot;15&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Source Code Disclosure - /WEB-INF Folder&quot;,
+                      &quot;10045&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;304&quot;,
+                      &quot;2&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Heartbleed OpenSSL Vulnerability&quot;,
+                      &quot;20015&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;404&quot;,
+                      &quot;3&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Source Code Disclosure - CVE-2012-1823&quot;,
+                      &quot;20017&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;378&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Remote Code Execution - CVE-2012-1823&quot;,
+                      &quot;20018&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;306&quot;,
+                      &quot;2&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;External Redirect&quot;,
+                      &quot;20019&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1502&quot;,
+                      &quot;9&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Server Side Include&quot;,
+                      &quot;40009&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;2076&quot;,
+                      &quot;12&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Cross Site Scripting (Reflected)&quot;,
+                      &quot;40012&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;2419&quot;,
+                      &quot;15&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Cross Site Scripting (Persistent) - Prime&quot;,
+                      &quot;40016&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;516&quot;,
+                      &quot;3&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Cross Site Scripting (Persistent) - Spider&quot;,
+                      &quot;40017&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;165&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Cross Site Scripting (Persistent)&quot;,
+                      &quot;40014&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;3&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SQL Injection&quot;,
+                      &quot;40018&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;4337&quot;,
+                      &quot;27&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SQL Injection - MySQL (Time Based)&quot;,
+                      &quot;40019&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;2824&quot;,
+                      &quot;18&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SQL Injection - Hypersonic SQL (Time Based)&quot;,
+                      &quot;40020&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;2908&quot;,
+                      &quot;18&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SQL Injection - Oracle (Time Based)&quot;,
+                      &quot;40021&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1413&quot;,
+                      &quot;9&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SQL Injection - PostgreSQL (Time Based)&quot;,
+                      &quot;40022&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1449&quot;,
+                      &quot;9&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SQL Injection - SQLite (Time Based)&quot;,
+                      &quot;40024&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;959&quot;,
+                      &quot;6&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SQL Injection - MsSQL (Time Based)&quot;,
+                      &quot;40027&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;2844&quot;,
+                      &quot;18&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Spring4Shell&quot;,
+                      &quot;40045&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;313&quot;,
+                      &quot;2&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Remote Code Execution (React2Shell)&quot;,
+                      &quot;40048&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;152&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Server Side Code Injection&quot;,
+                      &quot;90019&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;4087&quot;,
+                      &quot;24&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Remote OS Command Injection&quot;,
+                      &quot;90020&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;4280&quot;,
+                      &quot;27&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;XPath Injection&quot;,
+                      &quot;90021&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1415&quot;,
+                      &quot;9&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;XML External Entity Attack&quot;,
+                      &quot;90023&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Generic Padding Oracle&quot;,
+                      &quot;90024&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;2&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Cloud Metadata Potentially Exposed&quot;,
+                      &quot;90034&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1374&quot;,
+                      &quot;9&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Server Side Template Injection&quot;,
+                      &quot;90035&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;2818&quot;,
+                      &quot;9&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Server Side Template Injection (Blind)&quot;,
+                      &quot;90036&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;5684&quot;,
+                      &quot;36&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Remote OS Command Injection (Time Based)&quot;,
+                      &quot;90037&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;2812&quot;,
+                      &quot;18&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Directory Browsing&quot;,
+                      &quot;0&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;159&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Buffer Overflow&quot;,
+                      &quot;30001&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;533&quot;,
+                      &quot;3&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Format String Error&quot;,
+                      &quot;30002&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;3109&quot;,
+                      &quot;9&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;CRLF Injection&quot;,
+                      &quot;40003&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;5696&quot;,
+                      &quot;21&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Parameter Tampering&quot;,
+                      &quot;40008&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;5391&quot;,
+                      &quot;21&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;ELMAH Information Leak&quot;,
+                      &quot;40028&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;193&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Trace.axd Information Leak&quot;,
+                      &quot;40029&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;421&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;.htaccess Information Leak&quot;,
+                      &quot;40032&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;166&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;.env Information Leak&quot;,
+                      &quot;40034&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;164&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Hidden File Finder&quot;,
+                      &quot;40035&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;7999&quot;,
+                      &quot;52&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Spring Actuator Information Leak&quot;,
+                      &quot;40042&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;8313&quot;,
+                      &quot;2&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;XSLT Injection&quot;,
+                      &quot;90017&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1413&quot;,
+                      &quot;6&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;GET for POST&quot;,
+                      &quot;10058&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;User Agent Fuzzer&quot;,
+                      &quot;10104&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;2033&quot;,
+                      &quot;12&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SOAP Action Spoofing&quot;,
+                      &quot;90026&quot;,
+                      &quot;beta&quot;,
+                      &quot;Complete&quot;,
+                      &quot;2&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SOAP XML Injection&quot;,
+                      &quot;90029&quot;,
+                      &quot;beta&quot;,
+                      &quot;Complete&quot;,
+                      &quot;2&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      &quot;scope_guard&quot;: {
+        &quot;counts&quot;: {
+          &quot;forwarded:GET:/api/auth/me&quot;: 38,
+          &quot;forwarded:GET:/api/me/tickets&quot;: 263,
+          &quot;forwarded:POST:/api/auth/login&quot;: 4,
+          &quot;blocked_before_application&quot;: 444,
+          &quot;forwarded:GET:/api/tickets&quot;: 380,
+          &quot;forwarded:GET:/api/staff/labels&quot;: 34,
+          &quot;forwarded:GET:/api/staff/tickets/area&quot;: 380,
+          &quot;forwarded:GET:/api/admin/agents&quot;: 17
+        },
+        &quot;allowed_get&quot;: [
+          &quot;/api/admin/agents&quot;,
+          &quot;/api/auth/me&quot;,
+          &quot;/api/staff/labels&quot;
+        ]
+      },
+      &quot;role&quot;: &quot;ADMIN&quot;,
+      &quot;anonymous_control&quot;: 401,
+      &quot;invalid_bearer_control&quot;: 401,
+      &quot;checks&quot;: [
+        {
+          &quot;phase&quot;: &quot;before&quot;,
+          &quot;status&quot;: 200,
+          &quot;role&quot;: &quot;ADMIN&quot;,
+          &quot;expected_subject&quot;: &quot;m1-dev-module-admin&quot;,
+          &quot;subject_matches&quot;: true,
+          &quot;area_matches&quot;: true,
+          &quot;time_utc&quot;: &quot;2026-11-17T04:54:14.597370+00:00&quot;
+        },
+        {
+          &quot;phase&quot;: &quot;during:/api/admin/agents&quot;,
+          &quot;status&quot;: 200,
+          &quot;role&quot;: &quot;ADMIN&quot;,
+          &quot;expected_subject&quot;: &quot;m1-dev-module-admin&quot;,
+          &quot;subject_matches&quot;: true,
+          &quot;area_matches&quot;: true,
+          &quot;time_utc&quot;: &quot;2026-11-17T04:54:14.769668+00:00&quot;
+        },
+        {
+          &quot;phase&quot;: &quot;during:/api/staff/labels&quot;,
+          &quot;status&quot;: 200,
+          &quot;role&quot;: &quot;ADMIN&quot;,
+          &quot;expected_subject&quot;: &quot;m1-dev-module-admin&quot;,
+          &quot;subject_matches&quot;: true,
+          &quot;area_matches&quot;: true,
+          &quot;time_utc&quot;: &quot;2026-11-17T04:54:30.877535+00:00&quot;
+        },
+        {
+          &quot;phase&quot;: &quot;after&quot;,
+          &quot;status&quot;: 200,
+          &quot;role&quot;: &quot;ADMIN&quot;,
+          &quot;expected_subject&quot;: &quot;m1-dev-module-admin&quot;,
+          &quot;subject_matches&quot;: true,
+          &quot;area_matches&quot;: true,
+          &quot;time_utc&quot;: &quot;2026-11-17T04:54:46.930358+00:00&quot;
+        }
+      ],
+      &quot;active_messages_with_expected_bearer&quot;: 30,
+      &quot;out_of_scope_messages_blocked_before_application&quot;: 148,
+      &quot;active_response_statuses&quot;: {
+        &quot;200&quot;: 30
+      },
+      &quot;evaluated_requests&quot;: {
+        &quot;GET /api/admin/agents&quot;: 15,
+        &quot;GET /api/staff/labels&quot;: 15
+      },
+      &quot;scans&quot;: [
+        {
+          &quot;path&quot;: &quot;/api/admin/agents&quot;,
+          &quot;scan_id&quot;: &quot;0&quot;,
+          &quot;progress&quot;: {
+            &quot;scanProgress&quot;: [
+              &quot;http://backend:8080&quot;,
+              {
+                &quot;HostProcess&quot;: [
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Path Traversal&quot;,
+                      &quot;6&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;3&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Remote File Inclusion&quot;,
+                      &quot;7&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;2&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Source Code Disclosure - /WEB-INF Folder&quot;,
+                      &quot;10045&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;306&quot;,
+                      &quot;2&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Heartbleed OpenSSL Vulnerability&quot;,
+                      &quot;20015&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;403&quot;,
+                      &quot;3&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Source Code Disclosure - CVE-2012-1823&quot;,
+                      &quot;20017&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;374&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Remote Code Execution - CVE-2012-1823&quot;,
+                      &quot;20018&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;306&quot;,
+                      &quot;2&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;External Redirect&quot;,
+                      &quot;20019&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;2&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Server Side Include&quot;,
+                      &quot;40009&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Cross Site Scripting (Reflected)&quot;,
+                      &quot;40012&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Cross Site Scripting (Persistent) - Prime&quot;,
+                      &quot;40016&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Cross Site Scripting (Persistent) - Spider&quot;,
+                      &quot;40017&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;166&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Cross Site Scripting (Persistent)&quot;,
+                      &quot;40014&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SQL Injection&quot;,
+                      &quot;40018&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SQL Injection - MySQL (Time Based)&quot;,
+                      &quot;40019&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;2&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SQL Injection - Hypersonic SQL (Time Based)&quot;,
+                      &quot;40020&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SQL Injection - Oracle (Time Based)&quot;,
+                      &quot;40021&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SQL Injection - PostgreSQL (Time Based)&quot;,
+                      &quot;40022&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SQL Injection - SQLite (Time Based)&quot;,
+                      &quot;40024&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SQL Injection - MsSQL (Time Based)&quot;,
+                      &quot;40027&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Spring4Shell&quot;,
+                      &quot;40045&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;318&quot;,
+                      &quot;2&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Remote Code Execution (React2Shell)&quot;,
+                      &quot;40048&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;154&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Server Side Code Injection&quot;,
+                      &quot;90019&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;203&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Remote OS Command Injection&quot;,
+                      &quot;90020&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;3&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;XPath Injection&quot;,
+                      &quot;90021&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;XML External Entity Attack&quot;,
+                      &quot;90023&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Generic Padding Oracle&quot;,
+                      &quot;90024&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Cloud Metadata Potentially Exposed&quot;,
+                      &quot;90034&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1380&quot;,
+                      &quot;9&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Server Side Template Injection&quot;,
+                      &quot;90035&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1403&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Server Side Template Injection (Blind)&quot;,
+                      &quot;90036&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Remote OS Command Injection (Time Based)&quot;,
+                      &quot;90037&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;2&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Directory Browsing&quot;,
+                      &quot;0&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;152&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Buffer Overflow&quot;,
+                      &quot;30001&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Format String Error&quot;,
+                      &quot;30002&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;CRLF Injection&quot;,
+                      &quot;40003&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Parameter Tampering&quot;,
+                      &quot;40008&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;ELMAH Information Leak&quot;,
+                      &quot;40028&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;153&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Trace.axd Information Leak&quot;,
+                      &quot;40029&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;353&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;.htaccess Information Leak&quot;,
+                      &quot;40032&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;153&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;.env Information Leak&quot;,
+                      &quot;40034&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;161&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Hidden File Finder&quot;,
+                      &quot;40035&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;8343&quot;,
+                      &quot;52&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Spring Actuator Information Leak&quot;,
+                      &quot;40042&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;8755&quot;,
+                      &quot;2&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;XSLT Injection&quot;,
+                      &quot;90017&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;405&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;GET for POST&quot;,
+                      &quot;10058&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;User Agent Fuzzer&quot;,
+                      &quot;10104&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1909&quot;,
+                      &quot;12&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SOAP Action Spoofing&quot;,
+                      &quot;90026&quot;,
+                      &quot;beta&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SOAP XML Injection&quot;,
+                      &quot;90029&quot;,
+                      &quot;beta&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          &quot;path&quot;: &quot;/api/staff/labels&quot;,
+          &quot;scan_id&quot;: &quot;1&quot;,
+          &quot;progress&quot;: {
+            &quot;scanProgress&quot;: [
+              &quot;http://backend:8080&quot;,
+              {
+                &quot;HostProcess&quot;: [
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Path Traversal&quot;,
+                      &quot;6&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Remote File Inclusion&quot;,
+                      &quot;7&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;2&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Source Code Disclosure - /WEB-INF Folder&quot;,
+                      &quot;10045&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;306&quot;,
+                      &quot;2&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Heartbleed OpenSSL Vulnerability&quot;,
+                      &quot;20015&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;404&quot;,
+                      &quot;3&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Source Code Disclosure - CVE-2012-1823&quot;,
+                      &quot;20017&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;359&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Remote Code Execution - CVE-2012-1823&quot;,
+                      &quot;20018&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;304&quot;,
+                      &quot;2&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;External Redirect&quot;,
+                      &quot;20019&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Server Side Include&quot;,
+                      &quot;40009&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Cross Site Scripting (Reflected)&quot;,
+                      &quot;40012&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Cross Site Scripting (Persistent) - Prime&quot;,
+                      &quot;40016&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Cross Site Scripting (Persistent) - Spider&quot;,
+                      &quot;40017&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;160&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Cross Site Scripting (Persistent)&quot;,
+                      &quot;40014&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SQL Injection&quot;,
+                      &quot;40018&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SQL Injection - MySQL (Time Based)&quot;,
+                      &quot;40019&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SQL Injection - Hypersonic SQL (Time Based)&quot;,
+                      &quot;40020&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;5&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SQL Injection - Oracle (Time Based)&quot;,
+                      &quot;40021&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;4&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SQL Injection - PostgreSQL (Time Based)&quot;,
+                      &quot;40022&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SQL Injection - SQLite (Time Based)&quot;,
+                      &quot;40024&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SQL Injection - MsSQL (Time Based)&quot;,
+                      &quot;40027&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Spring4Shell&quot;,
+                      &quot;40045&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;308&quot;,
+                      &quot;2&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Remote Code Execution (React2Shell)&quot;,
+                      &quot;40048&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;152&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Server Side Code Injection&quot;,
+                      &quot;90019&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;201&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Remote OS Command Injection&quot;,
+                      &quot;90020&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;4&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;XPath Injection&quot;,
+                      &quot;90021&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;XML External Entity Attack&quot;,
+                      &quot;90023&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Generic Padding Oracle&quot;,
+                      &quot;90024&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;2&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Cloud Metadata Potentially Exposed&quot;,
+                      &quot;90034&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1365&quot;,
+                      &quot;9&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Server Side Template Injection&quot;,
+                      &quot;90035&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1402&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Server Side Template Injection (Blind)&quot;,
+                      &quot;90036&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;2&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Remote OS Command Injection (Time Based)&quot;,
+                      &quot;90037&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Directory Browsing&quot;,
+                      &quot;0&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;152&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Buffer Overflow&quot;,
+                      &quot;30001&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Format String Error&quot;,
+                      &quot;30002&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;CRLF Injection&quot;,
+                      &quot;40003&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Parameter Tampering&quot;,
+                      &quot;40008&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;ELMAH Information Leak&quot;,
+                      &quot;40028&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;152&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Trace.axd Information Leak&quot;,
+                      &quot;40029&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;355&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;.htaccess Information Leak&quot;,
+                      &quot;40032&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;152&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;.env Information Leak&quot;,
+                      &quot;40034&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;152&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Hidden File Finder&quot;,
+                      &quot;40035&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;7927&quot;,
+                      &quot;52&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;Spring Actuator Information Leak&quot;,
+                      &quot;40042&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;8309&quot;,
+                      &quot;2&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;XSLT Injection&quot;,
+                      &quot;90017&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;402&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;GET for POST&quot;,
+                      &quot;10058&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;User Agent Fuzzer&quot;,
+                      &quot;10104&quot;,
+                      &quot;release&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1886&quot;,
+                      &quot;12&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SOAP Action Spoofing&quot;,
+                      &quot;90026&quot;,
+                      &quot;beta&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  },
+                  {
+                    &quot;Plugin&quot;: [
+                      &quot;SOAP XML Injection&quot;,
+                      &quot;90029&quot;,
+                      &quot;beta&quot;,
+                      &quot;Complete&quot;,
+                      &quot;1&quot;,
+                      &quot;0&quot;,
+                      &quot;0&quot;
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  &quot;zap_version&quot;: &quot;2.16.1&quot;,
+  &quot;image&quot;: &quot;ghcr.io/zaproxy/zaproxy:2.16.1@sha256:7840969c7c9fead565bf9734b12f49f6886db90b1d35b1f74d79710bbd081dab&quot;,
+  &quot;scope&quot;: &quot;Explicit GET allowlist only. No production, login attacks, uploads, writes, M1, Core or AI.&quot;
+}</pre></html>

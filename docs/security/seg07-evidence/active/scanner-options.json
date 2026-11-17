@@ -1,0 +1,7 @@
+{
+  "optionThreadPerHost": 1,
+  "optionHostPerScan": 1,
+  "optionDelayInMs": 150,
+  "optionMaxRuleDurationInMins": 3,
+  "optionMaxScanDurationInMins": 12
+}

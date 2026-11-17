@@ -1,0 +1,34 @@
+name: SEG-07 OWASP ZAP
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [master, dev]
+  push:
+    branches: [master]
+permissions:
+  contents: read
+jobs:
+  zap:
+    name: ZAP ${{ matrix.mode }} (disposable MOCK)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [baseline, active]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Test acceptance gate
+        run: python3 -m unittest discover -s security/seg07 -p 'test_*.py' -v
+      - name: Run isolated scanner
+        run: bash security/seg07/run.sh "${{ matrix.mode }}"
+      - name: Upload sanitized reports only
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: seg07-${{ matrix.mode }}
+          path: security/seg07/reports/${{ matrix.mode }}/
+          if-no-files-found: error
+          retention-days: 14
