@@ -12,6 +12,12 @@ regex = '''(?i)\b[A-Z_]+_PASSWORD\s*=\s*["']([^"'\r\n]{6,})["']'''
 secretGroup = 1
 keywords = ["password"]
 
+[[rules.allowlists]]
+description = "Explicit non-secret marker introduced by the reviewed history redaction"
+regexTarget = "secret"
+regexes = ['''^<REDACTED>$''']
+
+
 # Supplemental rules have new IDs: the legacy rules above/below remain unchanged
 # so their existing commit/path/rule/line fingerprints are stable.
 [[rules]]
@@ -98,6 +104,20 @@ regexTarget = "secret"
 regexes = ['''^(?:\$2a\$10\$anonymous\-hash)$''']
 paths = ['''^src/test/java/com/reclamos/backend/service/TicketServiceTest\.java$''']
 
+[[rules.allowlists]]
+description = "Reviewed historical synthetic fixture or public ZAP finding identifier; exact value and path"
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^(?:login\-rate\-limit\-good\-password)$''']
+paths = ['''^src/test/java/com/reclamos/backend/security/LoginRateLimitSecurityTest\.java$''']
+
+[[rules.allowlists]]
+description = "Reviewed historical synthetic fixture or public ZAP finding identifier; exact value and path"
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^(?:log\-hygiene\-access\-password\-2c70|log\-hygiene\-password\-7f3a9c)$''']
+paths = ['''^src/test/java/com/reclamos/backend/security/LogHygieneIntegrationTest\.java$''']
+
 [[rules]]
 id = "m2-unquoted-config-credential"
 description = "Unquoted credential in environment, properties, YAML or INI-style configuration"
@@ -120,12 +140,25 @@ regexTarget = "secret"
 regexes = ['''^(?:ci\-admin\-password|ci\-agent\-password|ci\-area\-password|ci\-citizen\-password|m2_ci_password)$''']
 paths = ['''^\.github/workflows/ci\.yml$''']
 
+[[rules.allowlists]]
+description = "Reviewed historical synthetic fixture or public ZAP finding identifier; exact value and path"
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^(?:ci\-qa\-admin\-password|ci\-qa\-agent\-password|ci\-qa\-area\-password|ci\-qa\-citizen\-password|m2_qa_password)$''']
+paths = ['''^\.github/workflows/ci\.yml$''']
+
 [[rules]]
 id = "m2-credential-reference-default"
 description = "Credential embedded in an environment-reference default"
 regex = '''(?i)\b[a-z0-9_.-]*(?:password|passwd|pwd|api[_-]?key|client[_-]?secret|jwt[_-]?secret)[a-z0-9_.-]*["']?\s*[:=]\s*["']?\$\{[A-Za-z_][A-Za-z0-9_]*:-?([^?}"'\r\n][^}"'\r\n]{5,})\}'''
 secretGroup = 1
 keywords = ["password", "passwd", "pwd", "key", "secret"]
+
+[[rules.allowlists]]
+description = "Explicit non-secret marker introduced by the reviewed history redaction"
+regexTarget = "secret"
+regexes = ['''^<REDACTED>$''']
+
 [[rules.allowlists]]
 description = "Explicit replacement placeholders only, never literal defaults"
 regexTarget = "secret"
@@ -156,3 +189,10 @@ paths = [
   '''^src/test/java/com/reclamos/backend/service/TrackingCodeCipherTest\.java$''',
   '''^src/test/java/com/reclamos/backend/outbox/AutomaticOutboxPostgresIntegrationTest\.java$''',
 ]
+
+[[rules.allowlists]]
+description = "Reviewed historical synthetic fixture or public ZAP finding identifier; exact value and path"
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^(?:5653a0ce1dc40f691526)$''']
+paths = ['''^docs/security/seg07\-evidence/baseline/report\.json$''']
