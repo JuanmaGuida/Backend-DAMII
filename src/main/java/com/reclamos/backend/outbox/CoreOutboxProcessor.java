@@ -34,7 +34,7 @@ public class CoreOutboxProcessor {
         var event = (policy.automatic() ? events.findNextAutomaticForUpdate(clock.instant())
                 : events.findNextApprovedForUpdate(settings.approvedEventIds(), clock.instant())).orElse(null);
         if (event == null) return false;
-        if (event.getRetryCount() >= settings.maxAttempts()) {
+        if (event.getRetryCount() >= settings.maxAttempts() && !transportFailure(event.getLastFailureCode())) {
             event.setStatus(OutboxStatus.FAILED);
             event.setNextAttemptAt(null);
             event.setLastFailureCode("ATTEMPTS_EXHAUSTED");
@@ -42,7 +42,8 @@ public class CoreOutboxProcessor {
         }
         try {
             byte[] body = validator.prepare(event);
-            event.setRetryCount(event.getRetryCount() + 1);
+            event.setRetryCount(event.getRetryCount() == Integer.MAX_VALUE
+                    ? Integer.MAX_VALUE : event.getRetryCount() + 1);
             publisher.publish(event.getEventId(), event.getEventType(), body);
             event.setStatus(OutboxStatus.PUBLISHED);
             event.setPublishedAt(clock.instant());
@@ -52,7 +53,7 @@ public class CoreOutboxProcessor {
         } catch (PublicationFailure failure) {
             boolean permanent = failure.code() == PublicationFailure.Code.INVALID_PAYLOAD
                     || failure.code() == PublicationFailure.Code.UNVERIFIED_IDENTITY
-                    || event.getRetryCount() >= settings.maxAttempts();
+                    || (!transportFailure(failure.code().name()) && event.getRetryCount() >= settings.maxAttempts());
             event.setStatus(permanent ? OutboxStatus.FAILED : OutboxStatus.PENDING);
             event.setPublishedAt(null);
             event.setNextAttemptAt(permanent ? null : clock.instant().plus(settings.retryDelay(event.getRetryCount())));
@@ -62,5 +63,11 @@ public class CoreOutboxProcessor {
         }
         events.save(event);
         return true;
+    }
+
+    // A transport outage (including an uncertain confirm) must not discard a durable event.
+    // Keep the existing capped backoff and original eventId; receivers deduplicate retries.
+    private static boolean transportFailure(String code) {
+        return "BROKER_UNAVAILABLE".equals(code) || "CONFIRM_TIMEOUT".equals(code) || "INTERRUPTED".equals(code);
     }
 }
