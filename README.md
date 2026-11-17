@@ -699,3 +699,7 @@ Para Backend + PostgreSQL local: completar `.env`, generar la clave persistente 
 la guía enlazada y ejecutar `docker compose up --build --wait --wait-timeout 600`.
 El healthcheck espera HTTP 200 de Actuator. Para Frontend + Backend + PostgreSQL,
 seguir el README de Infra. Ninguna de esas variantes acredita aún G1 completo.
+
+La auditoría de INT-05, la matriz ACK/NACK, el runbook de reprocesamiento y los
+pendientes de homologación con Core están en
+[INT-05 — Inbox y reprocesamiento](docs/integrations/int-05-inbox-y-reprocesamiento.md).

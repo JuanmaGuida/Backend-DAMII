@@ -550,6 +550,120 @@ class CoreInboxPostgresIntegrationTest {
         verify(channel).basicNack(8,false,false); assertThat(inbox.existsById(id(premature))).isFalse();
     }
 
+    @Test void duplicateDeliveryAcksWithoutRewritingReceiptOrRepeatingAnyBusinessEffects() throws Exception {
+        Ticket ticket = ticket(TicketStatus.ROUTED);
+        var event = track(status(ticket.getId(), "RESOLVED")); evidence(event);
+        Channel channel = mock(Channel.class);
+        var consumer = new CoreEventConsumer(mock(ConnectionFactory.class), processor, 1);
+        consumer.receive(channel, mock(Connection.class), delivery(41, false, event));
+        var first = db.queryForMap("SELECT * FROM inbox_events WHERE event_id=?", id(event));
+        consumer.receive(channel, mock(Connection.class), delivery(42, true, event));
+        verify(channel).basicAck(41, false); verify(channel).basicAck(42, false);
+        verify(channel, never()).basicNack(anyLong(), anyBoolean(), anyBoolean());
+        assertThat(db.queryForMap("SELECT * FROM inbox_events WHERE event_id=?", id(event))).isEqualTo(first);
+        for (String table : List.of("ticket_activities", "ticket_messages", "ticket_resolutions", "external_attachment_references"))
+            assertThat(count(table, ticket)).as(table).isEqualTo(1);
+        assertThat(count("outbox_events", ticket)).isZero();
+        // A valid but different body with the same id must not be mistaken for a duplicate.
+        data(event).put("publicMessage", "different synthetic message");
+        consumer.receive(channel, mock(Connection.class), delivery(43, true, event));
+        verify(channel).basicNack(43, false, false);
+        assertThat(db.queryForMap("SELECT * FROM inbox_events WHERE event_id=?", id(event))).isEqualTo(first);
+        assertThat(count("ticket_messages", ticket)).isEqualTo(1);
+    }
+
+    @ParameterizedTest @ValueSource(booleans = {false, true})
+    void consumerWaitsForRealCommitAndNacksIfCommitFails(boolean failCommit) throws Exception {
+        UUID citizen = citizenId(); var event = track(citizen(citizen, "REGISTERED"));
+        Channel channel = mock(Channel.class);
+        // Wrap the real Spring processor in a transaction whose final commit we can pause/fail.
+        CoreInboxProcessor transactionBoundary = mock(CoreInboxProcessor.class);
+        doAnswer(call -> {
+            transactions.executeWithoutResult(tx -> {
+                processor.process(bytes(event));
+                TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                    @Override public void beforeCommit(boolean readOnly) {
+                        try {
+                            verify(channel, never()).basicAck(anyLong(), anyBoolean());
+                            // Independent JDBC connection cannot see the uncommitted receipt.
+                            try (var connection = Objects.requireNonNull(db.getDataSource()).getConnection();
+                                 var query = connection.prepareStatement("SELECT count(*) FROM inbox_events WHERE event_id=?")) {
+                                query.setObject(1, id(event));
+                                try (var rows = query.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isZero(); }
+                            }
+                        } catch (Exception e) { throw new AssertionError(e); }
+                        if (failCommit) throw new DataAccessResourceFailureException("synthetic commit failure");
+                    }
+                    @Override public void afterCommit() {
+                        try { verify(channel, never()).basicAck(anyLong(), anyBoolean()); }
+                        catch (Exception e) { throw new AssertionError(e); }
+                    }
+                });
+            });
+            return null;
+        }).when(transactionBoundary).process(any());
+        new CoreEventConsumer(mock(ConnectionFactory.class), transactionBoundary, 1)
+                .receive(channel, mock(Connection.class), delivery(44, false, event));
+        if (failCommit) {
+            verify(channel).basicNack(44, false, false); verify(channel, never()).basicAck(anyLong(), anyBoolean());
+            assertThat(inbox.existsById(id(event))).isFalse(); assertThat(users.findByActorId(citizen)).isEmpty();
+            new CoreEventConsumer(mock(ConnectionFactory.class), processor, 1)
+                    .receive(channel, mock(Connection.class), delivery(45, true, event));
+            verify(channel).basicAck(45, false);
+        } else verify(channel).basicAck(44, false);
+        assertThat(inbox.existsById(id(event))).isTrue(); assertThat(users.findByActorId(citizen)).isPresent();
+    }
+
+    @Test void invalidEnvelopeNacksWithoutReceiptAndTerminalRejectionAuditsOnlySafeMetadata() throws Exception {
+        Ticket ticket = ticket(TicketStatus.ROUTED); var event = track(status(ticket.getId(), "RESOLVED"));
+        evidence(event); String secret = "private-message-token";
+        data(event).put("internalMessage", secret);
+        ((ObjectNode)data(event).path("attachments").get(0)).put("url", "file:///private-address?token=" + secret);
+        var logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(CoreInboxProcessor.class);
+        var capture = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
+        var consumerLogger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(CoreEventConsumer.class);
+        capture.start(); logger.addAppender(capture); consumerLogger.addAppender(capture);
+        Channel channel = mock(Channel.class);
+        var consumer = new CoreEventConsumer(mock(ConnectionFactory.class), processor, 1);
+        try {
+            consumer.receive(channel, mock(Connection.class), delivery(46, false, event));
+            verify(channel).basicAck(46, false);
+            var receipt = inbox.findById(id(event)).orElseThrow();
+            assertThat(receipt.getStatus()).isEqualTo(InboxStatus.FAILED);
+            assertThat(receipt.getError()).isEqualTo("REJECTED_BUSINESS_RULE");
+            assertThat(receipt.getPayload()).containsOnlyKeys("sourceModule", "occurredAt", "disposition");
+            assertThat(receipt.toString()).doesNotContain(secret, "file:///", "internalMessage");
+            assertThat(count("ticket_messages", ticket)).isZero();
+            assertThat(count("ticket_resolutions", ticket)).isZero();
+            assertThat(count("external_attachment_references", ticket)).isZero();
+            consumer.receive(channel, mock(Connection.class), delivery(47, true, event));
+            verify(channel).basicAck(47, false);
+            event.put("eventVersion", "unsupported");
+            consumer.receive(channel, mock(Connection.class), delivery(48, false, event));
+            verify(channel).basicNack(48, false, false);
+            var malformed = track(status(ticket.getId(), "STARTED")); UUID malformedId = id(malformed);
+            malformed.put("eventId", "invalid");
+            consumer.receive(channel, mock(Connection.class), delivery(49, false, malformed));
+            verify(channel).basicNack(49, false, false);
+            assertThat(inbox.existsById(malformedId)).isFalse();
+            UUID citizen = citizenId(); var projected = track(citizen(citizen, "ADDRESS_UPDATED"));
+            details(projected).put("dni", secret).put("cuil", secret).putObject("newAddress").put("street", secret);
+            consumer.receive(channel, mock(Connection.class), delivery(50, false, projected));
+            verify(channel).basicAck(50, false);
+            var projectedReceipt = inbox.findById(id(projected)).orElseThrow();
+            assertThat(projectedReceipt.getPayload()).containsOnlyKeys("sourceModule", "occurredAt", "correlationId", "causationId", "disposition");
+            assertThat(projectedReceipt.toString()).doesNotContain(secret, "dni", "cuil", "street");
+            assertThat(capture.list).isNotEmpty().allSatisfy(log -> {
+                assertThat(log.getFormattedMessage()).doesNotContain(secret, "file:///", "internalMessage");
+                assertThat(log.getThrowableProxy()).isNull();
+            });
+        } finally { logger.detachAppender(capture); consumerLogger.detachAppender(capture); capture.stop(); }
+    }
+
+    private Delivery delivery(long tag, boolean redelivered, ObjectNode event) {
+        return new Delivery(new Envelope(tag, redelivered, "", ""), new AMQP.BasicProperties(), bytes(event));
+    }
+
     @ParameterizedTest @ValueSource(strings={"REGISTERED","BLOCKED","DECEASED","ADDRESS_UPDATED"})
     void citizenVariantsCanArriveBeforeFirstLoginWithoutFabricatedNamesOrStoredPii(String type) {
         UUID citizen=citizenId(); var event=track(citizen(citizen,type));
