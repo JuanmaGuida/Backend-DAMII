@@ -78,6 +78,14 @@ public class GlobalExceptionHandler {
                 .body(new ApiErrorResponse(TooManyTrackingAttemptsException.CODE, exception.getMessage()));
     }
 
+    @ExceptionHandler(TooManyLoginAttemptsException.class)
+    public ResponseEntity<ApiErrorResponse> handleTooManyLoginAttempts(TooManyLoginAttemptsException exception) {
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header(HttpHeaders.RETRY_AFTER, String.valueOf(exception.getRetryAfterSeconds()))
+                .cacheControl(CacheControl.noStore())
+                .body(new ApiErrorResponse(TooManyLoginAttemptsException.CODE, exception.getMessage()));
+    }
+
     @ExceptionHandler(com.reclamos.backend.ai.TooManyAiRequestsException.class)
     public ResponseEntity<ApiErrorResponse> handleTooManyAiRequests(
             com.reclamos.backend.ai.TooManyAiRequestsException exception) {

@@ -96,6 +96,21 @@ paths:
                 message: Usuario o contraseña inválidos
         '415':
           $ref: '#/components/responses/UnsupportedMediaType'
+        '429':
+          description: |
+            Se superó el máximo de intentos fallidos desde el mismo origen o contra el mismo usuario.
+            No se consultan las credenciales; reintentar una vez transcurrido Retry-After.
+          headers:
+            Retry-After:
+              description: Segundos hasta que se puede volver a intentar.
+              schema: { type: integer, minimum: 1, example: 900 }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+              example:
+                code: TOO_MANY_ATTEMPTS
+                message: Demasiados intentos. Intentá de nuevo más tarde.
   /api/auth/me:
     get:
       tags: [Authentication]
