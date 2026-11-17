@@ -1,0 +1,245 @@
+{
+  "status": "READY_FOR_PUBLICATION",
+  "local_branch": "feature/seg-07-clean",
+  "base": "b236690b75bde43ba311f1de79f572b1eac77f5b",
+  "team_cleanup_confirmed_by_user": true,
+  "new_branch_contains_old_commits_as_ancestors": false,
+  "forbidden_ancestors_checked": [
+    "12b397a6f2644a312ff46c2e072b0a9ffbadcd72",
+    "9c0422a7eb33679d2d96c369fcea879ab86e5964"
+  ],
+  "seg07_tests_passed": 15,
+  "clean_ci_fetch_refspecs": [
+    "+refs/heads/*:refs/remotes/origin/*",
+    "+refs/tags/*:refs/tags/*"
+  ],
+  "refs": [
+    "b236690b75bde43ba311f1de79f572b1eac77f5b refs/heads/feature/seg-07-clean",
+    "b236690b75bde43ba311f1de79f572b1eac77f5b refs/heads/master",
+    "b236690b75bde43ba311f1de79f572b1eac77f5b refs/remotes/origin/HEAD",
+    "369829f1f9dd10060f8ebce5f64952eb40e2c3f6 refs/remotes/origin/chore/adm-12-mailmap",
+    "e6a8d0c4c13d0e7b2e40958b935bb58c49ca41e5 refs/remotes/origin/chore/docker-backend",
+    "fecbd3f89621debae75f925e29dde2df9ce0c503 refs/remotes/origin/chore/lightsail-deploy-readiness",
+    "3ac2c8f5a65324502b18a78f8e05237dab1360dc refs/remotes/origin/dev",
+    "af7e42da96c9477090968fa4bd0afeb434e56108 refs/remotes/origin/docs/doc-04-adrs-patrones-20261116",
+    "83410392874d02caf02e753dffbb353b9cf26388 refs/remotes/origin/feature-nico",
+    "1deb761f7dbc81edbd033cea4b147a5a14874b60 refs/remotes/origin/feature/DDA2-164-information-request",
+    "7799ac47aed8e65ea281e1fcee82dd88032bdb39 refs/remotes/origin/feature/DDA2-34-anonymous-tickets",
+    "afc001b9e5c415b9d69ff2ebcd8762985464443c refs/remotes/origin/feature/admin-agents-directory",
+    "83a339b8b8faf2744002ed29b38d4bc28df774fe refs/remotes/origin/feature/messaging-p2p-lab",
+    "c2aaf485f109763b8850f7a948dfb2a36926505d refs/remotes/origin/feature/mock-m1-identity",
+    "56e2f1b2a31f31387c6f83624c2141cc875dbdc6 refs/remotes/origin/feature/pre-openapi-stabilization",
+    "bd188ca0439e5bf449503b78b1a35060b287d665 refs/remotes/origin/feature/simulador-resolucion-escalamiento-sla",
+    "b810cd7233ba64355a0af18e3c3c38a920a3506d refs/remotes/origin/feature/sla-escalation",
+    "8014107310254cc2eb0405d0b09f64bd34876bd7 refs/remotes/origin/fix/fundamentos-lifecycle",
+    "78ff919453f4be55f1ba53047a6d96507114fbf0 refs/remotes/origin/fix/ticket-chat-authors-and-info-requests",
+    "b236690b75bde43ba311f1de79f572b1eac77f5b refs/remotes/origin/master"
+  ],
+  "gitleaks_config_modified": false,
+  "historical_inventory_modified": false,
+  "commit_created": false,
+  "pushed": false,
+  "pull_request_created": false,
+  "zap_rerun": false,
+  "previous_diagnostic": {
+    "status": "BLOCKED_NO_PUBLICATION",
+    "ci_refs_scan": {
+      "version": "8.30.1",
+      "commit": "b236690b75bde43ba311f1de79f572b1eac77f5b",
+      "commits": 222,
+      "working_files": 789,
+      "history": [
+        {
+          "RuleID": "m2-unquoted-config-credential",
+          "File": ".github/workflows/ci.yml",
+          "StartLine": 263,
+          "EndLine": 263,
+          "Commit": "4b138575615c49016d24041022bc8069dc9fe493"
+        },
+        {
+          "RuleID": "m2-unquoted-config-credential",
+          "File": ".github/workflows/ci.yml",
+          "StartLine": 275,
+          "EndLine": 275,
+          "Commit": "4b138575615c49016d24041022bc8069dc9fe493"
+        },
+        {
+          "RuleID": "m2-unquoted-config-credential",
+          "File": ".github/workflows/ci.yml",
+          "StartLine": 276,
+          "EndLine": 276,
+          "Commit": "4b138575615c49016d24041022bc8069dc9fe493"
+        },
+        {
+          "RuleID": "m2-unquoted-config-credential",
+          "File": ".github/workflows/ci.yml",
+          "StartLine": 281,
+          "EndLine": 281,
+          "Commit": "4b138575615c49016d24041022bc8069dc9fe493"
+        },
+        {
+          "RuleID": "m2-unquoted-config-credential",
+          "File": ".github/workflows/ci.yml",
+          "StartLine": 282,
+          "EndLine": 282,
+          "Commit": "4b138575615c49016d24041022bc8069dc9fe493"
+        },
+        {
+          "RuleID": "m2-unquoted-config-credential",
+          "File": ".github/workflows/ci.yml",
+          "StartLine": 283,
+          "EndLine": 283,
+          "Commit": "4b138575615c49016d24041022bc8069dc9fe493"
+        },
+        {
+          "RuleID": "m2-unquoted-config-credential",
+          "File": ".github/workflows/ci.yml",
+          "StartLine": 284,
+          "EndLine": 284,
+          "Commit": "4b138575615c49016d24041022bc8069dc9fe493"
+        },
+        {
+          "RuleID": "generic-api-key",
+          "File": "docs/security/seg07-evidence/baseline/report.json",
+          "StartLine": 187,
+          "EndLine": 187,
+          "Commit": "12b397a6f2644a312ff46c2e072b0a9ffbadcd72"
+        }
+      ],
+      "history_findings_total": 93,
+      "working_tree": [],
+      "historical_exceptions": {
+        "approved": 85,
+        "matched": 85
+      },
+      "status": "findings",
+      "detector_regressions": "passed",
+      "seconds": 17.31
+    },
+    "additional_old_pr_merge_scan": {
+      "version": "8.30.1",
+      "commit": "b236690b75bde43ba311f1de79f572b1eac77f5b",
+      "commits": 223,
+      "working_files": 787,
+      "history": [
+        {
+          "RuleID": "m2-unquoted-config-credential",
+          "File": ".github/workflows/ci.yml",
+          "StartLine": 263,
+          "EndLine": 263,
+          "Commit": "4b138575615c49016d24041022bc8069dc9fe493"
+        },
+        {
+          "RuleID": "m2-unquoted-config-credential",
+          "File": ".github/workflows/ci.yml",
+          "StartLine": 275,
+          "EndLine": 275,
+          "Commit": "4b138575615c49016d24041022bc8069dc9fe493"
+        },
+        {
+          "RuleID": "m2-unquoted-config-credential",
+          "File": ".github/workflows/ci.yml",
+          "StartLine": 276,
+          "EndLine": 276,
+          "Commit": "4b138575615c49016d24041022bc8069dc9fe493"
+        },
+        {
+          "RuleID": "m2-unquoted-config-credential",
+          "File": ".github/workflows/ci.yml",
+          "StartLine": 281,
+          "EndLine": 281,
+          "Commit": "4b138575615c49016d24041022bc8069dc9fe493"
+        },
+        {
+          "RuleID": "m2-unquoted-config-credential",
+          "File": ".github/workflows/ci.yml",
+          "StartLine": 282,
+          "EndLine": 282,
+          "Commit": "4b138575615c49016d24041022bc8069dc9fe493"
+        },
+        {
+          "RuleID": "m2-unquoted-config-credential",
+          "File": ".github/workflows/ci.yml",
+          "StartLine": 283,
+          "EndLine": 283,
+          "Commit": "4b138575615c49016d24041022bc8069dc9fe493"
+        },
+        {
+          "RuleID": "m2-unquoted-config-credential",
+          "File": ".github/workflows/ci.yml",
+          "StartLine": 284,
+          "EndLine": 284,
+          "Commit": "4b138575615c49016d24041022bc8069dc9fe493"
+        },
+        {
+          "RuleID": "generic-api-key",
+          "File": "docs/security/seg07-evidence/baseline/report.json",
+          "StartLine": 187,
+          "EndLine": 187,
+          "Commit": "12b397a6f2644a312ff46c2e072b0a9ffbadcd72"
+        },
+        {
+          "RuleID": "generic-api-key",
+          "File": "docs/security/seg07-evidence/baseline/report.json",
+          "StartLine": 187,
+          "EndLine": 187,
+          "Commit": "9c0422a7eb33679d2d96c369fcea879ab86e5964"
+        }
+      ],
+      "history_findings_total": 94,
+      "working_tree": [],
+      "historical_exceptions": {
+        "approved": 85,
+        "matched": 85
+      },
+      "status": "findings",
+      "detector_regressions": "passed",
+      "seconds": 17.39
+    },
+    "refs": [
+      "b236690b75bde43ba311f1de79f572b1eac77f5b refs/heads/feature/seg-07-clean",
+      "b236690b75bde43ba311f1de79f572b1eac77f5b refs/heads/master",
+      "b236690b75bde43ba311f1de79f572b1eac77f5b refs/remotes/origin/HEAD",
+      "369829f1f9dd10060f8ebce5f64952eb40e2c3f6 refs/remotes/origin/chore/adm-12-mailmap",
+      "e6a8d0c4c13d0e7b2e40958b935bb58c49ca41e5 refs/remotes/origin/chore/docker-backend",
+      "fecbd3f89621debae75f925e29dde2df9ce0c503 refs/remotes/origin/chore/lightsail-deploy-readiness",
+      "3ac2c8f5a65324502b18a78f8e05237dab1360dc refs/remotes/origin/dev",
+      "af7e42da96c9477090968fa4bd0afeb434e56108 refs/remotes/origin/docs/doc-04-adrs-patrones-20261116",
+      "83410392874d02caf02e753dffbb353b9cf26388 refs/remotes/origin/feature-nico",
+      "1deb761f7dbc81edbd033cea4b147a5a14874b60 refs/remotes/origin/feature/DDA2-164-information-request",
+      "7799ac47aed8e65ea281e1fcee82dd88032bdb39 refs/remotes/origin/feature/DDA2-34-anonymous-tickets",
+      "afc001b9e5c415b9d69ff2ebcd8762985464443c refs/remotes/origin/feature/admin-agents-directory",
+      "83a339b8b8faf2744002ed29b38d4bc28df774fe refs/remotes/origin/feature/messaging-p2p-lab",
+      "c2aaf485f109763b8850f7a948dfb2a36926505d refs/remotes/origin/feature/mock-m1-identity",
+      "56e2f1b2a31f31387c6f83624c2141cc875dbdc6 refs/remotes/origin/feature/pre-openapi-stabilization",
+      "12b397a6f2644a312ff46c2e072b0a9ffbadcd72 refs/remotes/origin/feature/seg-07",
+      "bd188ca0439e5bf449503b78b1a35060b287d665 refs/remotes/origin/feature/simulador-resolucion-escalamiento-sla",
+      "b810cd7233ba64355a0af18e3c3c38a920a3506d refs/remotes/origin/feature/sla-escalation",
+      "8014107310254cc2eb0405d0b09f64bd34876bd7 refs/remotes/origin/fix/fundamentos-lifecycle",
+      "78ff919453f4be55f1ba53047a6d96507114fbf0 refs/remotes/origin/fix/ticket-chat-authors-and-info-requests",
+      "b236690b75bde43ba311f1de79f572b1eac77f5b refs/remotes/origin/master",
+      "4b138575615c49016d24041022bc8069dc9fe493 refs/remotes/origin/qa/entrega4-testing-cierre"
+    ]
+  },
+  "old_pr_head_still_advertised_but_not_fetched": true,
+  "publication_authorized_by_user": true,
+  "scope": "Current heads and tags fetched by CI; prior PR refs are not fetched",
+  "ci_refs_scan": {
+    "version": "8.30.1",
+    "commit": "b236690b75bde43ba311f1de79f572b1eac77f5b",
+    "commits": 220,
+    "working_files": 789,
+    "history": [],
+    "history_findings_total": 85,
+    "working_tree": [],
+    "historical_exceptions": {
+      "approved": 85,
+      "matched": 85
+    },
+    "status": "clean",
+    "detector_regressions": "passed",
+    "seconds": 17.86
+  },
+  "ci_fetched_refs_reach_old_findings": false,
+  "evidence_phase": "Before commit and publication"
+}
