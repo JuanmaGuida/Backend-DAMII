@@ -22,22 +22,12 @@ Guardar una copia privada fuera del host, protegida por el mecanismo habitual de
 Quien pueda leer entorno Docker/host y base puede descifrar: restringir acceso a ambos.
 No utilizar la clave sintética del workflow o de tests en DEV persistente.
 
-En Windows, se puede generar un archivo privado nuevo **fuera del repositorio** sin imprimir la clave:
-
-```powershell
-$keyFile = Join-Path $env:USERPROFILE 'm2-tracking-private.env'
-if (Test-Path -LiteralPath $keyFile) { throw 'El archivo ya existe; conservar la clave anterior' }
-$keyBytes = [byte[]]::new(32)
-[System.Security.Cryptography.RandomNumberGenerator]::Fill($keyBytes)
-$keyText = [Convert]::ToBase64String($keyBytes)
-[System.IO.File]::WriteAllText($keyFile, "TRACKING_CODE_ENCRYPTION_KEY_BASE64=$keyText`nTRACKING_CODE_ENCRYPTION_KEY_ID=dev-v1`n")
-[Array]::Clear($keyBytes, 0, $keyBytes.Length)
-$keyText = $null
-```
-
-Aplicar una ACL privada al archivo y trasladar sus valores a la configuración privada del IDE/proceso
-o al `.env` ignorado; no imprimirlo, copiarlo a un informe ni subirlo como artefacto. No usar ese
-archivo como `build-arg`, variable Vite, contenido de imagen o `images.env`.
+Para Windows / PowerShell, seguir el [Quick Start único del README](../README.md#3-generar-secretos-locales-una-sola-vez):
+copia la plantilla al `.env` ignorado, restringe su ACL y genera clave, ID y passwords locales
+sin imprimirlos. El bloque rechaza cualquier configuración ya inicializada sin modificarla.
+No repetirlo para reinicios, recreaciones ni restauraciones; conservar el material original.
+Para Maven/IDE, transferir los valores mediante configuración privada del proceso.
+No usar `.env` como `build-arg`, variable Vite, contenido de imagen ni `images.env`.
 En Lightsail seguir la guía específica de Infra; no ejecutar la preparación Windows en el servidor.
 
 ## Persistencia y formato v1
