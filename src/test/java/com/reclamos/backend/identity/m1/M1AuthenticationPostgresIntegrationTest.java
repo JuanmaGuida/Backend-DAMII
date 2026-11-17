@@ -336,6 +336,54 @@ class M1AuthenticationPostgresIntegrationTest {
                 .andExpect(status().isForbidden());
     }
 
+    /**
+     * DDA2-256 (SEG-03): un JWT inválido nunca autentica, ni siquiera contra endpoints distintos. Se prueban
+     * por HTTP (la cadena de filtros completa) las cuatro variantes del criterio, más una firma de otra clave.
+     * El control positivo evita que el test pase porque el usuario no existe.
+     */
+    @Test
+    void invalidJwtsAreAlwaysRejectedWith401OnProtectedEndpoints() throws Exception {
+        provision(M1TestTokens.CITIZEN, IdentityActorType.CIUDADANO, ModuleRole.CITIZEN);
+        String valid = citizenToken();
+        mvc.perform(get("/api/auth/me").header(HttpHeaders.AUTHORIZATION, "Bearer " + valid))
+                .andExpect(status().isOk());
+
+        java.util.Map<String, String> invalid = new java.util.LinkedHashMap<>();
+        invalid.put("expired", M1TestTokens.token(M1TestTokens.claims(M1TestTokens.CITIZEN,
+                IdentityActorType.CIUDADANO, Instant.now().minusSeconds(3600))));
+        invalid.put("tampered signature", valid.substring(0, valid.lastIndexOf('.') + 1) + "invalidsignature");
+        invalid.put("alg=none", unsignedToken());
+        java.util.Map<String, Object> otherIssuer = M1TestTokens.claims(M1TestTokens.CITIZEN,
+                IdentityActorType.CIUDADANO, Instant.now());
+        otherIssuer.put("iss", "evil-issuer");
+        invalid.put("different issuer", M1TestTokens.token(otherIssuer));
+        invalid.put("signed with another key", M1TestTokens.token(
+                M1TestTokens.claims(M1TestTokens.CITIZEN, IdentityActorType.CIUDADANO, Instant.now()),
+                new javax.crypto.spec.SecretKeySpec(new byte[64], "HmacSHA256")));
+
+        for (java.util.Map.Entry<String, String> entry : invalid.entrySet()) {
+            for (String path : new String[]{"/api/auth/me", "/api/me/tickets", "/api/tickets/" + UUID.randomUUID()}) {
+                mvc.perform(get(path).header(HttpHeaders.AUTHORIZATION, "Bearer " + entry.getValue()))
+                        .andExpect(status().isUnauthorized())
+                        .andExpect(header().doesNotExist(HttpHeaders.SET_COOKIE))
+                        .andExpect(content().string(not(containsString(entry.getValue()))));
+            }
+        }
+    }
+
+    /** Token sin firma, armado a mano: encabezado {"alg":"none"} y segmento de firma vacío. */
+    private static String unsignedToken() {
+        java.util.Base64.Encoder encoder = java.util.Base64.getUrlEncoder().withoutPadding();
+        long now = Instant.now().getEpochSecond();
+        String header = encoder.encodeToString("{\"alg\":\"none\",\"typ\":\"JWT\"}"
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        String payload = encoder.encodeToString(("{\"iss\":\"modulo1-ciudadanos\",\"sub\":\"14\",\"typ\":\"access\","
+                + "\"iat\":" + now + ",\"exp\":" + (now + 900) + ",\"actorId\":\"" + M1TestTokens.CITIZEN
+                + "\",\"actorType\":\"CIUDADANO\",\"citizenId\":\"" + M1TestTokens.CITIZEN
+                + "\",\"rol\":\"ADMINISTRATIVO\"}").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        return header + "." + payload + ".";
+    }
+
     private ModuleUser provision(UUID id, IdentityActorType type, ModuleRole role) {
         return provision(id, type, role, IdentitySource.M1);
     }

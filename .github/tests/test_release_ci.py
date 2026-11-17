@@ -203,11 +203,47 @@ class ReleasePolicyTests(unittest.TestCase):
 
 
 class SecretOutputTests(unittest.TestCase):
-    def test_exact_approved_inventory_has_82_commit_specific_fingerprints(self):
+    # Las 82 excepciones originales: su huella no cambia, de modo que ninguna se puede agregar,
+    # quitar ni alterar sin que este test falle.
+    ORIGINAL_82_DIGEST = '47006e4bf02dd965bc3a9c695c149d1135cba4d0e3a8942ee4b419060043b2e1'
+    # Tres fixtures sintéticas de tests del commit 25d9231 (DDA2-254/256/259/262/263). Ya no existen
+    # en el árbol actual (ahora se generan en cada corrida); sólo quedan en el historial de Git.
+    SYNTHETIC_TEST_FIXTURES = frozenset({
+        '25d92317c2d0bbf4b52a465a5d1bb4961ecaf7c6:src/test/java/com/reclamos/backend/security/'
+        'LogHygieneIntegrationTest.java:m2-quoted-credential-assignment:101',
+        '25d92317c2d0bbf4b52a465a5d1bb4961ecaf7c6:src/test/java/com/reclamos/backend/security/'
+        'LogHygieneIntegrationTest.java:m2-quoted-credential-assignment:104',
+        '25d92317c2d0bbf4b52a465a5d1bb4961ecaf7c6:src/test/java/com/reclamos/backend/security/'
+        'LoginRateLimitSecurityTest.java:m2-quoted-credential-assignment:50',
+    })
+    APPROVED_85_DIGEST = 'd1a3b0a8159c8bd30aa228cb45aa9e9725c62bf5e3b2085a3122047b8f7852b0'
+
+    @staticmethod
+    def _digest(fingerprints):
+        return hashlib.sha256('\n'.join(sorted(fingerprints)).encode()).hexdigest()
+
+    def test_exact_approved_inventory_has_85_commit_specific_fingerprints(self):
         approved = SCANNER.load_exceptions(ROOT)
-        self.assertEqual(len(approved), 82)
-        digest = hashlib.sha256('\n'.join(sorted(approved)).encode()).hexdigest()
-        self.assertEqual(digest, '47006e4bf02dd965bc3a9c695c149d1135cba4d0e3a8942ee4b419060043b2e1')
+        self.assertEqual(len(approved), 85)
+        self.assertEqual(self._digest(approved), self.APPROVED_85_DIGEST)
+
+    def test_original_82_fingerprints_are_unchanged(self):
+        approved = SCANNER.load_exceptions(ROOT)
+        # Las tres nuevas están presentes y son exactamente las revisadas...
+        self.assertTrue(self.SYNTHETIC_TEST_FIXTURES <= approved)
+        self.assertEqual(len(self.SYNTHETIC_TEST_FIXTURES), 3)
+        # ...y lo que queda al sacarlas es el inventario original, intacto.
+        original = approved - self.SYNTHETIC_TEST_FIXTURES
+        self.assertEqual(len(original), 82)
+        self.assertEqual(self._digest(original), self.ORIGINAL_82_DIGEST)
+
+    def test_new_exceptions_are_only_the_reviewed_synthetic_test_fixtures(self):
+        for fingerprint in self.SYNTHETIC_TEST_FIXTURES:
+            commit, path, rule, line = fingerprint.split(':')
+            self.assertEqual(commit, '25d92317c2d0bbf4b52a465a5d1bb4961ecaf7c6')
+            self.assertEqual(rule, 'm2-quoted-credential-assignment')
+            self.assertTrue(path.startswith('src/test/java/com/reclamos/backend/security/'))
+            self.assertTrue(path.endswith('Test.java'))
 
     def test_broad_or_malformed_inventory_entries_are_rejected(self):
         good = 'a' * 40 + ':README.md:m2-documented-password:1'

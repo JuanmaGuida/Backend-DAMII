@@ -1,6 +1,7 @@
 package com.reclamos.backend.config;
 
 import com.reclamos.backend.dto.error.ApiErrorResponse;
+import com.reclamos.backend.security.ApiContentSecurityPolicyHeaderWriter;
 import com.reclamos.backend.security.BearerTokenAuthenticationFilter;
 import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletResponse;
@@ -10,8 +11,11 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import tools.jackson.databind.ObjectMapper;
@@ -31,6 +35,20 @@ public class SecurityConfiguration {
         return new BCryptPasswordEncoder();
     }
 
+    /**
+     * M2 no tiene usuarios locales: la identidad viene del proveedor (M1 o el mock de DEV) y se
+     * valida en {@link BearerTokenAuthenticationFilter}. Declarar este bean impide que Spring Boot
+     * autoconfigure su usuario en memoria con una contraseña generada, que además imprime en el log
+     * ("Using generated security password"). La cátedra aclaró que imprimir credenciales generadas
+     * incumple el Eje D (DDA2-263, SEG-10). Con form login y HTTP Basic deshabilitados, nadie lo invoca.
+     */
+    @Bean
+    UserDetailsService noLocalUsers() {
+        return username -> {
+            throw new UsernameNotFoundException("M2 no define usuarios locales");
+        };
+    }
+
     @Bean
     SecurityFilterChain securityFilterChain(
             HttpSecurity http,
@@ -43,6 +61,21 @@ public class SecurityConfiguration {
                 .httpBasic(basic -> basic.disable())
                 .logout(logout -> logout.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                // DDA2-262 (SEG-09). X-Content-Type-Options: nosniff, X-Frame-Options: DENY y Cache-Control
+                // los aporta Spring Security por defecto; acá se agregan HSTS, Referrer-Policy y CSP.
+                // CORS: no se habilita ningún origen cruzado (el front llega por el mismo origen vía proxy),
+                // así que nunca hay Access-Control-Allow-Origin ni comodín con credenciales.
+                .headers(headers -> headers
+                        .httpStrictTransportSecurity(hsts -> hsts
+                                .maxAgeInSeconds(31_536_000)
+                                .includeSubDomains(true)
+                                // El backend queda detrás de un proxy que termina TLS y le habla por HTTP; por
+                                // defecto Spring sólo emite HSTS sobre requests seguros y nunca lo enviaría.
+                                // Los navegadores ignoran HSTS recibido por HTTP, así que emitirlo siempre es inocuo.
+                                .requestMatcher(request -> true))
+                        .referrerPolicy(referrer -> referrer
+                                .policy(ReferrerPolicyHeaderWriter.ReferrerPolicy.NO_REFERRER))
+                        .addHeaderWriter(new ApiContentSecurityPolicyHeaderWriter()))
                 .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint((request, response, exception) -> writeError(
                                 response, objectMapper, HttpServletResponse.SC_UNAUTHORIZED, UNAUTHORIZED_RESPONSE))
