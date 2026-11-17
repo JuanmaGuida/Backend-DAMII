@@ -1,0 +1,18 @@
+{
+  "source": "src/main/resources/static/openapi.yaml",
+  "openapi": "3.0.3",
+  "path_count": 83,
+  "operation_count": 95,
+  "selected_operations": {
+    "POST /api/auth/login": true,
+    "GET /api/auth/me": true,
+    "GET /api/catalog/categories": true,
+    "GET /api/catalog/neighborhoods": true,
+    "GET /api/me/tickets": true,
+    "GET /api/tickets": true,
+    "GET /api/staff/tickets/area": true,
+    "GET /api/staff/labels": true,
+    "GET /api/admin/agents": true
+  },
+  "source_commit": "b236690b75bde43ba311f1de79f572b1eac77f5b"
+}

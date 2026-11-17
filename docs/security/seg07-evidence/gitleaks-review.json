@@ -1,0 +1,34 @@
+{
+  "status": "HISTORICAL_REVIEW_SUPERSEDED_BY_CLEAN_BRANCH",
+  "classification": "false_positive",
+  "cause": "Deterministic truncated SHA-256 of public ZAP alert identity, not authentication material. Original digest preserved in colon-separated public identifier.",
+  "proposed_historical_fingerprints": [
+    "12b397a6f2644a312ff46c2e072b0a9ffbadcd72:docs/security/seg07-evidence/baseline/report.json:generic-api-key:187",
+    "9c0422a7eb33679d2d96c369fcea879ab86e5964:docs/security/seg07-evidence/baseline/report.json:generic-api-key:187"
+  ],
+  "active_exception_inventory_modified": false,
+  "existing_exceptions": {
+    "approved": 85,
+    "matched": 85
+  },
+  "working_tree_findings": 0,
+  "historical_pending": 2,
+  "detector_regressions": "passed",
+  "gitleaks_version": "8.30.1",
+  "history_rewritten": false,
+  "conditional_validation": {
+    "disposable_copy_only": true,
+    "active_inventory_unchanged": true,
+    "proposed_two_entries_added_only_in_disposable_copy": true,
+    "status": "clean",
+    "historical_exceptions": {
+      "approved": 87,
+      "matched": 87
+    },
+    "historical_pending": 0,
+    "working_tree_findings": 0,
+    "detector_regressions": "passed"
+  },
+  "proposals_not_applied": true,
+  "current_gate": "See gitleaks-validation.json"
+}

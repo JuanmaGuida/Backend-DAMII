@@ -1,0 +1,11 @@
+{
+  "base": "b236690b75bde43ba311f1de79f572b1eac77f5b",
+  "tests_passed": 13,
+  "baseline_command": "PASS exit 0",
+  "active_command": "PASS exit 0",
+  "active_bearer_requests_to_backend": 1062,
+  "four_roles_verified": true,
+  "workflow_yaml": "PASS",
+  "github_actions_executed": false,
+  "overall_seg07": "PASS within documented JSON API scope"
+}

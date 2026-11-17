@@ -1,0 +1,153 @@
+{
+  "status": "PASS",
+  "complete": true,
+  "counts_alert_instances": {
+    "High": 0,
+    "Medium": 2,
+    "Low": 66,
+    "Informational": 3
+  },
+  "counts_unique_rules": {
+    "High": 0,
+    "Medium": 1,
+    "Low": 1,
+    "Informational": 2
+  },
+  "pending_findings": [],
+  "coverage": [
+    {
+      "method": "GET",
+      "path": "/actuator/health",
+      "status": 200,
+      "response_headers": {
+        "Content-Type": "application/vnd.spring-boot.actuator.v3+json",
+        "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+        "X-Frame-Options": "DENY",
+        "X-Content-Type-Options": "nosniff",
+        "Cache-Control": "no-cache, no-store, max-age=0, must-revalidate",
+        "Strict-Transport-Security": "max-age=31536000 ; includeSubDomains"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/catalog/categories",
+      "status": 200,
+      "response_headers": {
+        "Content-Type": "application/json",
+        "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+        "X-Frame-Options": "DENY",
+        "X-Content-Type-Options": "nosniff",
+        "Cache-Control": "no-cache, no-store, max-age=0, must-revalidate",
+        "Strict-Transport-Security": "max-age=31536000 ; includeSubDomains"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/catalog/neighborhoods",
+      "status": 200,
+      "response_headers": {
+        "Content-Type": "application/json",
+        "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+        "X-Frame-Options": "DENY",
+        "X-Content-Type-Options": "nosniff",
+        "Cache-Control": "no-cache, no-store, max-age=0, must-revalidate",
+        "Strict-Transport-Security": "max-age=31536000 ; includeSubDomains"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/openapi.yaml",
+      "status": 200,
+      "response_headers": {
+        "Content-Type": "application/octet-stream",
+        "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+        "X-Frame-Options": "DENY",
+        "X-Content-Type-Options": "nosniff",
+        "Cache-Control": "no-cache, no-store, max-age=0, must-revalidate",
+        "Strict-Transport-Security": "max-age=31536000 ; includeSubDomains"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/v3/api-docs",
+      "status": 200,
+      "response_headers": {
+        "Content-Type": "application/json",
+        "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+        "X-Frame-Options": "DENY",
+        "X-Content-Type-Options": "nosniff",
+        "Cache-Control": "no-cache, no-store, max-age=0, must-revalidate",
+        "Strict-Transport-Security": "max-age=31536000 ; includeSubDomains"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/swagger-ui/index.html",
+      "status": 200,
+      "response_headers": {
+        "Content-Type": "text/html",
+        "Content-Security-Policy": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+        "X-Frame-Options": "DENY",
+        "X-Content-Type-Options": "nosniff",
+        "Cache-Control": "no-store",
+        "Strict-Transport-Security": "max-age=31536000 ; includeSubDomains"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/swagger-ui/swagger-ui.css",
+      "status": 200,
+      "response_headers": {
+        "Content-Type": "text/css",
+        "Content-Security-Policy": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+        "X-Frame-Options": "DENY",
+        "X-Content-Type-Options": "nosniff",
+        "Cache-Control": "no-cache, no-store, max-age=0, must-revalidate",
+        "Strict-Transport-Security": "max-age=31536000 ; includeSubDomains"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/swagger-ui/swagger-ui-bundle.js",
+      "status": 200,
+      "response_headers": {
+        "Content-Type": "text/javascript",
+        "Content-Security-Policy": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+        "X-Frame-Options": "DENY",
+        "X-Content-Type-Options": "nosniff",
+        "Cache-Control": "no-cache, no-store, max-age=0, must-revalidate",
+        "Strict-Transport-Security": "max-age=31536000 ; includeSubDomains"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/swagger-ui/swagger-ui-standalone-preset.js",
+      "status": 200,
+      "response_headers": {
+        "Content-Type": "text/javascript",
+        "Content-Security-Policy": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+        "X-Frame-Options": "DENY",
+        "X-Content-Type-Options": "nosniff",
+        "Cache-Control": "no-cache, no-store, max-age=0, must-revalidate",
+        "Strict-Transport-Security": "max-age=31536000 ; includeSubDomains"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/swagger-ui/swagger-initializer.js",
+      "status": 200,
+      "response_headers": {
+        "Content-Type": "text/javascript",
+        "Content-Security-Policy": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+        "X-Frame-Options": "DENY",
+        "X-Content-Type-Options": "nosniff",
+        "Cache-Control": "no-store",
+        "Strict-Transport-Security": "max-age=31536000 ; includeSubDomains"
+      }
+    }
+  ],
+  "authentication": [],
+  "zap_version": "2.16.1",
+  "image": "ghcr.io/zaproxy/zaproxy:2.16.1@sha256:7840969c7c9fead565bf9734b12f49f6886db90b1d35b1f74d79710bbd081dab",
+  "scope": "Explicit GET allowlist only. No production, login attacks, uploads, writes, M1, Core or AI."
+}
