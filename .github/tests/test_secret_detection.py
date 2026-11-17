@@ -102,13 +102,15 @@ class SecretDetectionTests(unittest.TestCase):
                             and f['StartLine'] == 2 for f in found))
 
     def test_reviewed_historical_fixture_exceptions_remain_exact(self):
+        # Keep the generic rule's entropy threshold independent of random hex distribution.
+        new_secret = self.secret + 'ZyXwVuTsRqPoNmLkJiHgFeDcBa9876543210'
         cases = [{'rule': 'm2-unquoted-config-credential', 'path': '.github/workflows/ci.yml', 'values': ['ci-qa-admin-password', 'ci-qa-agent-password', 'ci-qa-area-password', 'ci-qa-citizen-password', 'm2_qa_password']}, {'rule': 'm2-quoted-credential-assignment', 'path': 'src/test/java/com/reclamos/backend/security/LoginRateLimitSecurityTest.java', 'values': ['login-rate-limit-good-password']}, {'rule': 'm2-quoted-credential-assignment', 'path': 'src/test/java/com/reclamos/backend/security/LogHygieneIntegrationTest.java', 'values': ['log-hygiene-access-password-2c70', 'log-hygiene-password-7f3a9c']}, {'rule': 'generic-api-key', 'path': 'docs/security/seg07-evidence/baseline/report.json', 'values': ['5653a0ce1dc40f691526']}]
         for i, case in enumerate(cases):
             path = case['path']
             key = 'finding_key' if case['rule'] == 'generic-api-key' else 'password'
             quote = '' if case['rule'] == 'm2-unquoted-config-credential' else '"'
             lines = [key + '=' + quote + value + quote for value in case['values']]
-            lines.append(key + '=' + quote + self.secret + quote)
+            lines.append(key + '=' + quote + new_secret + quote)
             self.write(path, '\n'.join(lines) + '\n')
             self.write('other-' + str(i) + '.txt', key + '=' + quote + case['values'][0] + quote + '\n')
         self.commit()
