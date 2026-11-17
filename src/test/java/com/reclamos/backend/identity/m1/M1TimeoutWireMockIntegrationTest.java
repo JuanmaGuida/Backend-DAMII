@@ -60,8 +60,12 @@ class M1TimeoutWireMockIntegrationTest {
         var cookies = new M1SessionCookies(settings);
         var beans = new StaticListableBeanFactory();
         beans.addBean("cookies", cookies);
-        mvc = MockMvcBuilders.standaloneSetup(new AuthController(auth, beans.getBeanProvider(M1SessionCookies.class)),
-                        new M1SessionController(auth, cookies))
+        var limiter = new com.reclamos.backend.security.LoginAttemptLimiter(
+                new com.reclamos.backend.config.LoginRateLimitProperties(),
+                new com.reclamos.backend.security.ClientAddressResolver(), Clock.systemUTC());
+        mvc = MockMvcBuilders.standaloneSetup(
+                        new AuthController(auth, beans.getBeanProvider(M1SessionCookies.class), limiter),
+                        new M1SessionController(auth, cookies, limiter))
                 .setControllerAdvice(new GlobalExceptionHandler(), new M1IdentityErrorHandler(cookies)).build();
         // Warm MVC/Jackson and the connection before measuring the HTTP wait.
         m1.stubFor(com.github.tomakehurst.wiremock.client.WireMock.post(urlEqualTo("/auth/usuario/login"))

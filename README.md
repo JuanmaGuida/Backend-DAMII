@@ -333,13 +333,23 @@ Unicode. Las fixtures revisadas (stubs, proveedores de test, transacciones de pr
 CI efímero y ejemplos negativos) requieren valor exacto, regla y ruta anclada al archivo
 desde la raíz. Se conservan las fixtures públicas ya verificadas. Valores nuevos, copias
 en subdirectorios y otros tipos de secretos en esas rutas se siguen detectando.
-El runner rechaza `.gitleaksignore` y descuenta después del escaneo sólo los 82
+El runner rechaza `.gitleaksignore` y descuenta después del escaneo sólo los 85
 fingerprints exactos de `.gitleaks-history-exceptions.json` (commit completo, archivo,
-regla y línea), aprobados para siete contraseñas históricas. El inventario no contiene
-sus valores. Cualquier entrada inválida, duplicada o sin coincidencia provoca un error;
+regla y línea): 82 aprobados para siete contraseñas históricas y 3 para fixtures
+sintéticas de tests (ver abajo). El inventario no contiene sus valores. Cualquier entrada inválida, duplicada o sin coincidencia provoca un error;
 el árbol actual nunca recibe esas excepciones. El test de CI fija cantidad y huella
 del inventario: cambiarlo requiere una revisión explícita. Se informa cuántos hallazgos
 se detectaron y exceptuaron, sin publicar contenido sensible.
+Las 3 excepciones nuevas corresponden al commit `25d9231` (DDA2-254, 256, 259, 262 y 263) y
+son contraseñas ficticias de tests, no credenciales: `LoginRateLimitSecurityTest.java:50`,
+`LogHygieneIntegrationTest.java:101` y `:104`. Se usaron sólo en pruebas
+automáticas: como entrada de un `AuthService` simulado (Mockito), de un login contra un usuario
+inexistente del proveedor MOCK o como texto que no debe aparecer en los logs; nunca contra una
+cuenta real. Sus valores no existen en ningún otro commit ni en el árbol actual:
+las versiones vigentes de esos tests generan los valores en cada corrida. Sólo siguen en el
+historial de Git, que no se reescribe. El test de CI verifica por separado que las 82
+originales no cambiaron (su huella es la misma de antes) y que las 3 nuevas son exactamente
+estas. Una cuarta excepción requiere repetir esa revisión explícita.
 Esta aceptación técnica conserva los secretos en el historial y no acredita G6 literal
 ante la cátedra. Su vigencia/reutilización sigue pendiente de confirmación con el equipo;
 si hubo uso real corresponde coordinar la rotación. No se rota ni reescribe automáticamente.
