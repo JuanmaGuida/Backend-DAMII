@@ -8,6 +8,7 @@ import com.reclamos.backend.exception.ResourceNotFoundException;
 import com.reclamos.backend.exception.UnauthorizedTicketOperationException;
 import com.reclamos.backend.identity.AuthenticatedIdentity;
 import com.reclamos.backend.identity.ModuleRole;
+import com.reclamos.backend.repository.ModuleUserRepository;
 import com.reclamos.backend.repository.TicketActivityRepository;
 import com.reclamos.backend.repository.TicketMessageRepository;
 import com.reclamos.backend.repository.TicketRepository;
@@ -18,7 +19,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * Chat de tickets (Entidades V1.49 §10 "TicketMessage · mensajes públicos e
@@ -52,10 +58,16 @@ public class TicketMessageService {
     private final TicketActivityRepository activityRepository;
     private final Clock clock;
     private NotificationService notificationService;
+    private ModuleUserRepository moduleUserRepository;
 
     @Autowired
     void setNotificationService(NotificationService notificationService) {
         this.notificationService = notificationService;
+    }
+
+    @Autowired
+    void setModuleUserRepository(ModuleUserRepository moduleUserRepository) {
+        this.moduleUserRepository = moduleUserRepository;
     }
 
     @Transactional
@@ -119,7 +131,43 @@ public class TicketMessageService {
                 ? messageRepository.findAllByTicket_IdOrderByCreatedAtAsc(ticketId)
                 : messageRepository.findAllByTicket_IdAndVisibilityOrderByCreatedAtAsc(
                         ticketId, MessageVisibility.PUBLIC);
-        return messages.stream().map(this::toResponse).toList();
+        if (!includeInternal) {
+            return messages.stream().map(this::toResponse).toList();
+        }
+        // Sólo el personal ve nombres: el ciudadano y el seguimiento público siguen sin recibirlos.
+        Map<String, String> names = authorNames(messages);
+        return messages.stream().map(message -> toResponse(message, names.get(message.getAuthorId()))).toList();
+    }
+
+    private Map<String, String> authorNames(List<TicketMessage> messages) {
+        if (moduleUserRepository == null) return Map.of();
+        Set<UUID> actorIds = messages.stream()
+                .map(TicketMessage::getAuthorId)
+                .map(TicketMessageService::uuidOrNull)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        if (actorIds.isEmpty()) return Map.of();
+        return moduleUserRepository.findAllByActorIdIn(actorIds).stream()
+                .filter(user -> displayName(user) != null)
+                .collect(Collectors.toMap(user -> user.getActorId().toString(), TicketMessageService::displayName,
+                        (first, second) -> first));
+    }
+
+    private static String displayName(ModuleUser user) {
+        String name = Stream.of(user.getFirstName(), user.getLastName())
+                .filter(part -> part != null && !part.isBlank())
+                .map(String::trim)
+                .collect(Collectors.joining(" "));
+        return name.isEmpty() ? null : name;
+    }
+
+    private static UUID uuidOrNull(String value) {
+        if (value == null) return null;
+        try {
+            return UUID.fromString(value);
+        } catch (IllegalArgumentException exception) {
+            return null; // autores externos (otros módulos) no tienen un actorId de M2
+        }
     }
 
     private void notifyRecipients(Ticket ticket, ActorType authorType, UUID authorId,
@@ -299,6 +347,10 @@ public class TicketMessageService {
     }
 
     private TicketMessageResponse toResponse(TicketMessage message) {
+        return toResponse(message, null);
+    }
+
+    private TicketMessageResponse toResponse(TicketMessage message, String authorName) {
         return new TicketMessageResponse(
                 message.getId(),
                 message.getAuthorType(),
@@ -306,6 +358,7 @@ public class TicketMessageService {
                 message.getVisibility(),
                 message.getText(),
                 message.getCreatedAt(),
-                message.getUpdatedAt());
+                message.getUpdatedAt(),
+                authorName);
     }
 }

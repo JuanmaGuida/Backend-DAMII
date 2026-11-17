@@ -62,6 +62,8 @@ class InformationProvidedNotificationIntegrationTest {
             database.update("DELETE FROM information_requests WHERE ticket_id = ?", ticketId);
             database.update("DELETE FROM ticket_sla WHERE ticket_id = ?", ticketId);
             database.update("DELETE FROM ticket_activities WHERE ticket_id = ?", ticketId);
+            // El pedido de información también deja mensajes en el chat del ticket.
+            database.update("DELETE FROM ticket_messages WHERE ticket_id = ?", ticketId);
             database.update("DELETE FROM tickets WHERE id = ?", ticketId);
         }
         if (citizenId != null) database.update("DELETE FROM module_users WHERE citizen_id = ?", citizenId);
