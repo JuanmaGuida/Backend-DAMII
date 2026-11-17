@@ -1,0 +1,27 @@
+{
+  "zap:9cf1:6066:113d:1dfd:6cf7": {
+    "cause": "SecurityConfiguration conserva defaults de Spring Security y no define Content-Security-Policy para Swagger UI.",
+    "classification": "real",
+    "decision": "accepted",
+    "evidence": "ZAP 10038, confidence High, GET http://backend:8080/swagger-ui/index.html devuelve HTML 200 sin header Content-Security-Policy; corroborado en header-evidence.json y/o response_headers del seed. No se demostró XSS.",
+    "justification": "Justificación limitada a SEG-07 aislado: Swagger UI público sirve recursos locales y un contrato del mismo origen; no usa sesiones MOCK por cookie ni presenta datos reales. La ausencia de CSP reduce defensa en profundidad pero no demuestra ejecución de contenido inyectado. Se mantiene Medium visible; no se declara falso positivo ni se extiende esta justificación al despliegue productivo.",
+    "proposed_fix": "Propuesta sin aplicar: incorporar CSP específica para Swagger UI (default-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; ajustar script/style a Swagger con nonces/hashes cuando corresponda). Verificar Try it out y recursos antes de enforcement. Alternativa: deshabilitar documentación pública en el perfil productivo. Requiere revisar compatibilidad, sin permitir unsafe-inline global a ciegas.",
+    "historical": true
+  },
+  "zap:5653:a0ce:1dc4:0f69:1526": {
+    "cause": "PR #17 incorpora una CSP específica para Swagger UI con 'unsafe-inline' en script-src.",
+    "classification": "real",
+    "decision": "accepted",
+    "evidence": "10055-5; GET http://backend:8080/swagger-ui/index.html; default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+    "justification": "Permite scripts inline, debilitando la defensa ante XSS. Hallazgo real de defensa en profundidad, no falso positivo. Justificación individual limitada al ensayo aislado: Swagger y contrato estáticos del mismo origen, sin datos reales ni contenido de usuarios en el HTML. La política está restringida a documentación, mientras los endpoints JSON mantienen default-src none. No se demostró explotación; se conserva Medium y no se afirma aceptación productiva.",
+    "proposed_fix": "Evaluar retirar unsafe-inline de script-src, conservar self y usar nonces/hashes para cualquier script inline necesario, verificando Try it out. Alternativa: deshabilitar documentación pública en producción. Propuesta sin aplicar para preservar lo incorporado en PR #17."
+  },
+  "zap:9a79:ffd2:639b:2d71:bb5f": {
+    "cause": "PR #17 incorpora una CSP específica para Swagger UI con 'unsafe-inline' en style-src.",
+    "classification": "real",
+    "decision": "accepted",
+    "evidence": "10055-6; GET http://backend:8080/swagger-ui/index.html; default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+    "justification": "Permite estilos inline, debilitando restricciones ante inyección CSS. Hallazgo real de defensa en profundidad, no falso positivo. Justificación individual limitada al ensayo aislado: Swagger y contrato estáticos del mismo origen, sin datos reales ni contenido de usuarios en el HTML. La política está restringida a documentación, mientras los endpoints JSON mantienen default-src none. No se demostró explotación; se conserva Medium y no se afirma aceptación productiva.",
+    "proposed_fix": "Evaluar nonces/hashes o adaptación de estilos inline generados por Swagger; verificar el renderizado antes de retirar unsafe-inline de style-src. Alternativa: deshabilitar documentación pública en producción. Propuesta sin aplicar para preservar lo incorporado en PR #17."
+  }
+}

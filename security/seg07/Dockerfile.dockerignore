@@ -1,0 +1,11 @@
+.git
+.env
+.env.*
+!.env.example
+target
+*.log
+logs
+.idea
+.vscode
+security/seg07/reports
+security/seg07/__pycache__

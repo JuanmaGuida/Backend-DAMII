@@ -1,0 +1,59 @@
+{
+  "capture_utc": "2026-11-17T04:56:44.853462+00:00",
+  "source_commit": "b236690b75bde43ba311f1de79f572b1eac77f5b",
+  "checkout": "isolated clone, detached HEAD; no commit or push",
+  "docker_storage_driver": "vfs",
+  "images": {
+    "seg07-backend:local": {
+      "id": "sha256:3382f9b631b230cd6cc7640e41761b2bd44fa5594ec40ee96db3d51a15af1051",
+      "repo_digests": []
+    },
+    "ghcr.io/zaproxy/zaproxy:2.16.1": {
+      "id": "sha256:30dbb80105533f7dbc239d9273b79fe507d537ffe85454abcb3bd689597ab3c0",
+      "repo_digests": [
+        "ghcr.io/zaproxy/zaproxy@sha256:7840969c7c9fead565bf9734b12f49f6886db90b1d35b1f74d79710bbd081dab"
+      ]
+    },
+    "postgres:17-alpine": {
+      "id": "sha256:6b75136145ddabf3d9a4b69660402082de7c56b734cfe50555b0674774dd742a",
+      "repo_digests": [
+        "postgres@sha256:d3244e8ce3f165ee3c93d9c4a4b1d0fe48b3a89e2287b717fdcbbde92d405065"
+      ]
+    },
+    "python:3.12.10-slim-bookworm": {
+      "id": "sha256:acf8897bf01a3a0ea273a50a58fc10b6317a3e360bd29aa7c9246a54d7c63e88",
+      "repo_digests": [
+        "python@sha256:fd95fa221297a88e1cf49c55ec1828edd7c5a428187e67b5d1805692d11588db"
+      ]
+    }
+  },
+  "implementation_sha256": {
+    "security/seg07/.gitignore": "c875443e42730bc618eb1afbc78e62d1dab4a7aaff0637f9214ca85d4eb36f91",
+    "security/seg07/run.sh": "76206cbc7bd111ea432240f16dc0b191372bc81161ee974fc13c378641e175c9",
+    "security/seg07/compose.yml": "10c01de21140cb7a0d72f852cf14640c1c47a689642ab371473a6365694b4491",
+    "security/seg07/guard.py": "15b2035552ab45a41c253e0536757c5350303c574a96d67584f9791930a21501",
+    "security/seg07/test_scan.py": "e850b1f908b1d1988e72f68a11fe701807d64681489e210df0576cb0820b10d4",
+    "security/seg07/scan.py": "85d8b1db83d498c7969641918ce8ca39bb5638f74d56162cf792103506a63fa8",
+    "security/seg07/review.py": "a6cdbb0d8af2c730da0605c4e5d2ea0eaf4f8773a364d41ba6349d078b18654c",
+    "security/seg07/Dockerfile.dockerignore": "b7172787ae70781297dcc35f15f0a0f468ad910bd81bde781569060111445771",
+    "security/seg07/Dockerfile": "8565c568ccb036d8704fe7a18b7e946c91f39e8e5de989b9e127e864c747222b",
+    "security/seg07/treatments.json": "0001d5c03e9aaac230338222e2932393d15b20c9265d245cf01575ec0b81d2a9"
+  },
+  "validation_notes": [
+    "Both commands succeeded on master after merge PR #17. 13 tests passed. No production code or existing workflows modified.",
+    "Historical 10038 resolved by upstream CSP; current 10055-5 and 10055-6 individually treated.",
+    "GitHub Actions not remotely executed."
+  ],
+  "previous_base": "3e33f1e4bfbd9436e3e215776de08602a3cd2396",
+  "previous_patch_applied_to_new_master": true,
+  "report_identifier_migration": {
+    "format": "zap:hhhh:hhhh:hhhh:hhhh:hhhh",
+    "original_scan_evidence_preserved": true,
+    "new_scan_performed": false,
+    "implementation_sha256": {
+      "security/seg07/scan.py": "a9e42d60d45a312a2fb6b2d7cf7053c5dd255aa55f212a8177f8a1895d9b5546",
+      "security/seg07/test_scan.py": "de55abab95374a3e2524864634f565312abc6b858ff0881ab4e73465c07ca060",
+      "security/seg07/treatments.json": "5635500dc0e074cb65ec37b106ce3f4dde1b3016c999dbcce1807013808937cc"
+    }
+  }
+}
