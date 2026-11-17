@@ -4,11 +4,17 @@ import com.rabbitmq.client.AMQP;
 import com.rabbitmq.client.Channel;
 import com.rabbitmq.client.Connection;
 import com.rabbitmq.client.ConnectionFactory;
+import com.rabbitmq.client.AuthenticationFailureException;
+import com.rabbitmq.client.ShutdownSignalException;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.util.UUID;
+import java.io.IOException;
+import javax.net.ssl.SSLHandshakeException;
+import javax.net.ssl.SSLPeerUnverifiedException;
+import javax.net.ssl.SSLProtocolException;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -50,7 +56,7 @@ public final class RabbitCoreEventPublisher implements CoreEventPublisher {
         catch (TimeoutException timeout) { throw new PublicationFailure(CONFIRM_TIMEOUT); }
         catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt(); throw new PublicationFailure(INTERRUPTED);
-        } catch (Exception unavailable) { throw new PublicationFailure(BROKER_UNAVAILABLE); }
+        } catch (Exception failure) { throw new PublicationFailure(classify(failure)); }
         finally {
             // Dedicated connection: close every channel with a bounded abort. Cleanup cannot undo a confirm.
             if (connection != null) {
@@ -58,5 +64,26 @@ public final class RabbitCoreEventPublisher implements CoreEventPublisher {
                 catch (RuntimeException ignored) { /* No credentials or broker exception text in logs. */ }
             }
         }
+    }
+
+    private static PublicationFailure.Code classify(Exception failure) {
+        // Client IOExceptions can wrap a permanent AMQP channel/connection rejection.
+        // Inspect typed causes only; never retain or log the broker's private text.
+        Throwable cause = failure;
+        for (int depth = 0; cause != null && depth < 16; depth++, cause = cause.getCause()) {
+            if (cause instanceof AuthenticationFailureException || cause instanceof SSLHandshakeException
+                    || cause instanceof SSLPeerUnverifiedException || cause instanceof SSLProtocolException)
+                return PUBLICATION_ERROR;
+            if (cause instanceof ShutdownSignalException shutdown) {
+                Integer reply = shutdown.getReason() instanceof AMQP.Channel.Close channel ? channel.getReplyCode()
+                        : shutdown.getReason() instanceof AMQP.Connection.Close connection ? connection.getReplyCode() : null;
+                // Forced shutdown and broker internal errors can recover. Protocol/access/topology
+                // rejections require a correction and retain the existing bounded attempt policy.
+                if (reply != null && reply != AMQP.CONNECTION_FORCED && reply != AMQP.INTERNAL_ERROR)
+                    return PUBLICATION_ERROR;
+            }
+        }
+        return failure instanceof IOException || failure instanceof ShutdownSignalException
+                ? BROKER_UNAVAILABLE : PUBLICATION_ERROR;
     }
 }

@@ -83,6 +83,30 @@ class RabbitCoreEventPublisherTest {
         when(factory.newConnection("m2-core-outbox")).thenThrow(new TimeoutException("private"));
         assertFailure(BROKER_UNAVAILABLE);
     }
+    @Test void authenticationTlsAndUnexpectedClientErrorsAreBoundedWithoutPrivateDiagnostics() throws Exception {
+        for (var failure : java.util.List.of(new AuthenticationFailureException("private"),
+                new javax.net.ssl.SSLHandshakeException("private"),
+                new javax.net.ssl.SSLPeerUnverifiedException("private"),
+                new javax.net.ssl.SSLProtocolException("private"), new IllegalStateException("private"))) {
+            doThrow(failure).when(factory).newConnection("m2-core-outbox");
+            assertFailure(PUBLICATION_ERROR);
+        }
+    }
+    @ParameterizedTest
+    @ValueSource(ints={403, 404, 405, 406, 501, 502, 503, 504, 505, 506, 530, 540})
+    void wrappedAmqpChannelRejectionDoesNotBecomeAnInfiniteTransportRetry(int reply) throws Exception {
+        var close = new AMQP.Channel.Close.Builder().replyCode(reply).replyText("private").build();
+        doThrow(new IOException("private", new ShutdownSignalException(false, false, close, channel)))
+                .when(channel).exchangeDeclarePassive(anyString());
+        assertFailure(PUBLICATION_ERROR);
+    }
+    @ParameterizedTest
+    @ValueSource(ints={320, 541})
+    void brokerShutdownAndInternalFailureRemainRecoverable(int reply) throws Exception {
+        var close = new AMQP.Connection.Close.Builder().replyCode(reply).replyText("private").build();
+        when(channel.waitForConfirms(anyLong())).thenThrow(new ShutdownSignalException(true, false, close, connection));
+        assertFailure(BROKER_UNAVAILABLE);
+    }
     @Test void cleanupFailureDoesNotUndoAnAlreadyReceivedConfirm() {
         doThrow(new IllegalStateException("private")).when(connection).abort(anyInt());
         assertThatCode(() -> publisher.publish(id, "ticketCreated", body)).doesNotThrowAnyException();
