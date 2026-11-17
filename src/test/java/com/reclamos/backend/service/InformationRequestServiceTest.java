@@ -87,6 +87,42 @@ class InformationRequestServiceTest {
     }
 
     @Test
+    void theRequestAlsoShowsUpInTheChatWithTheInternalNoteOnlyForStaff() {
+        TicketMessageRepository messages = mock(TicketMessageRepository.class);
+        service.setMessageRepository(messages);
+        AuthenticatedIdentity actor = agent();
+
+        service.requestInformation(ticket.getId(),
+                new CreateInformationRequest(" Adjunte una foto ", " Revisar con obras "), actor);
+
+        verify(messages).save(argThat(message -> message.getVisibility() == MessageVisibility.PUBLIC
+                && "Adjunte una foto".equals(message.getText())
+                && message.getAuthorType() == ActorType.AGENT
+                && actor.actorId().toString().equals(message.getAuthorId())
+                && "M2".equals(message.getSourceModuleId())
+                && message.getTicket() == ticket));
+        verify(messages).save(argThat(message -> message.getVisibility() == MessageVisibility.INTERNAL
+                && "Revisar con obras".equals(message.getText())));
+        verify(activities).save(argThat(activity -> activity.getActionType() == ActivityType.INTERNAL_MESSAGE_ADDED
+                && "Revisar con obras".equals(activity.getMessage())
+                && actor.actorId().toString().equals(activity.getActorId())));
+        verify(notifications, times(1)).queue(ticket, NotificationType.INFORMATION_REQUIRED);
+    }
+
+    @Test
+    void withoutAnInternalNoteOnlyThePublicMessageGoesToTheChat() {
+        TicketMessageRepository messages = mock(TicketMessageRepository.class);
+        service.setMessageRepository(messages);
+
+        service.requestInformation(ticket.getId(), new CreateInformationRequest("Adjunte el dato", "  "), agent());
+
+        verify(messages, times(1)).save(any());
+        verify(messages).save(argThat(message -> message.getVisibility() == MessageVisibility.PUBLIC));
+        verify(activities, never()).save(argThat(activity ->
+                activity.getActionType() == ActivityType.INTERNAL_MESSAGE_ADDED));
+    }
+
+    @Test
     void adminCreatesPendingRequestOnSomeoneElsesTicketAsAdminActor() {
         AuthenticatedIdentity actor = admin();
         var result = service.requestInformation(ticket.getId(),
