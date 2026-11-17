@@ -7,6 +7,7 @@ import com.reclamos.backend.identity.AuthenticatedIdentity;
 import com.reclamos.backend.identity.AuthenticatedSession;
 import com.reclamos.backend.identity.ModuleRole;
 import com.reclamos.backend.security.BearerTokenAuthenticationFilter;
+import com.reclamos.backend.security.LoginAttemptLimiter;
 import com.reclamos.backend.service.AuthService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -52,6 +53,11 @@ class AuthControllerSecurityTest {
 
     @MockitoBean
     private AuthService authService;
+
+    // El limiter de login (DDA2-259) no forma parte del slice web; su comportamiento se prueba
+    // en LoginAttemptLimiterTest y LoginRateLimitSecurityTest.
+    @MockitoBean
+    private LoginAttemptLimiter loginAttemptLimiter;
 
     @Test
     void loginIsPublicAndCsrfDoesNotBlockIt() throws Exception {
