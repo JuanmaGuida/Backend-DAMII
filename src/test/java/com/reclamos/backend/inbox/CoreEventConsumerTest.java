@@ -75,6 +75,36 @@ class CoreEventConsumerTest {
         callback.getValue().handle("cancelled"); verify(connection).abort(1000);
         consumer.connectIfNeeded(); verify(factory,times(2)).newConnection(anyString());
     }
+    @Test void failureLogsContainOnlyCodesEvenWhenExceptionsContainPrivatePayloads() throws Exception {
+        var logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(CoreEventConsumer.class);
+        var capture = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
+        capture.start(); logger.addAppender(capture);
+        String privateValue = "private-dni-address-token-message";
+        byte[] sensitive = privateValue.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        var delivery = new Delivery(new Envelope(31, false, "", ""), new AMQP.BasicProperties(), sensitive);
+        try {
+            doThrow(new IncomingEventFailure(IncomingEventFailure.Code.INVALID_EVENT),
+                    new IncomingEventFailure(IncomingEventFailure.Code.EVENT_ID_COLLISION),
+                    new DataAccessResourceFailureException(privateValue),
+                    new com.reclamos.backend.exception.InvalidTicketRequestException(privateValue),
+                    new com.reclamos.backend.exception.TicketStateConflictException(privateValue))
+                    .when(processor).process(sensitive);
+            doThrow(new DataAccessResourceFailureException(privateValue)).doNothing()
+                    .when(processor).recordBusinessRejection(sensitive);
+            doThrow(new IOException(privateValue)).when(channel).basicAck(31, false);
+            for (int i = 0; i < 5; i++) consumer.receive(channel, connection, delivery);
+            assertThat(capture.list).extracting(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage)
+                    .contains("Core Inbox code=INVALID_EVENT", "Core Inbox code=EVENT_ID_COLLISION",
+                            "Core Inbox code=PROCESSING_FAILED", "Core Inbox code=REJECTION_AUDIT_FAILED",
+                            "Core Inbox code=ACK_CHANNEL_UNAVAILABLE")
+                    .allSatisfy(message -> assertThat(message).doesNotContain(privateValue));
+            assertThat(capture.list).allSatisfy(event -> assertThat(event.getThrowableProxy()).isNull());
+            verify(channel, times(4)).basicNack(31, false, false);
+        } finally {
+            logger.detachAppender(capture); capture.stop();
+        }
+    }
+
     @Test void rejectsUnboundedPrefetch() {
         assertThatThrownBy(() -> new CoreEventConsumer(factory,processor,0)).isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> new CoreEventConsumer(factory,processor,17)).isInstanceOf(IllegalStateException.class);
