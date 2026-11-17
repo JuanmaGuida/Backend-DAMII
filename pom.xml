@@ -43,6 +43,20 @@
 			<groupId>org.testcontainers</groupId>
 			<artifactId>testcontainers</artifactId>
 			<scope>test</scope>
+			<!-- zerodep embeds vulnerable HttpComponents; Boot cannot manage shaded copies. -->
+			<exclusions>
+				<exclusion>
+					<groupId>com.github.docker-java</groupId>
+					<artifactId>docker-java-transport-zerodep</artifactId>
+				</exclusion>
+			</exclusions>
+		</dependency>
+		<!-- Keep docker-java aligned with Testcontainers; let Boot manage HttpComponents. -->
+		<dependency>
+			<groupId>com.github.docker-java</groupId>
+			<artifactId>docker-java-transport-httpclient5</artifactId>
+			<version>3.7.1</version>
+			<scope>test</scope>
 		</dependency>
 		<dependency>
 			<groupId>org.wiremock</groupId>
