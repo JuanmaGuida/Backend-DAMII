@@ -47,7 +47,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         LoginRateLimitSecurityTest.LimiterConfiguration.class})
 class LoginRateLimitSecurityTest {
     private static final String GOOD_USER = "agent@example.test";
-    private static final String GOOD_PASSWORD = "login-rate-limit-good-password";
+    // Generada en cada corrida: un literal con forma de contraseña dispara Gitleaks aunque sea ficticia.
+    private static final String GOOD_PASSWORD = UUID.randomUUID().toString();
     private static final AuthenticatedIdentity AGENT = new AuthenticatedIdentity(
             "m1-dev-agent", UUID.fromString("10000000-0000-0000-0000-000000000002"),
             "Agente de prueba", null, ModuleRole.AGENT);
