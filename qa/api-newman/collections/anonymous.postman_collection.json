@@ -1,0 +1,1691 @@
+{
+  "info": {
+    "name": "DDA2 protected anonymous operations and public smoke",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Synthetic QA requests generated from src/main/resources/static/openapi.yaml. No shared service is called."
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:18080"
+    }
+  ],
+  "item": [
+    {
+      "name": "Anonymous 401: GET /api/tickets/00000000-0000-4000-8000-000000000001/external-attachments (listExternalAttachmentReferences)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/tickets/00000000-0000-4000-8000-000000000001/external-attachments"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: GET /api/auth/me (getCurrentIdentity)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/auth/me"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: GET /api/admin/agents (listStaffDirectory)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/admin/agents"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: GET /api/admin/catalog/categories (getAdminCategories)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/admin/catalog/categories"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: POST /api/admin/catalog/categories (createCategory)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": "{{baseUrl}}/api/admin/catalog/categories"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: PUT /api/admin/catalog/categories/1 (updateCategory)",
+      "request": {
+        "method": "PUT",
+        "header": [],
+        "url": "{{baseUrl}}/api/admin/catalog/categories/1"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: GET /api/admin/catalog/categories/1/subcategories (getAdminSubcategoriesByCategory)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/admin/catalog/categories/1/subcategories"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: POST /api/admin/catalog/categories/1/deactivate (deactivateCategory)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": "{{baseUrl}}/api/admin/catalog/categories/1/deactivate"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: POST /api/admin/catalog/categories/1/activate (activateCategory)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": "{{baseUrl}}/api/admin/catalog/categories/1/activate"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: POST /api/admin/catalog/subcategories (createSubcategory)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": "{{baseUrl}}/api/admin/catalog/subcategories"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: PUT /api/admin/catalog/subcategories/1 (updateSubcategory)",
+      "request": {
+        "method": "PUT",
+        "header": [],
+        "url": "{{baseUrl}}/api/admin/catalog/subcategories/1"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: POST /api/admin/catalog/subcategories/1/deactivate (deactivateSubcategory)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": "{{baseUrl}}/api/admin/catalog/subcategories/1/deactivate"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: POST /api/admin/catalog/subcategories/1/activate (activateSubcategory)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": "{{baseUrl}}/api/admin/catalog/subcategories/1/activate"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: GET /api/admin/catalog/subcategories/1/request-types (getAdminRequestTypesBySubcategory)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/admin/catalog/subcategories/1/request-types"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: POST /api/admin/catalog/request-types (createRequestType)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": "{{baseUrl}}/api/admin/catalog/request-types"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: PUT /api/admin/catalog/request-types/1 (updateRequestType)",
+      "request": {
+        "method": "PUT",
+        "header": [],
+        "url": "{{baseUrl}}/api/admin/catalog/request-types/1"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: POST /api/admin/catalog/request-types/1/deactivate (deactivateRequestType)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": "{{baseUrl}}/api/admin/catalog/request-types/1/deactivate"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: POST /api/admin/catalog/request-types/1/activate (activateRequestType)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": "{{baseUrl}}/api/admin/catalog/request-types/1/activate"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: GET /api/admin/catalog/request-types/1/form (getRequestTypeFormAdmin)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/admin/catalog/request-types/1/form"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: PUT /api/admin/catalog/request-types/1/form (saveRequestTypeForm)",
+      "request": {
+        "method": "PUT",
+        "header": [],
+        "url": "{{baseUrl}}/api/admin/catalog/request-types/1/form"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: GET /api/me/tickets (listMyTickets)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/me/tickets"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: GET /api/me/tickets/00000000-0000-4000-8000-000000000001/tracking-code (getOwnTrackingCode)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/me/tickets/00000000-0000-4000-8000-000000000001/tracking-code"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: GET /api/indicators/overview (getIndicatorOverview)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/indicators/overview"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: GET /api/indicators/export (exportIndicatorTickets)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/indicators/export"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: GET /api/indicators/categories (getCategoryIndicators)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/indicators/categories"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: GET /api/indicators/neighborhoods (getNeighborhoodIndicators)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/indicators/neighborhoods"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: GET /api/indicators/priorities (getPriorityIndicators)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/indicators/priorities"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: GET /api/indicators/areas (getAreaIndicators)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/indicators/areas"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: GET /api/indicators/sla (getSlaIndicators)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/indicators/sla"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: GET /api/tickets (listTickets)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/tickets"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: GET /api/tickets/00000000-0000-4000-8000-000000000001 (getTicketById)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/tickets/00000000-0000-4000-8000-000000000001"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: POST /api/tickets/00000000-0000-4000-8000-000000000001/attachments (uploadTicketAttachments)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": "{{baseUrl}}/api/tickets/00000000-0000-4000-8000-000000000001/attachments"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: GET /api/staff/labels (listLabels)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/staff/labels"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: POST /api/staff/labels (createLabel)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": "{{baseUrl}}/api/staff/labels"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: GET /api/staff/labels/00000000-0000-4000-8000-000000000001 (getLabel)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/staff/labels/00000000-0000-4000-8000-000000000001"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: PUT /api/staff/labels/00000000-0000-4000-8000-000000000001 (updateLabel)",
+      "request": {
+        "method": "PUT",
+        "header": [],
+        "url": "{{baseUrl}}/api/staff/labels/00000000-0000-4000-8000-000000000001"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: DELETE /api/staff/labels/00000000-0000-4000-8000-000000000001 (deleteLabel)",
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": "{{baseUrl}}/api/staff/labels/00000000-0000-4000-8000-000000000001"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: GET /api/staff/labels/00000000-0000-4000-8000-000000000001/tickets (listTicketsByLabel)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/staff/labels/00000000-0000-4000-8000-000000000001/tickets"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: POST /api/staff/tickets/00000000-0000-4000-8000-000000000001/labels (assignTicketLabels)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": "{{baseUrl}}/api/staff/tickets/00000000-0000-4000-8000-000000000001/labels"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: DELETE /api/staff/tickets/00000000-0000-4000-8000-000000000001/labels/00000000-0000-4000-8000-000000000001 (removeTicketLabel)",
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": "{{baseUrl}}/api/staff/tickets/00000000-0000-4000-8000-000000000001/labels/00000000-0000-4000-8000-000000000001"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: GET /api/staff/tickets/area (listAreaTickets)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/staff/tickets/area"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: GET /api/staff/tickets/00000000-0000-4000-8000-000000000001 (getStaffTicketDetail)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/staff/tickets/00000000-0000-4000-8000-000000000001"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: GET /api/staff/tickets/00000000-0000-4000-8000-000000000001/citizen-view (getStaffTicketCitizenView)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/staff/tickets/00000000-0000-4000-8000-000000000001/citizen-view"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: POST /api/staff/tickets/00000000-0000-4000-8000-000000000001/ai-insights (getTicketAiInsights)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": "{{baseUrl}}/api/staff/tickets/00000000-0000-4000-8000-000000000001/ai-insights"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: GET /api/staff/tickets/00000000-0000-4000-8000-000000000001/duplicate-candidates (getDuplicateCandidates)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/staff/tickets/00000000-0000-4000-8000-000000000001/duplicate-candidates"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: POST /api/staff/tickets/00000000-0000-4000-8000-000000000001/duplicate (linkDuplicateTicket)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": "{{baseUrl}}/api/staff/tickets/00000000-0000-4000-8000-000000000001/duplicate"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: POST /api/tickets/00000000-0000-4000-8000-000000000001/review (startTicketReview)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": "{{baseUrl}}/api/tickets/00000000-0000-4000-8000-000000000001/review"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: GET /api/tickets/00000000-0000-4000-8000-000000000001/classification (getTicketClassification)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/tickets/00000000-0000-4000-8000-000000000001/classification"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: PATCH /api/tickets/00000000-0000-4000-8000-000000000001/classification (correctTicketClassification)",
+      "request": {
+        "method": "PATCH",
+        "header": [],
+        "url": "{{baseUrl}}/api/tickets/00000000-0000-4000-8000-000000000001/classification"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: POST /api/tickets/00000000-0000-4000-8000-000000000001/route (routeTicketToArea)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": "{{baseUrl}}/api/tickets/00000000-0000-4000-8000-000000000001/route"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: POST /api/tickets/00000000-0000-4000-8000-000000000001/information-request (requestTicketInformation)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": "{{baseUrl}}/api/tickets/00000000-0000-4000-8000-000000000001/information-request"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: POST /api/tickets/00000000-0000-4000-8000-000000000001/information-response (answerTicketInformation)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": "{{baseUrl}}/api/tickets/00000000-0000-4000-8000-000000000001/information-response"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: POST /api/tickets/00000000-0000-4000-8000-000000000001/resolution (resolveTicketManually)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": "{{baseUrl}}/api/tickets/00000000-0000-4000-8000-000000000001/resolution"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: POST /api/tickets/00000000-0000-4000-8000-000000000001/resolution/confirm (confirmTicketResolution)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": "{{baseUrl}}/api/tickets/00000000-0000-4000-8000-000000000001/resolution/confirm"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: POST /api/tickets/00000000-0000-4000-8000-000000000001/resolution/reopen (reopenTicketResolution)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": "{{baseUrl}}/api/tickets/00000000-0000-4000-8000-000000000001/resolution/reopen"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: POST /api/tickets/00000000-0000-4000-8000-000000000001/satisfaction-survey (createSatisfactionSurvey)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": "{{baseUrl}}/api/tickets/00000000-0000-4000-8000-000000000001/satisfaction-survey"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: POST /api/tickets/00000000-0000-4000-8000-000000000001/cancel (cancelTicket)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": "{{baseUrl}}/api/tickets/00000000-0000-4000-8000-000000000001/cancel"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: POST /api/tickets/00000000-0000-4000-8000-000000000001/messages (createTicketMessage)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": "{{baseUrl}}/api/tickets/00000000-0000-4000-8000-000000000001/messages"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: GET /api/tickets/00000000-0000-4000-8000-000000000001/messages (listTicketMessages)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/tickets/00000000-0000-4000-8000-000000000001/messages"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: GET /api/tickets/00000000-0000-4000-8000-000000000001/messages/1 (getTicketMessage)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/tickets/00000000-0000-4000-8000-000000000001/messages/1"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: PATCH /api/tickets/00000000-0000-4000-8000-000000000001/messages/1 (updateTicketMessage)",
+      "request": {
+        "method": "PATCH",
+        "header": [],
+        "url": "{{baseUrl}}/api/tickets/00000000-0000-4000-8000-000000000001/messages/1"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: DELETE /api/tickets/00000000-0000-4000-8000-000000000001/messages/1 (deleteTicketMessage)",
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": "{{baseUrl}}/api/tickets/00000000-0000-4000-8000-000000000001/messages/1"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: GET /api/attachments/1/content (downloadAttachment)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/attachments/1/content"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: POST /api/staff/tickets/00000000-0000-4000-8000-000000000001/reclassification-proposals (proposeReclassification)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": "{{baseUrl}}/api/staff/tickets/00000000-0000-4000-8000-000000000001/reclassification-proposals"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: GET /api/staff/tickets/00000000-0000-4000-8000-000000000001/reclassification-proposals (listReclassifications)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/staff/tickets/00000000-0000-4000-8000-000000000001/reclassification-proposals"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: GET /api/staff/tickets/00000000-0000-4000-8000-000000000001/reclassification-proposals/1 (getReclassification)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/staff/tickets/00000000-0000-4000-8000-000000000001/reclassification-proposals/1"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: POST /api/staff/tickets/00000000-0000-4000-8000-000000000001/reclassification-proposals/1/confirm (confirmReclassification)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": "{{baseUrl}}/api/staff/tickets/00000000-0000-4000-8000-000000000001/reclassification-proposals/1/confirm"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: POST /api/staff/tickets/00000000-0000-4000-8000-000000000001/reclassification-proposals/1/abandon (abandonReclassification)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": "{{baseUrl}}/api/staff/tickets/00000000-0000-4000-8000-000000000001/reclassification-proposals/1/abandon"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: POST /api/tickets/00000000-0000-4000-8000-000000000001/cancellation-requests (createCancellationRequest)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": "{{baseUrl}}/api/tickets/00000000-0000-4000-8000-000000000001/cancellation-requests"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: GET /api/tickets/00000000-0000-4000-8000-000000000001/cancellation-requests (ownCancellationRequests)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/tickets/00000000-0000-4000-8000-000000000001/cancellation-requests"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: GET /api/staff/tickets/00000000-0000-4000-8000-000000000001/cancellation-requests (staffCancellationRequests)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/staff/tickets/00000000-0000-4000-8000-000000000001/cancellation-requests"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: GET /api/staff/tickets/00000000-0000-4000-8000-000000000001/cancellation-requests/00000000-0000-4000-8000-000000000001 (getCancellationRequest)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/staff/tickets/00000000-0000-4000-8000-000000000001/cancellation-requests/00000000-0000-4000-8000-000000000001"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: POST /api/staff/tickets/00000000-0000-4000-8000-000000000001/cancellation-requests/00000000-0000-4000-8000-000000000001/approve (approveCancellationRequest)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": "{{baseUrl}}/api/staff/tickets/00000000-0000-4000-8000-000000000001/cancellation-requests/00000000-0000-4000-8000-000000000001/approve"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: POST /api/staff/tickets/00000000-0000-4000-8000-000000000001/cancellation-requests/00000000-0000-4000-8000-000000000001/reject (rejectCancellationRequest)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": "{{baseUrl}}/api/staff/tickets/00000000-0000-4000-8000-000000000001/cancellation-requests/00000000-0000-4000-8000-000000000001/reject"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: GET /api/staff/tickets/00000000-0000-4000-8000-000000000001/cancellation-conflicts (listCancellationConflicts)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/staff/tickets/00000000-0000-4000-8000-000000000001/cancellation-conflicts"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Anonymous 401: POST /api/staff/tickets/00000000-0000-4000-8000-000000000001/cancellation-conflicts/1/resolve (resolveCancellationConflict)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": "{{baseUrl}}/api/staff/tickets/00000000-0000-4000-8000-000000000001/cancellation-conflicts/1/resolve"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"protected operation rejects anonymous access\", () => pm.response.to.have.status(401));",
+              "pm.test(\"401 body is a JSON error object\", () => { pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"); const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });",
+              "pm.test(\"anonymous response does not set a session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Public neighborhood catalog",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/catalog/neighborhoods"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"public catalog responds successfully\", () => pm.response.to.have.status(200));",
+              "pm.test(\"public catalog is JSON\", () => pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Public category catalog",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/catalog/categories"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"public catalog responds successfully\", () => pm.response.to.have.status(200));",
+              "pm.test(\"public catalog is JSON\", () => pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Unknown public neighborhood returns 404",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/catalog/neighborhoods/00000000-0000-4000-8000-000000000001"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"unknown public catalog item returns 404\", () => pm.response.to.have.status(404));",
+              "pm.test(\"not-found response is a JSON error\", () => { const error = pm.response.json(); pm.expect(error).to.have.property(\"code\").that.is.a(\"string\"); pm.expect(error).to.have.property(\"message\").that.is.a(\"string\"); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Health endpoint",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/actuator/health"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"local health endpoint is up\", () => pm.response.to.have.status(200));",
+              "pm.test(\"health response is JSON\", () => pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"));"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -143,6 +143,21 @@ jobs:
           CORE_OUTBOX_APPROVED_EVENT_IDS: ""
         run: ./mvnw -B clean verify
 
+      - name: Stage executable jar for isolated API QA
+        run: |
+          jar_path="$(find target -maxdepth 1 -type f -name 'backend-*.jar' ! -name 'original-*' -print -quit)"
+          test -n "$jar_path"
+          cp "$jar_path" "$RUNNER_TEMP/backend.jar"
+
+      - name: Upload executable jar for isolated API QA
+        uses: actions/upload-artifact@v7
+        with:
+          name: backend-api-qa-jar
+          path: ${{ runner.temp }}/backend.jar
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
+
       - name: Collect Maven dependencies including test scope (no tests rerun)
         run: ./mvnw -B org.apache.maven.plugins:maven-dependency-plugin:3.11.0:copy-dependencies -DincludeScope=test -DoutputDirectory=target/sca-dependencies
 
@@ -230,6 +245,199 @@ jobs:
           VALIDATED_REF: ${{ github.ref }}
           VALIDATED_SHA: ${{ github.sha }}
         run: printf 'Backend ref=%s commit=%s\n' "$VALIDATED_REF" "$VALIDATED_SHA" >> "$GITHUB_STEP_SUMMARY"
+
+  api_contract_probes:
+    name: Isolated Newman API and contract probes
+    if: >-
+      (github.event_name == 'pull_request' && github.head_ref == 'qa/entrega4-testing-cierre') ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/qa/entrega4-testing-cierre')
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: m2_qa
+          POSTGRES_USER: m2_qa
+          POSTGRES_PASSWORD: m2_qa_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U m2_qa -d m2_qa"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    env:
+      SPRING_PROFILES_ACTIVE: dev
+      SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/m2_qa
+      SPRING_DATASOURCE_USERNAME: m2_qa
+      SPRING_DATASOURCE_PASSWORD: m2_qa_password
+      PGPASSWORD: m2_qa_password
+      POSTGRES_USER: m2_qa
+      POSTGRES_DB: m2_qa
+      TRACKING_CODE_ENCRYPTION_KEY_BASE64: AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=
+      TRACKING_CODE_ENCRYPTION_KEY_ID: ci-qa-v1
+      MOCK_CITIZEN_PASSWORD: ci-qa-citizen-password
+      MOCK_AGENT_PASSWORD: ci-qa-agent-password
+      MOCK_AREA_RESPONSIBLE_PASSWORD: ci-qa-area-password
+      MOCK_ADMIN_PASSWORD: ci-qa-admin-password
+      IDENTITY_PROVIDER: MOCK
+      SIMULATOR_ENABLED: "false"
+      AI_ENABLED: "false"
+      CORE_OUTBOX_ENABLED: "false"
+      CORE_INBOX_ENABLED: "false"
+      CORE_OUTBOX_AUTO_APPROVE_NEW_EVENTS: "false"
+      CORE_OUTBOX_APPROVED_EVENT_IDS: ""
+      SERVER_PORT: "18080"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+
+      - name: Download the exact validated jar
+        uses: actions/download-artifact@v7
+        with:
+          name: backend-api-qa-jar
+          path: ${{ runner.temp }}
+
+      - name: Install PostgreSQL client
+        run: sudo apt-get update -qq && sudo apt-get install -y postgresql-client
+
+      - name: Install and generate QA collections
+        run: |
+          npm ci --prefix qa/api-newman
+          npm --prefix qa/api-newman run generate
+
+      - name: Start the backend against isolated PostgreSQL
+        run: |
+          nohup java -jar "$RUNNER_TEMP/backend.jar" > "$RUNNER_TEMP/backend-api-qa.log" 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/backend-api-qa.pid"
+          ready=false
+          for attempt in $(seq 1 60); do
+            if curl --silent --fail http://127.0.0.1:18080/actuator/health >/dev/null; then ready=true; break; fi
+            sleep 2
+          done
+          if [[ "$ready" != true ]]; then
+            echo "Isolated backend did not become healthy; raw application logs are not emitted." >&2
+            exit 1
+          fi
+          echo "Isolated backend health endpoint returned HTTP 200."
+
+      - name: Seed synthetic role and mass-assignment fixture
+        run: |
+          psql -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -f qa/api-newman/seed-fixture.sql
+          request_type_id="$(psql -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atqc "SELECT id FROM request_types WHERE code='DDA2_QA_MASS_ASSIGNMENT'")"
+          request_type_id_m9="$(psql -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atqc "SELECT id FROM request_types WHERE code='DDA2_QA_BFLA_M9'")"
+          test -n "$request_type_id" && test -n "$request_type_id_m9"
+          echo "requestTypeId=$request_type_id" >> "$GITHUB_ENV"
+          echo "requestTypeIdM6=$request_type_id" >> "$GITHUB_ENV"
+          echo "requestTypeIdM9=$request_type_id_m9" >> "$GITHUB_ENV"
+          echo "qaTicketSummary=DDA2-QA-MASS-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
+          echo "qaRunTag=$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
+          printf 'Synthetic request type fixtures seeded (M6=%s, M9=%s).\n' "$request_type_id" "$request_type_id_m9"
+
+      - name: Probe every protected operation without credentials
+        run: >-
+          node qa/api-newman/run-newman.cjs
+          qa/api-newman/collections/anonymous.postman_collection.json
+          baseUrl=http://127.0.0.1:18080
+          --summary "$RUNNER_TEMP/newman-anonymous-summary.json"
+
+      - name: Capture isolated database counts before role denial probes
+        run: psql -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atf qa/api-newman/db-row-counts.sql > "$RUNNER_TEMP/db-before-role-probes.json"
+
+      - name: Probe synthetic role boundaries
+        run: >-
+          node qa/api-newman/run-newman.cjs
+          qa/api-newman/collections/role-bfla.postman_collection.json
+          baseUrl=http://127.0.0.1:18080
+          citizenPassword="$MOCK_CITIZEN_PASSWORD"
+          agentPassword="$MOCK_AGENT_PASSWORD"
+          areaPassword="$MOCK_AREA_RESPONSIBLE_PASSWORD"
+          adminPassword="$MOCK_ADMIN_PASSWORD"
+          --summary "$RUNNER_TEMP/newman-role-summary.json"
+
+      - name: Confirm denied role probes caused no ticket or event writes
+        run: |
+          psql -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atf qa/api-newman/db-row-counts.sql > "$RUNNER_TEMP/db-after-role-probes.json"
+          cmp "$RUNNER_TEMP/db-before-role-probes.json" "$RUNNER_TEMP/db-after-role-probes.json"
+          echo "Ticket, activity, outbox, and attachment counts were unchanged by role probes."
+
+      - name: Probe synthetic ticket ownership, area, and lifecycle boundaries
+        run: |
+          node qa/api-newman/run-newman.cjs \
+            qa/api-newman/collections/ownership-bfla.postman_collection.json \
+            baseUrl=http://127.0.0.1:18080 \
+            citizenPassword="$MOCK_CITIZEN_PASSWORD" \
+            agentPassword="$MOCK_AGENT_PASSWORD" \
+            areaPassword="$MOCK_AREA_RESPONSIBLE_PASSWORD" \
+            adminPassword="$MOCK_ADMIN_PASSWORD" \
+            requestTypeIdM6="$requestTypeIdM6" \
+            requestTypeIdM9="$requestTypeIdM9" \
+            qaRunTag="$qaRunTag" \
+            --summary "$RUNNER_TEMP/newman-ownership-summary.json"
+          psql -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -v qa_run_tag="$qaRunTag" -f qa/api-newman/verify-bfla-fixture.sql > "$RUNNER_TEMP/bfla-sql-summary.json"
+
+      - name: Probe ticket-create mass assignment and verify persisted state
+        run: |
+          node qa/api-newman/run-newman.cjs \
+            qa/api-newman/collections/mass-assignment.postman_collection.json \
+            baseUrl=http://127.0.0.1:18080 \
+            citizenPassword="$MOCK_CITIZEN_PASSWORD" \
+            requestTypeId="$requestTypeId" \
+            qaTicketSummary="$qaTicketSummary" \
+            --summary "$RUNNER_TEMP/newman-mass-assignment-summary.json"
+          psql -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -v qa_ticket_summary="$qaTicketSummary" -f qa/api-newman/verify-mass-assignment.sql > "$RUNNER_TEMP/mass-assignment-sql-summary.json"
+
+      - name: Run strict OpenAPI response-schema audit
+        run: node qa/api-newman/audit-openapi-contract.mjs --fail-on-gaps --output "$RUNNER_TEMP/openapi-contract-summary.json"
+
+      - name: Stop isolated backend
+        if: always()
+        run: |
+          if [[ -s "$RUNNER_TEMP/backend-api-qa.pid" ]]; then
+            kill "$(cat "$RUNNER_TEMP/backend-api-qa.pid")" 2>/dev/null || true
+          fi
+
+      - name: Upload sanitized API QA summaries
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: api-newman-contract-probes
+          path: |
+            ${{ runner.temp }}/newman-*-summary.json
+            ${{ runner.temp }}/bfla-sql-summary.json
+            ${{ runner.temp }}/mass-assignment-sql-summary.json
+            ${{ runner.temp }}/db-before-role-probes.json
+            ${{ runner.temp }}/db-after-role-probes.json
+            ${{ runner.temp }}/openapi-contract-summary.json
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Record isolated QA boundary
+        if: always()
+        run: |
+          {
+            echo '### Isolated API QA boundary'
+            echo ''
+            echo '- PostgreSQL service is job-local and is discarded with the runner.'
+            echo '- Identity provider is MOCK; Core inbox/outbox integrations, simulator, and AI are disabled.'
+            echo '- No shared environment or real user data is used.'
+            echo '- The strict OpenAPI audit intentionally remains failing while the eight documented 401 schemas are absent.'
+          } >> "$GITHUB_STEP_SUMMARY"
 
   sonar:
     name: SonarCloud Quality Gate

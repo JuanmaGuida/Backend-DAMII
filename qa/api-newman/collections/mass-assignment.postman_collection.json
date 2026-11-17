@@ -1,0 +1,88 @@
+{
+  "info": {
+    "name": "DDA2 ticket-create mass-assignment probe",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Synthetic QA requests generated from src/main/resources/static/openapi.yaml. No shared service is called."
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:18080"
+    }
+  ],
+  "item": [
+    {
+      "name": "Login synthetic Citizen for mass assignment",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/auth/login",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"username\":\"citizen@example.test\",\"password\":\"{{citizenPassword}}\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"synthetic citizen login succeeds\", () => pm.response.to.have.status(200));",
+              "pm.test(\"login identity is CITIZEN\", () => { const body = pm.response.json(); pm.expect(body.identity.role).to.eql(\"CITIZEN\"); });",
+              "pm.environment.set(\"tokenCitizen\", pm.response.json().token);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Create normal synthetic ticket with forbidden administrative root fields",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenCitizen}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"requestTypeId\":{{requestTypeId}},\"summary\":\"{{qaTicketSummary}}\",\"description\":\"Synthetic QA fixture for root-level mass assignment.\",\"formData\":{},\"role\":\"ADMIN\",\"status\":\"RESOLVED\",\"currentStatus\":\"RESOLVED\",\"currentPriority\":\"CRITICAL\",\"riskScore\":999,\"citizenId\":\"10000000-0000-0000-0000-000000000006\",\"responsibleAreaId\":\"M9\",\"isPublic\":true}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"normal ticket creation still succeeds\", () => pm.response.to.have.status(201));",
+              "pm.test(\"response exposes created ticket id\", () => { const body = pm.response.json(); pm.expect(body.ticketId || body.id).to.be.ok; pm.environment.set(\"createdMassAssignmentTicketId\", body.ticketId || body.id); });"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

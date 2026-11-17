@@ -1,0 +1,499 @@
+{
+  "info": {
+    "name": "DDA2 synthetic ownership and lifecycle BFLA probes",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Synthetic QA requests generated from src/main/resources/static/openapi.yaml. No shared service is called."
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:18080"
+    }
+  ],
+  "item": [
+    {
+      "name": "Login synthetic Citizen for ownership probe",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/auth/login",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"username\":\"citizen@example.test\",\"password\":\"{{citizenPassword}}\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"synthetic login succeeds\", () => pm.response.to.have.status(200));",
+              "pm.test(\"login identity is CITIZEN\", () => pm.expect(pm.response.json().identity.role).to.eql(\"CITIZEN\"));",
+              "pm.environment.set(\"tokenCitizen\", pm.response.json().token);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Login synthetic Agent for ownership probe",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/auth/login",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"username\":\"agent@example.test\",\"password\":\"{{agentPassword}}\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"synthetic login succeeds\", () => pm.response.to.have.status(200));",
+              "pm.test(\"login identity is AGENT\", () => pm.expect(pm.response.json().identity.role).to.eql(\"AGENT\"));",
+              "pm.environment.set(\"tokenAgent\", pm.response.json().token);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Login synthetic Area responsible for ownership probe",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/auth/login",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"username\":\"area.responsible@example.test\",\"password\":\"{{areaPassword}}\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"synthetic login succeeds\", () => pm.response.to.have.status(200));",
+              "pm.test(\"login identity is AREA_RESPONSIBLE\", () => pm.expect(pm.response.json().identity.role).to.eql(\"AREA_RESPONSIBLE\"));",
+              "pm.environment.set(\"tokenArea\", pm.response.json().token);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Login synthetic Admin for ownership probe",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/auth/login",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"username\":\"module.admin@example.test\",\"password\":\"{{adminPassword}}\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"synthetic login succeeds\", () => pm.response.to.have.status(200));",
+              "pm.test(\"login identity is ADMIN\", () => pm.expect(pm.response.json().identity.role).to.eql(\"ADMIN\"));",
+              "pm.environment.set(\"tokenAdmin\", pm.response.json().token);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Create agent-created M6 ticket",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAgent}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"requestTypeId\":{{requestTypeIdM6}},\"summary\":\"DDA2-QA-BFLA-agent-created M6 ticket-{{qaRunTag}}\",\"description\":\"Synthetic isolated BFLA ownership fixture.\",\"formData\":{}}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"synthetic ownership ticket created\", () => pm.response.to.have.status(201));",
+              "pm.test(\"agent-created M6 ticket response contains ticket id\", () => { const body = pm.response.json(); pm.expect(body.ticketId).to.be.a(\"string\"); pm.environment.set(\"ticketAgentM6\", body.ticketId); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Create citizen-created M6 ticket",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenCitizen}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"requestTypeId\":{{requestTypeIdM6}},\"summary\":\"DDA2-QA-BFLA-citizen-created M6 ticket-{{qaRunTag}}\",\"description\":\"Synthetic isolated BFLA ownership fixture.\",\"formData\":{}}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"synthetic ownership ticket created\", () => pm.response.to.have.status(201));",
+              "pm.test(\"citizen-created M6 ticket response contains ticket id\", () => { const body = pm.response.json(); pm.expect(body.ticketId).to.be.a(\"string\"); pm.environment.set(\"ticketCitizenM6\", body.ticketId); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Create citizen-created M9 ticket",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenCitizen}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"requestTypeId\":{{requestTypeIdM9}},\"summary\":\"DDA2-QA-BFLA-citizen-created M9 ticket-{{qaRunTag}}\",\"description\":\"Synthetic isolated BFLA ownership fixture.\",\"formData\":{}}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"synthetic ownership ticket created\", () => pm.response.to.have.status(201));",
+              "pm.test(\"citizen-created M9 ticket response contains ticket id\", () => { const body = pm.response.json(); pm.expect(body.ticketId).to.be.a(\"string\"); pm.environment.set(\"ticketCitizenM9\", body.ticketId); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Create area-created M6 ticket",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenArea}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"requestTypeId\":{{requestTypeIdM6}},\"summary\":\"DDA2-QA-BFLA-area-created M6 ticket-{{qaRunTag}}\",\"description\":\"Synthetic isolated BFLA ownership fixture.\",\"formData\":{}}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"synthetic ownership ticket created\", () => pm.response.to.have.status(201));",
+              "pm.test(\"area-created M6 ticket response contains ticket id\", () => { const body = pm.response.json(); pm.expect(body.ticketId).to.be.a(\"string\"); pm.environment.set(\"ticketAreaM6\", body.ticketId); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Citizen denied staff detail for own ticket",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenCitizen}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/tickets/{{ticketCitizenM6}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Citizen denied staff detail for own ticket returns 403\", () => pm.response.to.have.status(403));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Agent reads citizen ticket outside own area",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAgent}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/tickets/{{ticketCitizenM9}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Agent reads citizen ticket outside own area returns 200\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin reads citizen ticket outside own area",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAdmin}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/tickets/{{ticketCitizenM9}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Admin reads citizen ticket outside own area returns 200\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Area responsible reads same-area ticket",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenArea}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/tickets/{{ticketCitizenM6}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Area responsible reads same-area ticket returns 200\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Area responsible denied out-of-area ticket",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenArea}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/tickets/{{ticketCitizenM9}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Area responsible denied out-of-area ticket returns 403\", () => pm.response.to.have.status(403));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Agent denied lifecycle review on own ticket",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAgent}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/{{ticketAgentM6}}/review"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Agent denied lifecycle review on own ticket returns 403\", () => pm.response.to.have.status(403));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Area responsible denied lifecycle review",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenArea}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/{{ticketAreaM6}}/review"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Area responsible denied lifecycle review returns 403\", () => pm.response.to.have.status(403));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Area responsible denied lifecycle routing",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenArea}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/{{ticketAreaM6}}/route"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Area responsible denied lifecycle routing returns 403\", () => pm.response.to.have.status(403));"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

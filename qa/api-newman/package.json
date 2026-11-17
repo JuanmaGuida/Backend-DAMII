@@ -1,0 +1,17 @@
+{
+  "name": "dda2-api-qa-probes",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Isolated Postman/Newman probes generated from the DDA2 OpenAPI contract.",
+  "scripts": {
+    "generate": "node generate-collections.mjs",
+    "audit:openapi": "node audit-openapi-contract.mjs",
+    "test:anonymous": "node run-newman.cjs collections/anonymous.postman_collection.json",
+    "test:roles": "node run-newman.cjs collections/role-bfla.postman_collection.json",
+    "test:mass-assignment": "node run-newman.cjs collections/mass-assignment.postman_collection.json"
+  },
+  "dependencies": {
+    "js-yaml": "4.3.2",
+    "newman": "6.2.3"
+  }
+}
