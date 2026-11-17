@@ -101,6 +101,12 @@ class NotificationFailureIntegrationTest {
                     ticketId
             );
 
+            // El pedido de información también deja mensajes en el chat del ticket.
+            database.update(
+                    "DELETE FROM ticket_messages WHERE ticket_id = ?",
+                    ticketId
+            );
+
             database.update(
                     "DELETE FROM tickets WHERE id = ?",
                     ticketId
