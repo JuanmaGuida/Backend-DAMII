@@ -50,23 +50,29 @@ public class AuthController {
             return ResponseEntity.badRequest().body(INVALID_REQUEST);
         }
 
-        // DDA2-259: antes de consultar al proveedor de identidad. Un origen o usuario bloqueado
-        // recibe 429 + Retry-After sin que se evalúen (ni se confirmen) sus credenciales.
-        loginAttemptLimiter.assertAllowed(httpRequest, request.username());
-
-        return authService.authenticate(request.username(), request.password())
-                .<ResponseEntity<?>>map(session -> {
-                    loginAttemptLimiter.recordSuccess(request.username());
-                    var sessionCookies = cookies.getIfAvailable();
-                    if (sessionCookies != null) sessionCookies.write(response, session.refreshToken());
-                    return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(LoginResponse.from(session));
-                })
-                .orElseGet(() -> {
-                    loginAttemptLimiter.recordFailure(httpRequest, request.username());
-                    var sessionCookies = cookies.getIfAvailable();
-                    if (sessionCookies != null) sessionCookies.clear(response);
-                    return ResponseEntity.status(401).cacheControl(CacheControl.noStore()).body(INVALID_CREDENTIALS);
-                });
+        // DDA2-259: la reserva del intento es atómica y ocurre antes de consultar al proveedor de identidad.
+        // Un origen o usuario bloqueado recibe 429 + Retry-After sin que se evalúen (ni se confirmen) sus
+        // credenciales; las reservas concurrentes no pueden superar el máximo.
+        LoginAttemptLimiter.Attempt attempt = loginAttemptLimiter.acquire(httpRequest, request.username());
+        try {
+            return authService.authenticate(request.username(), request.password())
+                    .<ResponseEntity<?>>map(session -> {
+                        loginAttemptLimiter.succeeded(attempt);
+                        var sessionCookies = cookies.getIfAvailable();
+                        if (sessionCookies != null) sessionCookies.write(response, session.refreshToken());
+                        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(LoginResponse.from(session));
+                    })
+                    .orElseGet(() -> {
+                        // La reserva ya cuenta como fallo: credenciales inválidas.
+                        var sessionCookies = cookies.getIfAvailable();
+                        if (sessionCookies != null) sessionCookies.clear(response);
+                        return ResponseEntity.status(401).cacheControl(CacheControl.noStore()).body(INVALID_CREDENTIALS);
+                    });
+        } catch (RuntimeException notAnInvalidCredential) {
+            // Proveedor caído, cuenta restringida, etc.: no es un intento fallido del cliente.
+            loginAttemptLimiter.release(attempt);
+            throw notAnInvalidCredential;
+        }
     }
 
     @GetMapping("/me")

@@ -20,6 +20,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.net.URI;
+import java.util.UUID;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -98,10 +99,11 @@ class LogHygieneIntegrationTest {
 
     @Test
     void credentialsAndTokensNeverReachTheLogs(CapturedOutput output) throws Exception {
-        String password = "log-hygiene-password-7f3a9c";
-        String bearer = "log-hygiene-bearer-5d21be.payload.signature";
-        String trackingCode = "TRK-LOGHYGIENE-8841";
-        String accessPassword = "log-hygiene-access-password-2c70";
+        // Valores generados en cada corrida (no literales): Gitleaks marca contraseñas hardcodeadas aunque sean ficticias.
+        String password = "pw-" + UUID.randomUUID();
+        String bearer = "tk-" + UUID.randomUUID() + ".payload.signature";
+        String trackingCode = "TRK-" + UUID.randomUUID();
+        String accessPassword = "ap-" + UUID.randomUUID();
 
         mockMvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
                 .content("{\"username\":\"nobody@example.test\",\"password\":\"" + password + "\"}"));

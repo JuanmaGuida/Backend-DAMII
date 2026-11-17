@@ -17,13 +17,14 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Limita los intentos fallidos de {@code /api/auth/login} y {@code /api/auth/refresh}
  * (DDA2-259, SEG-06).
  *
- * <p>Los fallos se acumulan en dos ejes: la dirección del cliente (frena la
+ * <p>Cada intento se reserva de forma atómica antes de evaluar credenciales y se acumula en dos ejes: la dirección del cliente (frena la
  * fuerza bruta desde un mismo origen) y el usuario (frena la adivinanza de la
  * contraseña de una cuenta aunque cambie el origen). Superado el umbral de
  * cualquiera de los dos se responde 429 <em>sin consultar al proveedor de
@@ -43,7 +44,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class LoginAttemptLimiter {
     private static final String CLIENT_PREFIX = "client:";
     private static final String USERNAME_PREFIX = "username:";
-    private static final int PURGE_EVERY_FAILURES = 500;
+    private static final int PURGE_EVERY_ATTEMPTS = 500;
 
     private final LoginRateLimitProperties properties;
     private final ClientAddressResolver clientAddressResolver;
@@ -51,7 +52,9 @@ public class LoginAttemptLimiter {
 
     /** Instantes de los últimos fallos por clave; las listas son inmutables. */
     private final Map<String, List<Instant>> failures = new ConcurrentHashMap<>();
-    private final AtomicInteger failuresSincePurge = new AtomicInteger();
+    private final AtomicInteger attemptsSincePurge = new AtomicInteger();
+    /** Serializa las operaciones compuestas (leer + decidir + escribir) sobre {@link #failures}. */
+    private final Object lock = new Object();
 
     public LoginAttemptLimiter(LoginRateLimitProperties properties,
                                ClientAddressResolver clientAddressResolver, Clock clock) {
@@ -61,44 +64,71 @@ public class LoginAttemptLimiter {
     }
 
     /**
-     * Rechaza el intento si el cliente del request o el usuario indicado
-     * alcanzaron su máximo de fallos.
+     * Comprueba y <em>reserva</em> el intento en una sola operación atómica: si el cliente o el usuario ya
+     * alcanzaron su máximo lanza 429 sin reservar nada; si no, deja registrado el intento antes de que se
+     * consulte al proveedor de identidad. Así, N requests concurrentes no pueden pasar todos el chequeo
+     * y superar el límite (la comprobación y el registro ya no son dos pasos separados).
      *
-     * @param username usuario que intenta autenticarse; {@code null} o vacío
-     *                 cuando sólo aplica el límite por cliente (refresh)
+     * <p>La reserva cuenta como fallo hasta que se la salda: {@link #succeeded(Attempt)} la devuelve al
+     * cliente y limpia al usuario; {@link #release(Attempt)} la devuelve cuando el intento no llegó a
+     * evaluar credenciales (el proveedor estaba caído, la cuenta está restringida, etc.).</p>
+     *
+     * @param username usuario que intenta autenticarse; {@code null} o vacío cuando sólo aplica el
+     *                 límite por cliente (refresh)
      */
+    public Attempt acquire(HttpServletRequest request, String username) {
+        Instant now = clock.instant();
+        String clientKey = clientKey(request);
+        String usernameKey = usernameKey(username);
+        synchronized (lock) {
+            throwIfBlocked(clientKey, usernameKey, now);
+            record(clientKey, now);
+            if (usernameKey != null) {
+                record(usernameKey, now);
+            }
+            if (attemptsSincePurge.incrementAndGet() >= PURGE_EVERY_ATTEMPTS) {
+                attemptsSincePurge.set(0);
+                failures.entrySet().removeIf(entry -> recentFailures(entry.getValue(), now).isEmpty());
+            }
+        }
+        return new Attempt(clientKey, usernameKey, now);
+    }
+
+    /** Sólo verifica (no reserva): para requests que no pueden adivinar nada, como un refresh sin cookie. */
     public void assertAllowed(HttpServletRequest request, String username) {
         Instant now = clock.instant();
-        Duration clientWait = blockedFor(clientKey(request), properties.getMaxFailuresPerClient(), now);
-        String usernameKey = usernameKey(username);
-        Duration usernameWait = usernameKey == null
-                ? Duration.ZERO
-                : blockedFor(usernameKey, properties.getMaxFailuresPerUsername(), now);
-        Duration wait = clientWait.compareTo(usernameWait) >= 0 ? clientWait : usernameWait;
-        if (!wait.isZero()) {
-            throw new TooManyLoginAttemptsException(wait);
+        synchronized (lock) {
+            throwIfBlocked(clientKey(request), usernameKey(username), now);
         }
     }
 
-    /** Registra un intento fallido contra el cliente del request y, si hay usuario, contra éste. */
-    public void recordFailure(HttpServletRequest request, String username) {
-        Instant now = clock.instant();
-        record(clientKey(request), now);
-        String usernameKey = usernameKey(username);
-        if (usernameKey != null) {
-            record(usernameKey, now);
+    /**
+     * Login correcto: se limpia el contador de ese usuario y se devuelve el intento al cliente, de modo
+     * que un acierto no consume cupo. El del cliente no se reinicia: quien tenga una cuenta propia no
+     * puede resetear su cupo y seguir probando contraseñas ajenas.
+     */
+    public void succeeded(Attempt attempt) {
+        if (attempt == null || !attempt.settle()) {
+            return;
         }
-        if (failuresSincePurge.incrementAndGet() >= PURGE_EVERY_FAILURES) {
-            failuresSincePurge.set(0);
-            failures.entrySet().removeIf(entry -> recentFailures(entry.getValue(), now).isEmpty());
+        synchronized (lock) {
+            refund(attempt.clientKey, attempt.at);
+            if (attempt.usernameKey != null) {
+                failures.remove(attempt.usernameKey);
+            }
         }
     }
 
-    /** Un login exitoso limpia los fallos previos de ese usuario (no los del cliente). */
-    public void recordSuccess(String username) {
-        String usernameKey = usernameKey(username);
-        if (usernameKey != null) {
-            failures.remove(usernameKey);
+    /** El intento no llegó a evaluar credenciales (error del proveedor, cuenta restringida): no cuenta. */
+    public void release(Attempt attempt) {
+        if (attempt == null || !attempt.settle()) {
+            return;
+        }
+        synchronized (lock) {
+            refund(attempt.clientKey, attempt.at);
+            if (attempt.usernameKey != null) {
+                refund(attempt.usernameKey, attempt.at);
+            }
         }
     }
 
@@ -118,6 +148,25 @@ public class LoginAttemptLimiter {
             // SHA-256 es obligatorio en toda JVM; si faltara, fallar cerrado es lo correcto.
             throw new IllegalStateException(unavailable);
         }
+    }
+
+    private void throwIfBlocked(String clientKey, String usernameKey, Instant now) {
+        Duration clientWait = blockedFor(clientKey, properties.getMaxFailuresPerClient(), now);
+        Duration usernameWait = usernameKey == null
+                ? Duration.ZERO
+                : blockedFor(usernameKey, properties.getMaxFailuresPerUsername(), now);
+        Duration wait = clientWait.compareTo(usernameWait) >= 0 ? clientWait : usernameWait;
+        if (!wait.isZero()) {
+            throw new TooManyLoginAttemptsException(wait);
+        }
+    }
+
+    private void refund(String key, Instant at) {
+        failures.computeIfPresent(key, (ignored, recorded) -> {
+            List<Instant> updated = new ArrayList<>(recorded);
+            updated.remove(at);
+            return updated.isEmpty() ? null : List.copyOf(updated);
+        });
     }
 
     /** Tiempo restante de bloqueo para la clave, o cero si todavía puede intentar. */
@@ -146,5 +195,23 @@ public class LoginAttemptLimiter {
         }
         Instant windowStart = now.minus(properties.getWindow());
         return recorded.stream().filter(at -> at.isAfter(windowStart)).toList();
+    }
+
+    /** Intento reservado por {@link #acquire}; se salda una sola vez con {@code succeeded} o {@code release}. */
+    public static final class Attempt {
+        private final String clientKey;
+        private final String usernameKey;
+        private final Instant at;
+        private final AtomicBoolean settled = new AtomicBoolean();
+
+        private Attempt(String clientKey, String usernameKey, Instant at) {
+            this.clientKey = clientKey;
+            this.usernameKey = usernameKey;
+            this.at = at;
+        }
+
+        private boolean settle() {
+            return settled.compareAndSet(false, true);
+        }
     }
 }
