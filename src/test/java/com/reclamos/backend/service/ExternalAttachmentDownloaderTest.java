@@ -14,6 +14,7 @@ import java.io.ByteArrayInputStream;
 import java.net.InetAddress;
 import java.net.URI;
 import java.net.UnknownHostException;
+import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 
@@ -107,8 +108,23 @@ class ExternalAttachmentDownloaderTest {
                 .isInstanceOf(UnknownHostException.class);
     }
 
-    @Test void malformedAllowlistFailsClosed() {
-        assertThatThrownBy(() -> new ExternalAttachmentDownloader("*.example.test"))
+    @ParameterizedTest
+    @ValueSource(strings = {"*.example.test", "192.0.2.1", "localhost", ".example.test", "example.test.",
+            "files..example.test", "-files.example.test", "files-.example.test", "file_store.example.test"})
+    void malformedAllowlistFailsClosed(String host) {
+        assertThatThrownBy(() -> new ExternalAttachmentDownloader(host))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test void enforcesDnsHostnameAndLabelLengthLimits() {
+        String label = "a".repeat(63);
+        String host = String.join(".", label, label, label, "b".repeat(61));
+        String allowedHosts = host.toUpperCase(Locale.ROOT) + ", files-2.example.test";
+        assertThatCode(() -> new ExternalAttachmentDownloader(allowedHosts).close())
+                .doesNotThrowAnyException();
+        assertThatThrownBy(() -> new ExternalAttachmentDownloader(host + "b"))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new ExternalAttachmentDownloader(label + "a.example.test"))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 

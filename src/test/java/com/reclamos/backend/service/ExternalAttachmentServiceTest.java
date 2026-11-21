@@ -137,11 +137,24 @@ class ExternalAttachmentServiceTest {
         verifyNoInteractions(savedAttachments);
     }
 
-    @Test void unavailableFileLeavesOnlyAnInternalReference() {
+    @Test void unavailableCopyIsCachedAndAdditionalItemsKeepTheirReferencesAfterTheLimit() {
+        properties.getLimits().setMaxFiles(1);
+        var unavailable = evidence();
+        var skipped = new UpdateTicketStatusRequest.ExternalAttachment("other.png", "image/png",
+                "https://files.example.test/other.png", null);
         when(downloader.download(any(), anyLong(), isNull())).thenReturn(Optional.empty());
-        service.record(ticket, UUID.randomUUID(), "M3", request(List.of(evidence())));
-        verify(refs).save(argThat(ref -> ref.getLocalAttachment() == null
-                && ref.getVisibility() == MessageVisibility.INTERNAL));
+        service.record(ticket, UUID.randomUUID(), "M3", request(List.of(unavailable, skipped, unavailable)));
+        var references = org.mockito.ArgumentCaptor.forClass(ExternalAttachmentReference.class);
+        verify(refs, times(3)).save(references.capture());
+        assertThat(references.getAllValues())
+                .extracting(ExternalAttachmentReference::getUrl)
+                .containsExactly(unavailable.url(), skipped.url(), unavailable.url());
+        assertThat(references.getAllValues()).allSatisfy(reference -> {
+            assertThat(reference.getLocalAttachment()).isNull();
+            assertThat(reference.getVisibility()).isEqualTo(MessageVisibility.INTERNAL);
+        });
+        verify(downloader).download(eq(URI.create(unavailable.url())), anyLong(), isNull());
+        verifyNoMoreInteractions(downloader);
         verifyNoInteractions(savedAttachments);
     }
 
