@@ -60,9 +60,8 @@ public class ExternalAttachmentService {
         var copies = new HashMap<UpdateTicketStatusRequest.ExternalAttachment, Optional<Attachment>>();
         for (int i = 0; i < request.attachments().size(); i++) {
             var item = request.attachments().get(i);
-            Optional<Attachment> copy = copies.get(item);
-            if (copy == null && copies.size() < limits.getMaxFiles()) {
-                copy = copy(ticket, source, request.updateOccurredAt(), item,
+            if (!copies.containsKey(item) && copies.size() < limits.getMaxFiles()) {
+                var copy = copy(ticket, source, request.updateOccurredAt(), item,
                         Math.min(remaining, limits.getMaxFileSize().toBytes()));
                 copies.put(item, copy);
                 if (copy.isPresent()) remaining -= copy.get().getSizeBytes();
@@ -74,7 +73,7 @@ public class ExternalAttachmentService {
             reference.setContentType(item.contentType()); reference.setUrl(item.url()); reference.setSizeBytes(item.sizeBytes());
             // The shared schema has no visibility field. Never infer PUBLIC from a public message.
             reference.setVisibility(MessageVisibility.INTERNAL);
-            if (copy != null) reference.setLocalAttachment(copy.orElse(null));
+            copies.getOrDefault(item, Optional.empty()).ifPresent(reference::setLocalAttachment);
             references.save(reference);
         }
     }

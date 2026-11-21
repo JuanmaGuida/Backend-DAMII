@@ -25,12 +25,14 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.*;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Component
 public class ExternalAttachmentDownloader {
     private static final int DEADLINE_SECONDS = 5;
     private static final Timeout IO_TIMEOUT = Timeout.ofSeconds(DEADLINE_SECONDS);
+    private static final Pattern DNS_LABEL = Pattern.compile("[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?");
 
     private final Set<String> hosts;
     private final CloseableHttpClient client;
@@ -130,14 +132,20 @@ public class ExternalAttachmentDownloader {
         return Arrays.stream(allowedHosts.split(",")).map(String::strip)
                 .filter(host -> !host.isEmpty()).map(host -> host.toLowerCase(Locale.ROOT))
                 .map(host -> {
-                    if (!host.matches("(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+"
-                            + "[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
-                            || host.chars().allMatch(c -> c == '.' || Character.isDigit(c))) {
+                    if (!isDnsHostname(host)) {
                         throw new IllegalArgumentException("Los hosts de adjuntos externos deben ser DNS exactos.");
                     }
                     return host;
                 })
                 .collect(Collectors.toUnmodifiableSet());
+    }
+
+    private static boolean isDnsHostname(String host) {
+        if (host.length() > 253 || host.indexOf('.') < 0
+                || host.chars().allMatch(c -> c == '.' || Character.isDigit(c))) {
+            return false;
+        }
+        return Arrays.stream(host.split("\\.", -1)).allMatch(label -> DNS_LABEL.matcher(label).matches());
     }
 
     private static CloseableHttpClient createClient(Set<String> allowedHosts) {
