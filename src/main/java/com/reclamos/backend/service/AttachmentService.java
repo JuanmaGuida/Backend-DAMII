@@ -70,10 +70,7 @@ public class AttachmentService {
                 throw new AttachmentPayloadTooLargeException("El tamaño total de la evidencia supera el máximo permitido.");
             }
 
-            String contentType = normalizeContentType(file.getContentType());
-            if (!allowedTypes.contains(contentType)) {
-                throw new UnsupportedAttachmentMediaTypeException("El tipo de archivo no está permitido.");
-            }
+            requireAllowedContentType(file.getContentType(), allowedTypes);
             normalizeFileName(file.getOriginalFilename());
         }
         for (MultipartFile file : evidence) {
@@ -83,6 +80,19 @@ public class AttachmentService {
             validated.add(new ValidatedAttachment(content, normalizeFileName(file.getOriginalFilename()), contentType));
         }
         return List.copyOf(validated);
+    }
+
+    ValidatedAttachment validateDownloaded(byte[] content, String fileName, String contentType) {
+        if (content.length == 0) {
+            throw new InvalidAttachmentException("El archivo está vacío o incompleto.");
+        }
+        if (content.length > properties.getLimits().getMaxFileSize().toBytes()) {
+            throw new AttachmentPayloadTooLargeException("Un archivo supera el tamaño máximo permitido.");
+        }
+        String type = requireAllowedContentType(contentType, properties.getAllowedContentTypes());
+        String name = normalizeFileName(fileName);
+        formatValidator.validate(content, type);
+        return new ValidatedAttachment(content, name, type);
     }
 
     public List<Attachment> storeForTicket(Ticket ticket, AuthenticatedIdentity identity,
@@ -169,6 +179,14 @@ public class AttachmentService {
 
     private String normalizeContentType(String contentType) {
         return contentType == null ? "" : contentType.strip().toLowerCase(Locale.ROOT);
+    }
+
+    private String requireAllowedContentType(String contentType, Set<String> allowedTypes) {
+        String normalized = normalizeContentType(contentType);
+        if (!allowedTypes.contains(normalized)) {
+            throw new UnsupportedAttachmentMediaTypeException("El tipo de archivo no está permitido.");
+        }
+        return normalized;
     }
 
     private String normalizeFileName(String originalFileName) {

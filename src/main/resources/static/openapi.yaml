@@ -26,6 +26,8 @@ paths:
         ticket; AREA_RESPONSIBLE sólo a su área actual. El propietario identificado
         sólo ve referencias PUBLIC. Las evidencias entrantes se conservan INTERNAL
         al no existir clasificación de visibilidad en el contrato de eventos.
+        Si existe una copia guardada, el personal recibe localDownloadUrl para
+        descargarla por la ruta autenticada de adjuntos.
       operationId: listExternalAttachmentReferences
       security:
         - bearerAuth: []
@@ -56,6 +58,7 @@ paths:
                     url: { type: string, format: uri }
                     sizeBytes: { type: integer, format: int64, minimum: 0, nullable: true }
                     visibility: { type: string, enum: [PUBLIC, INTERNAL] }
+                    localDownloadUrl: { type: string, format: uri, nullable: true }
         '400':
           $ref: '#/components/responses/InvalidRequest'
         '401':

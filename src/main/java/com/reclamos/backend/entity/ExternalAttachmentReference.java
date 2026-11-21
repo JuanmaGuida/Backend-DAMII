@@ -7,7 +7,7 @@ import lombok.NoArgsConstructor;
 import java.time.Instant;
 import java.util.UUID;
 
-/** Metadata owned by an external event, never a FileStorage object. Do not log URLs. */
+/** Metadata owned by an external event, optionally linked to an internal local copy. Do not log URLs. */
 @Getter
 @Setter
 @NoArgsConstructor
@@ -29,6 +29,9 @@ public class ExternalAttachmentReference {
     @Column(columnDefinition = "text") private String contentType;
     @Column(columnDefinition = "text") private String url;
     private Long sizeBytes;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "local_attachment_id")
+    private Attachment localAttachment;
     @Enumerated(EnumType.STRING)
     private MessageVisibility visibility;
 }

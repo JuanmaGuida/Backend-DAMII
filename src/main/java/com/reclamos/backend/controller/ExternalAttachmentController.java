@@ -15,7 +15,7 @@ import java.util.UUID;
 public class ExternalAttachmentController {
     private final ExternalAttachmentService service;
 
-    /** Returns references after ticket authorization; never redirects, fetches or proxies the URL. */
+    /** Returns references and optional local download URLs after ticket authorization. */
     @GetMapping("/api/tickets/{ticketId}/external-attachments")
     public ResponseEntity<List<ExternalAttachmentService.Reference>> list(@PathVariable UUID ticketId,
             @AuthenticationPrincipal AuthenticatedIdentity identity) {

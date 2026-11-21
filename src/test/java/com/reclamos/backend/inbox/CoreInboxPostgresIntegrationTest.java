@@ -4,8 +4,10 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.rabbitmq.client.*;
 import com.reclamos.backend.entity.*;
 import com.reclamos.backend.identity.*;
+import com.reclamos.backend.exception.StoredFileNotFoundException;
 import com.reclamos.backend.repository.*;
 import com.reclamos.backend.service.*;
+import com.reclamos.backend.storage.FileStorage;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -16,14 +18,17 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.net.URI;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicReference;
 import static com.reclamos.backend.inbox.IncomingFixtures.*;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.AdditionalAnswers.delegatesTo;
@@ -52,17 +57,22 @@ class CoreInboxPostgresIntegrationTest {
     @Autowired TransactionTemplate transactions;
     @Autowired JdbcTemplate db;
     @Autowired Clock clock;
+    @Autowired FileStorage storage;
+    @MockitoBean ExternalAttachmentDownloader downloader;
     private final List<UUID> ticketIds=new ArrayList<>(), citizenIds=new ArrayList<>(), eventIds=new ArrayList<>();
 
     @AfterEach void cleanup() {
         eventIds.forEach(id -> db.update("DELETE FROM inbox_events WHERE event_id=?",id));
         for (UUID id:ticketIds) {
+            var storageKeys = db.queryForList("SELECT storage_key FROM attachments WHERE ticket_id=?", String.class, id);
             db.update("DELETE FROM information_request_attachments WHERE information_request_id IN (SELECT id FROM information_requests WHERE ticket_id=?)",id);
             for (String table:List.of("notification_logs","outbox_events","ticket_messages","ticket_activities",
                     "ticket_resolutions","information_requests","ticket_cancellations","ticket_sla","ticket_locations")) {
                 db.update("DELETE FROM "+table+" WHERE ticket_id=?",id);
             }
             db.update("UPDATE tickets SET main_ticket_id=NULL WHERE id=?",id);
+            db.update("DELETE FROM attachments WHERE ticket_id=?", id);
+            storageKeys.forEach(storage::delete);
         }
         ticketIds.forEach(id -> db.update("DELETE FROM tickets WHERE id=?",id));
         citizenIds.forEach(id -> db.update("DELETE FROM module_users WHERE actor_id=?",id));
@@ -140,7 +150,8 @@ class CoreInboxPostgresIntegrationTest {
         var ref=db.queryForMap("SELECT * FROM external_attachment_references WHERE ticket_id=?",ticket.getId());
         assertThat(ref).containsEntry("external_event_id",id(event)).containsEntry("source_module_id",area)
                 .containsEntry("update_type",type).containsEntry("visibility","INTERNAL").containsEntry("size_bytes",null);
-        assertThat(count("attachments",ticket)).isZero(); // never masquerades as a local file
+        assertThat(ref).containsEntry("local_attachment_id", null);
+        assertThat(count("attachments",ticket)).isZero();
         assertThat(count("ticket_activities",ticket)).isEqualTo(1);
         assertThat(count("outbox_events",ticket)).isZero();
         if(type.equals("RESOLVED")) assertThat(count("ticket_resolutions",ticket)).isEqualTo(1);
@@ -181,6 +192,49 @@ class CoreInboxPostgresIntegrationTest {
         assertThat(count("ticket_resolutions",ticket)).isZero();
         assertThat(tickets.findById(ticket.getId()).orElseThrow().getCurrentProgress()).isNull();
         processor.process(bytes(event)); assertThat(count("external_attachment_references",ticket)).isEqualTo(1);
+    }
+
+    @Test void localCopyRollsBackWithInboxAndTheCommittedRetryIsIdempotent() throws Exception {
+        Ticket ticket = externalTicket("M3", TicketStatus.ROUTED);
+        var event = externalEvent("M3", ticket, "RESOLVED");
+        var uri = URI.create("https://files.example.test/photo.png");
+        data(event).putArray("attachments").addObject().put("fileName", "photo.png")
+                .put("contentType", "image/png").put("url", uri.toString());
+        var attachmentId = ticket.getId();
+        byte[] png;
+        try (var resource = getClass().getResourceAsStream("/attachments/valid.png")) {
+            png = resource.readAllBytes();
+        }
+        when(downloader.download(eq(uri), anyLong(), isNull())).thenReturn(Optional.of(png));
+        var rolledBackKey = new AtomicReference<String>();
+        InboxEventRepository failing = mock(InboxEventRepository.class, delegatesTo(inbox));
+        doAnswer(ignored -> {
+            rolledBackKey.set(db.queryForObject("SELECT storage_key FROM attachments WHERE ticket_id=?",
+                    String.class, attachmentId));
+            throw new DataAccessResourceFailureException("synthetic");
+        }).when(failing).saveAndFlush(any());
+        var failed = new CoreInboxProcessor(validator, failing, tickets, updates, projection, clock);
+        assertThatThrownBy(() -> transactions.executeWithoutResult(tx -> failed.process(bytes(event))))
+                .isInstanceOf(DataAccessResourceFailureException.class);
+        assertThat(rolledBackKey.get()).isNotNull();
+        assertThatThrownBy(() -> storage.read(rolledBackKey.get())).isInstanceOf(StoredFileNotFoundException.class);
+        assertThat(count("external_attachment_references", ticket)).isZero();
+        assertThat(count("attachments", ticket)).isZero();
+        assertThat(inbox.existsById(id(event))).isFalse();
+
+        processor.process(bytes(event));
+        processor.process(bytes(event));
+        verify(downloader, times(2)).download(eq(uri), anyLong(), isNull());
+        assertThat(count("attachments", ticket)).isEqualTo(1);
+        assertThat(count("external_attachment_references", ticket)).isEqualTo(1);
+        var published = db.queryForMap("""
+                SELECT a.storage_key, a.visibility, r.external_event_id
+                FROM external_attachment_references r JOIN attachments a ON a.id = r.local_attachment_id
+                WHERE r.ticket_id=?
+                """, attachmentId);
+        assertThat(published).containsEntry("visibility", "INTERNAL").containsEntry("external_event_id", id(event));
+        assertThat(storage.read((String) published.get("storage_key")).resource().getContentAsByteArray())
+                .isEqualTo(png);
     }
     @ParameterizedTest @ValueSource(strings={"M3","M4","M7","M5","M6","M8"})
     void otherAreaAndOldRoutingEpochCannotModifyExternalTicket(String area) {

@@ -346,3 +346,20 @@ Un fallo, cancelación u omisión de G6 bloquea ambas operaciones; no afecta la 
 La auditoría de INT-05, la matriz ACK/NACK, el runbook de reprocesamiento y los
 pendientes de homologación con Core están en
 [INT-05 — Inbox y reprocesamiento](docs/integrations/int-05-inbox-y-reprocesamiento.md).
+
+## Copias locales de adjuntos externos
+
+Para habilitar la copia, configurar `ATTACHMENT_EXTERNAL_ALLOWED_HOSTS` en el
+proceso de Backend con los nombres DNS exactos, separados por comas, de los
+servidores de archivos acordados con los módulos productores. La lista vacía
+conserva sólo las referencias. La descarga usa HTTPS en el puerto 443, sin
+redirecciones, con IP pública y un plazo de 5 segundos por archivo.
+
+Las copias reutilizan el volumen de `ATTACHMENT_STORAGE_ROOT` y los límites y
+validaciones de adjuntos de M2. Permanecen `INTERNAL`. La consulta autenticada
+de referencias incluye `localDownloadUrl` cuando hay una copia disponible.
+Si el archivo está inaccesible, vencido o no pasa la validación, se aplica
+el evento y se guarda sólo la referencia. La descarga puede reintentarse
+una vez dentro del mismo plazo. Los fallos del almacenamiento local siguen
+la política de Inbox/Core. Las referencias existentes no se descargan en
+forma retroactiva.

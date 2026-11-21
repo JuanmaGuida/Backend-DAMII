@@ -1,10 +1,14 @@
 package com.reclamos.backend.service;
 
+import com.reclamos.backend.config.AttachmentProperties;
 import com.reclamos.backend.dto.UpdateTicketStatusRequest;
 import com.reclamos.backend.entity.*;
+import com.reclamos.backend.exception.AttachmentPayloadTooLargeException;
+import com.reclamos.backend.exception.InvalidAttachmentException;
 import com.reclamos.backend.exception.InvalidTicketRequestException;
 import com.reclamos.backend.exception.ResourceNotFoundException;
 import com.reclamos.backend.exception.UnauthorizedTicketOperationException;
+import com.reclamos.backend.exception.UnsupportedAttachmentMediaTypeException;
 import com.reclamos.backend.identity.AuthenticatedIdentity;
 import com.reclamos.backend.identity.ModuleRole;
 import com.reclamos.backend.repository.ExternalAttachmentReferenceRepository;
@@ -15,8 +19,10 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import java.net.URI;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -24,6 +30,10 @@ import java.util.UUID;
 public class ExternalAttachmentService {
     private final ExternalAttachmentReferenceRepository references;
     private final TicketRepository tickets;
+    private final ExternalAttachmentDownloader downloader;
+    private final AttachmentService attachments;
+    private final AttachmentReferenceService downloadUrls;
+    private final AttachmentProperties properties;
 
     public void validate(List<UpdateTicketStatusRequest.ExternalAttachment> attachments) {
         for (var item : attachments) {
@@ -44,8 +54,19 @@ public class ExternalAttachmentService {
 
     @Transactional(propagation = Propagation.MANDATORY)
     public void record(Ticket ticket, UUID eventId, String source, UpdateTicketStatusRequest request) {
+        if (request.attachments().isEmpty()) return;
+        var limits = properties.getLimits();
+        long remaining = limits.getMaxTotalSize().toBytes();
+        var copies = new HashMap<UpdateTicketStatusRequest.ExternalAttachment, Optional<Attachment>>();
         for (int i = 0; i < request.attachments().size(); i++) {
             var item = request.attachments().get(i);
+            Optional<Attachment> copy = copies.get(item);
+            if (copy == null && copies.size() < limits.getMaxFiles()) {
+                copy = copy(ticket, source, request.updateOccurredAt(), item,
+                        Math.min(remaining, limits.getMaxFileSize().toBytes()));
+                copies.put(item, copy);
+                if (copy.isPresent()) remaining -= copy.get().getSizeBytes();
+            }
             var reference = new ExternalAttachmentReference();
             reference.setTicket(ticket); reference.setExternalEventId(eventId); reference.setOrdinal(i);
             reference.setUpdateType(request.updateType()); reference.setSourceModuleId(source);
@@ -53,8 +74,28 @@ public class ExternalAttachmentService {
             reference.setContentType(item.contentType()); reference.setUrl(item.url()); reference.setSizeBytes(item.sizeBytes());
             // The shared schema has no visibility field. Never infer PUBLIC from a public message.
             reference.setVisibility(MessageVisibility.INTERNAL);
+            if (copy != null) reference.setLocalAttachment(copy.orElse(null));
             references.save(reference);
         }
+    }
+
+    private Optional<Attachment> copy(Ticket ticket, String source, Instant occurredAt,
+                                      UpdateTicketStatusRequest.ExternalAttachment item, long limit) {
+        var downloaded = downloader.download(URI.create(item.url()), limit, item.sizeBytes());
+        if (downloaded.isEmpty()) return Optional.empty();
+        AttachmentService.ValidatedAttachment validated;
+        try {
+            validated = attachments.validateDownloaded(downloaded.get(), item.fileName(), item.contentType());
+        } catch (InvalidAttachmentException | UnsupportedAttachmentMediaTypeException
+                 | AttachmentPayloadTooLargeException invalid) {
+            // Permanent failure: preserve the reference and apply the event without a local copy.
+            return Optional.empty();
+        }
+        // Storage failures still roll back with Inbox because persistence started.
+        Attachment attachment = attachments.storeForTicket(ticket, new AttachmentService.UploadActor(ActorType.SYSTEM, null),
+                MessageVisibility.INTERNAL, List.of(validated), occurredAt).getFirst();
+        attachment.setSourceModuleId(source);
+        return Optional.of(attachment);
     }
 
     @Transactional(readOnly = true)
@@ -70,9 +111,12 @@ public class ExternalAttachmentService {
         return references.findAllByTicket_IdOrderByOccurredAtAscIdAsc(ticketId).stream()
                 .filter(ref -> staff || ref.getVisibility() == MessageVisibility.PUBLIC)
                 .map(ref -> new Reference(ref.getId(), ref.getExternalEventId(), ref.getUpdateType(), ref.getOccurredAt(),
-                        ref.getFileName(), ref.getContentType(), ref.getUrl(), ref.getSizeBytes(), ref.getVisibility())).toList();
+                        ref.getFileName(), ref.getContentType(), ref.getUrl(), ref.getSizeBytes(), ref.getVisibility(),
+                        staff && ref.getLocalAttachment() != null ? downloadUrls.downloadUrl(ref.getLocalAttachment()) : null))
+                .toList();
     }
 
     public record Reference(Long id, UUID eventId, UpdateTicketStatusType updateType, Instant occurredAt,
-                            String fileName, String contentType, String url, Long sizeBytes, MessageVisibility visibility) { }
+                            String fileName, String contentType, String url, Long sizeBytes, MessageVisibility visibility,
+                            String localDownloadUrl) { }
 }

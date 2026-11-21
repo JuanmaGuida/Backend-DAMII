@@ -40,15 +40,17 @@ class ExternalAttachmentControllerTest {
         mvc.perform(get(path())).andExpect(status().isUnauthorized());
         verifyNoInteractions(service);
     }
-    @Test void authorizedMetadataIsNotCachedRedirectedOrStreamedAsALocalFile() throws Exception {
+    @Test void authorizedMetadataIncludesLocalDownloadWithoutRedirecting() throws Exception {
         when(service.list(ticketId,staff)).thenReturn(List.of(new ExternalAttachmentService.Reference(1L,UUID.randomUUID(),
                 UpdateTicketStatusType.RESOLVED,Instant.parse("2026-10-01T12:00:00Z"),"photo.jpg","image/jpeg",
-                "https://external.invalid/photo",null,MessageVisibility.INTERNAL)));
+                "https://external.invalid/photo",null,MessageVisibility.INTERNAL,
+                "https://m2.invalid/api/attachments/42/content")));
         mvc.perform(get(path()).with(authentication(principal))).andExpect(status().isOk())
                 .andExpect(header().string("Cache-Control","no-store"))
                 .andExpect(header().doesNotExist("Location"))
                 .andExpect(jsonPath("$[0].visibility").value("INTERNAL"))
                 .andExpect(jsonPath("$[0].url").value("https://external.invalid/photo"))
+                .andExpect(jsonPath("$[0].localDownloadUrl").value("https://m2.invalid/api/attachments/42/content"))
                 .andExpect(jsonPath("$[0].storageKey").doesNotExist());
     }
     @Test void ticketAuthorizationFailureIsPropagated() throws Exception {
