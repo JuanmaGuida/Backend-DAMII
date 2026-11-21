@@ -1,15 +1,33 @@
 package com.reclamos.backend.security;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.convert.ApplicationConversionService;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.core.convert.ConversionService;
 import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
 
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+@SpringJUnitConfig({ClientAddressResolver.class, ClientAddressResolverTest.ConversionConfig.class})
+@TestPropertySource("classpath:application.properties")
 class ClientAddressResolverTest {
-    private final ClientAddressResolver resolver = new ClientAddressResolver();
+    @Autowired
+    private ClientAddressResolver resolver;
+
+    @Configuration(proxyBeanMethods = false)
+    static class ConversionConfig {
+        @Bean
+        static ConversionService conversionService() {
+            return ApplicationConversionService.getSharedInstance();
+        }
+    }
 
     @Test
     void usesTheForwardedAddressWhenThePeerIsAPrivateProxy() {
@@ -17,6 +35,9 @@ class ClientAddressResolverTest {
         assertEquals("198.51.100.7", resolve("10.0.0.4", "198.51.100.7"));
         assertEquals("198.51.100.7", resolve("192.168.1.20", "198.51.100.7"));
         assertEquals("198.51.100.7", resolve("127.0.0.1", "198.51.100.7"));
+        assertEquals("198.51.100.7", resolve("169.254.1.2", "198.51.100.7"));
+        assertEquals("2001:db8::7", resolve("::1", "2001:db8::7"));
+        assertEquals("2001:db8::7", resolve("fe80::1", "2001:db8::7"));
         assertEquals("2001:db8::7", resolve("fd00::5", "2001:db8::7"));
     }
 

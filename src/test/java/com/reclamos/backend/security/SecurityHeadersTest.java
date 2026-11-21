@@ -92,7 +92,9 @@ class SecurityHeadersTest {
         assertThat(ApiContentSecurityPolicyHeaderWriter.policyFor("/swagger-ui.html"))
                 .isEqualTo(ApiContentSecurityPolicyHeaderWriter.DOCS_POLICY);
         assertThat(ApiContentSecurityPolicyHeaderWriter.policyFor("/swagger-ui/index.html"))
-                .isEqualTo(ApiContentSecurityPolicyHeaderWriter.DOCS_POLICY);
+                .isEqualTo(ApiContentSecurityPolicyHeaderWriter.DOCS_POLICY)
+                .contains("script-src 'self';")
+                .contains("style-src 'self' 'unsafe-inline';");
 
         assertThat(ApiContentSecurityPolicyHeaderWriter.policyFor("/api/attachments/abc/content"))
                 .isEqualTo(ApiContentSecurityPolicyHeaderWriter.ATTACHMENT_POLICY);

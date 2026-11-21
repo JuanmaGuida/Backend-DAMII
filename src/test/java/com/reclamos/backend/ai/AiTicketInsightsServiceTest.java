@@ -55,7 +55,7 @@ class AiTicketInsightsServiceTest {
         messages = mock(TicketMessageRepository.class);
         candidates = mock(DuplicateCandidateService.class);
         service = new AiTicketInsightsService(AiTestSupport.gateway(properties, llm, clock),
-                new AiRateLimiter(properties, new ClientAddressResolver(), clock),
+                new AiRateLimiter(properties, new ClientAddressResolver(List.of()), clock),
                 ticketService, messages, candidates);
 
         RequestType type = new RequestType();

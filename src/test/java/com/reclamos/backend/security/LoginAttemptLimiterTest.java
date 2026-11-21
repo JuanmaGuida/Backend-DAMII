@@ -11,6 +11,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -52,7 +53,7 @@ class LoginAttemptLimiterTest {
         properties.setMaxFailuresPerClient(CLIENT_MAX);
         properties.setMaxFailuresPerUsername(USERNAME_MAX);
         properties.setWindow(WINDOW);
-        limiter = new LoginAttemptLimiter(properties, new ClientAddressResolver(), clock);
+        limiter = new LoginAttemptLimiter(properties, new ClientAddressResolver(List.of()), clock);
     }
 
     @Test
