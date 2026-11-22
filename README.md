@@ -178,7 +178,7 @@ if ($LASTEXITCODE -ne 0) { throw 'No se pudo verificar Flyway' }
 ```
 
 Esperado: los dos servicios `healthy`, health `UP`, Swagger y contrato HTTP 200,
-y última migración **53**, `success = t` (`V53__resource_revisions.sql`). El comando SQL usa
+y última migración **54**, `success = t` (`V54__link_external_attachment_copies.sql`). El comando SQL usa
 los nombres predeterminados; ajustarlos si se cambiaron en `.env`.
 Abrir `http://localhost:8080/swagger-ui.html` en el navegador (adaptar `APP_PORT`).
 
@@ -283,7 +283,7 @@ vinculados y `logServerErrorDetail=false` evita copiar detalles sensibles del dr
 - [`application.properties`](src/main/resources/application.properties) y
   [`application-dev.properties`](src/main/resources/application-dev.properties).
 - Flyway se ejecuta automáticamente desde `src/main/resources/db/migration`; la última
-  migración es **V53**, no V41. La biblioteca actual es **Flyway 12.4.0**, administrada por Spring Boot 4.1.2 en `pom.xml`. No modificar migraciones históricas.
+  migración es **V54**. La biblioteca actual es **Flyway 12.4.0**, administrada por Spring Boot 4.1.2 en `pom.xml`. No modificar migraciones históricas.
 - Para desarrollo fuera de Docker sí se necesita **Java 21**. Maven/IDE no cargan `.env`
   automáticamente: proporcionar al proceso `SPRING_PROFILES_ACTIVE=dev`, datasource local,
   las cuatro passwords MOCK y la misma clave/ID persistente mediante configuración privada.
@@ -343,9 +343,8 @@ La detección está limitada a los patrones y formatos reconocidos; no es cobert
 Publicar y desplegar requiere que G6 termine correctamente, además de los gates existentes.
 Un fallo, cancelación u omisión de G6 bloquea ambas operaciones; no afecta la versión ya desplegada.
 
-La auditoría de INT-05, la matriz ACK/NACK, el runbook de reprocesamiento y los
-pendientes de homologación con Core están en
-[INT-05 — Inbox y reprocesamiento](docs/integrations/int-05-inbox-y-reprocesamiento.md).
+Para INT-05, consultar la [política de ACK/NACK e idempotencia del Inbox](docs/integrations/m2-m4.md#acknack-e-idempotencia).
+Queda pendiente versionar el runbook de reprocesamiento.
 
 ## Copias locales de adjuntos externos
 

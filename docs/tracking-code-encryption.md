@@ -1,9 +1,9 @@
 # Recuperación cifrada del código de seguimiento
 
-Los tickets identificados nuevos conservan el mismo código original mediante AES-256-GCM,
-además de `tracking_code_hash` (SHA-256, sin cambios). Los anónimos y los históricos siguen
-funcionando con sus credenciales existentes. No hay backfill, regeneración ni rotación.
-Frontend todavía no incorpora esta operación.
+El seguimiento público valida el código ingresado contra `tracking_code_hash` (SHA-256).
+Al crear un ticket identificado se guarda también una copia del código original cifrada con
+AES-256-GCM. Su propietario autenticado puede recuperarlo desde el detalle en Mis reclamos.
+Los tickets anónimos y los históricos sin copia cifrada conservan el seguimiento por hash.
 
 ## Configuración obligatoria
 
