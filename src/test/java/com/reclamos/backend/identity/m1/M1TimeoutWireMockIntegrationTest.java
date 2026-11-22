@@ -26,6 +26,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import java.net.URI;
 import java.time.Clock;
 import java.time.Duration;
+import java.util.List;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options;
@@ -62,7 +63,7 @@ class M1TimeoutWireMockIntegrationTest {
         beans.addBean("cookies", cookies);
         var limiter = new com.reclamos.backend.security.LoginAttemptLimiter(
                 new com.reclamos.backend.config.LoginRateLimitProperties(),
-                new com.reclamos.backend.security.ClientAddressResolver(), Clock.systemUTC());
+                new com.reclamos.backend.security.ClientAddressResolver(List.of()), Clock.systemUTC());
         mvc = MockMvcBuilders.standaloneSetup(
                         new AuthController(auth, beans.getBeanProvider(M1SessionCookies.class), limiter),
                         new M1SessionController(auth, cookies, limiter))
