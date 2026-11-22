@@ -313,4 +313,98 @@
 		</plugins>
 	</build>
 
+	<profiles>
+		<profile>
+			<id>pitest</id>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>org.pitest</groupId>
+						<artifactId>pitest-maven</artifactId>
+						<version>1.30.1</version>
+						<dependencies>
+							<dependency>
+								<groupId>org.pitest</groupId>
+								<artifactId>pitest-junit5-plugin</artifactId>
+								<version>1.2.3</version>
+							</dependency>
+						</dependencies>
+						<configuration>
+							<!-- The PostgreSQL integration tests share one disposable database. -->
+							<threads>1</threads>
+							<!-- Allow a cold Spring context to start in each PIT worker. -->
+							<timeoutConstant>25000</timeoutConstant>
+							<outputFormats>
+								<format>HTML</format>
+								<format>XML</format>
+							</outputFormats>
+							<targetClasses>
+								<!-- Ticket lifecycle, state transitions and duplicate detection -->
+								<param>com.reclamos.backend.entity.Ticket</param>
+								<param>com.reclamos.backend.entity.TicketState*</param>
+								<param>com.reclamos.backend.service.TicketService</param>
+								<param>com.reclamos.backend.service.TicketStatusUpdateService</param>
+								<param>com.reclamos.backend.service.TicketResolutionService*</param>
+								<param>com.reclamos.backend.service.ResolutionConfirmationTimeoutService</param>
+								<param>com.reclamos.backend.service.TicketCancellationRequestService</param>
+								<param>com.reclamos.backend.service.TicketCancellationConflictService</param>
+								<param>com.reclamos.backend.service.DuplicateTicketService</param>
+								<param>com.reclamos.backend.service.DuplicateCandidateService*</param>
+								<param>com.reclamos.backend.service.HaversineDistanceCalculator</param>
+								<!-- Risk, priority and configuration invariants -->
+								<param>com.reclamos.backend.service.RiskCalculationService*</param>
+								<param>com.reclamos.backend.service.RiskScalePolicy</param>
+								<param>com.reclamos.backend.service.RiskAssessment</param>
+								<param>com.reclamos.backend.service.PriorityCalculationService*</param>
+								<param>com.reclamos.backend.service.TicketPriorityService</param>
+								<param>com.reclamos.backend.config.PriorityProperties*</param>
+								<!-- SLA policies, cycles, milestones and escalation precedence -->
+								<param>com.reclamos.backend.entity.SlaPolicy</param>
+								<param>com.reclamos.backend.entity.WorkCalendar</param>
+								<param>com.reclamos.backend.service.SlaCalculationService*</param>
+								<param>com.reclamos.backend.service.TicketSlaService*</param>
+								<param>com.reclamos.backend.service.TicketSlaMilestoneService</param>
+								<!-- Form validation, reclassification and information requests -->
+								<param>com.reclamos.backend.service.FormValidationService*</param>
+								<param>com.reclamos.backend.service.TicketReclassificationService</param>
+								<param>com.reclamos.backend.service.ReclassificationDataService</param>
+								<param>com.reclamos.backend.service.InformationRequestService*</param>
+								<param>com.reclamos.backend.service.InformationRequestDeadlineService</param>
+								<param>com.reclamos.backend.service.InformationRequestExpirationService</param>
+							</targetClasses>
+							<targetTests>
+								<param>com.reclamos.backend.entity.TicketStateTest</param>
+								<param>com.reclamos.backend.service.TicketServiceTest</param>
+								<param>com.reclamos.backend.service.TicketStatusUpdateServiceTest</param>
+								<param>com.reclamos.backend.service.TicketResolutionServiceTest</param>
+								<param>com.reclamos.backend.service.ResolutionConfirmationTimeoutServiceTest</param>
+								<param>com.reclamos.backend.service.TicketCancellationRequestServiceTest</param>
+								<param>com.reclamos.backend.service.DuplicateTicketServiceTest</param>
+								<param>com.reclamos.backend.service.DuplicateCandidateServiceTest</param>
+								<param>com.reclamos.backend.service.HaversineDistanceCalculatorTest</param>
+								<param>com.reclamos.backend.service.RiskCalculationServiceTest</param>
+								<param>com.reclamos.backend.service.RiskScalePolicyTest</param>
+								<param>com.reclamos.backend.service.PriorityCalculationServiceTest</param>
+								<param>com.reclamos.backend.service.PriorityPropertiesBindingTest</param>
+								<param>com.reclamos.backend.entity.SlaConfigurationValidationTest</param>
+								<param>com.reclamos.backend.service.SlaCalculationServiceTest</param>
+								<param>com.reclamos.backend.service.TicketSlaServiceTest</param>
+								<param>com.reclamos.backend.service.ResolutionSlaMilestoneServiceTest</param>
+								<param>com.reclamos.backend.service.TicketEscalationPrecedenceTest</param>
+								<param>com.reclamos.backend.service.FormValidationServiceTest</param>
+								<param>com.reclamos.backend.service.ReclassificationFormValidationTest</param>
+								<param>com.reclamos.backend.service.RoutedFormSnapshotTest</param>
+								<param>com.reclamos.backend.service.InformationRequestServiceTest</param>
+								<param>com.reclamos.backend.service.InformationRequestDeadlineServiceTest</param>
+								<param>com.reclamos.backend.service.InformationRequestExpirationServiceTest</param>
+								<param>com.reclamos.backend.service.TicketReclassificationPostgresIntegrationTest</param>
+								<param>com.reclamos.backend.service.TicketCancellationPostgresIntegrationTest</param>
+							</targetTests>
+						</configuration>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
+	</profiles>
+
 </project>

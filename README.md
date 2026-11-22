@@ -298,6 +298,20 @@ vinculados y `logServerErrorDetail=false` evita copiar detalles sensibles del dr
 Se resuelven en `application.properties`; para un proceso Maven/IDE se pasan como variables
 privadas del proceso. El Compose local no las reenvía actualmente.
 
+## Mutation testing del dominio M2
+
+Desde la raíz del backend, con `JAVA_HOME` apuntando al JDK 21, ejecutar en PowerShell:
+
+```powershell
+.\mvnw.cmd -B -Ppitest '-Djacoco.skip=true' test-compile org.pitest:pitest-maven:mutationCoverage
+```
+
+El perfil optativo mide el ciclo de vida del ticket, riesgo, prioridad, SLA, validaciones y
+reclasificación. La selección de pruebas corre sin Docker ni servicios externos.
+Conservar la carpeta `target/pit-reports` completa (`index.html` y `mutations.xml`) junto
+con el log, la revisión y el POM usados. Se puede dirigir la salida a una carpeta de QA
+con `"-DreportsDirectory=C:\ruta\evidencia\report"`.
+
 ## CI, coverage, GHCR y CD
 
 Los pull requests ejecutan Java 21, PostgreSQL 17, `./mvnw -B clean verify`, generan y publican el reporte JaCoCo y validan el Dockerfile sin publicar imágenes. La cobertura LINE tiene un gate obligatorio de **85%**: un resultado inferior hace fallar `verify`. El porcentaje queda visible en el resumen de GitHub Actions y el reporte HTML se conserva como artifact.
