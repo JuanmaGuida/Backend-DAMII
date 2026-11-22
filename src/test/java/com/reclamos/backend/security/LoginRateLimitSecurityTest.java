@@ -57,7 +57,7 @@ class LoginRateLimitSecurityTest {
     static class LimiterConfiguration {
         @Bean
         LoginAttemptLimiter loginAttemptLimiter() {
-            return new LoginAttemptLimiter(new LoginRateLimitProperties(), new ClientAddressResolver(),
+            return new LoginAttemptLimiter(new LoginRateLimitProperties(), new ClientAddressResolver(List.of()),
                     Clock.systemUTC());
         }
     }

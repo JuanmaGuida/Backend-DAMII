@@ -35,7 +35,7 @@ class AiClassificationServiceTest {
                 type(STREET_LIGHT, "Luminaria apagada", "Alumbrado", "Mantenimiento"),
                 type(POTHOLE, "Bache en la calzada", "Calles y veredas", "Calzada")));
         service = new AiClassificationService(AiTestSupport.gateway(properties, llm, clock),
-                new AiRateLimiter(properties, new ClientAddressResolver(), clock), repository);
+                new AiRateLimiter(properties, new ClientAddressResolver(List.of()), clock), repository);
     }
 
     static RequestType type(long id, String name, String category, String subcategory) {

@@ -13,6 +13,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -49,7 +50,7 @@ class TrackingAttemptLimiterTest {
         properties.setMaxFailuresPerClient(3);
         properties.setMaxFailuresPerTicket(2);
         properties.setWindow(Duration.ofMinutes(10));
-        limiter = new TrackingAttemptLimiter(properties, new ClientAddressResolver(), clock);
+        limiter = new TrackingAttemptLimiter(properties, new ClientAddressResolver(List.of("172.18.0.0/16")), clock);
         bindRequestFrom("203.0.113.10");
     }
 

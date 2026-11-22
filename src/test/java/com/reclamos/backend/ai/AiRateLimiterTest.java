@@ -10,6 +10,7 @@ import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
 import java.time.Duration;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -18,7 +19,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class AiRateLimiterTest {
     AiProperties properties = AiTestSupport.enabledProperties();
     MutableClock clock = new MutableClock();
-    AiRateLimiter limiter = new AiRateLimiter(properties, new ClientAddressResolver(), clock);
+    AiRateLimiter limiter = new AiRateLimiter(properties, new ClientAddressResolver(List.of()), clock);
 
     @BeforeEach
     void setUp() {

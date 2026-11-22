@@ -1,7 +1,6 @@
 package com.reclamos.backend.security;
 
 import jakarta.servlet.http.HttpServletRequest;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.web.util.matcher.IpAddressMatcher;
 import org.springframework.stereotype.Component;
@@ -27,25 +26,13 @@ import java.util.regex.Pattern;
  */
 @Component
 public class ClientAddressResolver {
-    /** Loopback, redes privadas, enlace local y direcciones locales únicas IPv6. */
-    static final List<String> DEFAULT_TRUSTED_PROXIES = List.of(
-            "127.0.0.0/8", "::1/128",
-            "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",
-            "169.254.0.0/16", "fe80::/10", "fc00::/7");
-
     private static final String FORWARDED_FOR = "X-Forwarded-For";
     private static final Pattern IP_LITERAL = Pattern.compile("[0-9a-fA-F:.]{2,45}");
 
     private final List<IpAddressMatcher> trustedProxies;
 
-    public ClientAddressResolver() {
-        this(DEFAULT_TRUSTED_PROXIES);
-    }
-
-    @Autowired
     public ClientAddressResolver(
-            @Value("${tracking.rate-limit.trusted-proxies:127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,"
-                    + "192.168.0.0/16,169.254.0.0/16,fe80::/10,fc00::/7}") List<String> trustedProxies) {
+            @Value("${tracking.rate-limit.trusted-proxies}") List<String> trustedProxies) {
         // Una red mal escrita debe impedir el arranque, no dejar de proteger en silencio.
         this.trustedProxies = trustedProxies.stream()
                 .map(String::trim)

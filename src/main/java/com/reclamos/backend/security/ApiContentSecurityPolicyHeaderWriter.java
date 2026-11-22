@@ -11,8 +11,8 @@ import org.springframework.security.web.header.HeaderWriter;
  * ({@code default-src 'none'}) y no admite ser embebida. Hay dos excepciones
  * acotadas por ruta:</p>
  * <ul>
- *   <li>Swagger UI ({@code /swagger-ui.html}, {@code /swagger-ui/**}) necesita scripts y
- *       estilos propios, incluidos los inline que genera la librería.</li>
+ *   <li>Swagger UI ({@code /swagger-ui.html}, {@code /swagger-ui/**}) carga scripts
+ *       del mismo origen y genera estilos inline.</li>
  *   <li>El contenido de adjuntos ({@code /api/attachments/{id}/content} y su variante de
  *       tracking) se sirve inline (PDF, imágenes): se le deja sólo
  *       {@code frame-ancestors 'none'} para no interferir con el visor del navegador.
@@ -25,7 +25,7 @@ public final class ApiContentSecurityPolicyHeaderWriter implements HeaderWriter 
     static final String API_POLICY =
             "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
     static final String DOCS_POLICY =
-            "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; "
+            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
                     + "img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'";
     static final String ATTACHMENT_POLICY = "frame-ancestors 'none'";
 
