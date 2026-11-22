@@ -114,7 +114,8 @@ class TrackingControllerTest {
                     .andExpect(header().string(HttpHeaders.CACHE_CONTROL, containsString("no-store")))
                     .andExpect(jsonPath("$.code").value(TrackingTicketNotFoundException.CODE))
                     .andExpect(jsonPath("$.message").value(TrackingTicketNotFoundException.MESSAGE))
-                    .andExpect(jsonPath("$.length()").value(2))
+                    .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                    .andExpect(jsonPath("$.status").value(404))
                     .andExpect(content().string(not(containsString("TrackingTicketNotFoundException"))));
         }
     }
@@ -133,7 +134,8 @@ class TrackingControllerTest {
                 .andExpect(header().string(HttpHeaders.RETRY_AFTER, "90"))
                 .andExpect(header().string(HttpHeaders.CACHE_CONTROL, containsString("no-store")))
                 .andExpect(jsonPath("$.code").value(TooManyTrackingAttemptsException.CODE))
-                .andExpect(jsonPath("$.length()").value(2));
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.status").value(429));
     }
 
     @Test

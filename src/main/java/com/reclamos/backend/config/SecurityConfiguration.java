@@ -1,14 +1,19 @@
 package com.reclamos.backend.config;
 
-import com.reclamos.backend.dto.error.ApiErrorResponse;
+import com.reclamos.backend.dto.error.ApiProblem;
 import com.reclamos.backend.security.ApiContentSecurityPolicyHeaderWriter;
 import com.reclamos.backend.security.BearerTokenAuthenticationFilter;
 import jakarta.servlet.DispatcherType;
+import jakarta.servlet.Filter;
+import jakarta.servlet.RequestDispatcher;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
-import org.springframework.http.MediaType;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.userdetails.UserDetailsService;
@@ -20,16 +25,8 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import tools.jackson.databind.ObjectMapper;
 
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-
 @Configuration
 public class SecurityConfiguration {
-    private static final ApiErrorResponse UNAUTHORIZED_RESPONSE =
-            new ApiErrorResponse("INVALID_TOKEN", "La sesión no es válida");
-    private static final ApiErrorResponse FORBIDDEN_RESPONSE =
-            new ApiErrorResponse("FORBIDDEN", "No tiene permisos para realizar esta operación");
-
     @Bean
     PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
@@ -77,10 +74,12 @@ public class SecurityConfiguration {
                                 .policy(ReferrerPolicyHeaderWriter.ReferrerPolicy.NO_REFERRER))
                         .addHeaderWriter(new ApiContentSecurityPolicyHeaderWriter()))
                 .exceptionHandling(exceptions -> exceptions
-                        .authenticationEntryPoint((request, response, exception) -> writeError(
-                                response, objectMapper, HttpServletResponse.SC_UNAUTHORIZED, UNAUTHORIZED_RESPONSE))
-                        .accessDeniedHandler((request, response, exception) -> writeError(
-                                response, objectMapper, HttpServletResponse.SC_FORBIDDEN, FORBIDDEN_RESPONSE)))
+                        .authenticationEntryPoint((request, response, exception) -> ApiProblem.write(
+                                response, objectMapper, HttpStatus.UNAUTHORIZED, "INVALID_TOKEN",
+                                "La sesión no es válida", request.getRequestURI()))
+                        .accessDeniedHandler((request, response, exception) -> ApiProblem.write(
+                                response, objectMapper, HttpStatus.FORBIDDEN, "FORBIDDEN",
+                                "No tiene permisos para realizar esta operación", request.getRequestURI())))
                 .authorizeHttpRequests(authorize -> authorize
                         .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/auth/login", "/api/auth/refresh", "/api/auth/logout").permitAll()
@@ -250,11 +249,30 @@ public class SecurityConfiguration {
                 .build();
     }
 
-    private static void writeError(HttpServletResponse response, ObjectMapper objectMapper, int status,
-                                   ApiErrorResponse body) throws IOException {
-        response.setStatus(status);
-        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
-        objectMapper.writeValue(response.getWriter(), body);
+    @Bean
+    FilterRegistrationBean<Filter> apiErrorDispatch(ObjectMapper objectMapper) {
+        // Format container errors after Spring Security, before Boot's default error page.
+        FilterRegistrationBean<Filter> registration = new FilterRegistrationBean<>((request, response, chain) -> {
+            var httpRequest = (HttpServletRequest) request;
+            var httpResponse = (HttpServletResponse) response;
+            Object originalPath = request.getAttribute(RequestDispatcher.ERROR_REQUEST_URI);
+            Object originalStatus = request.getAttribute(RequestDispatcher.ERROR_STATUS_CODE);
+            if (httpResponse.isCommitted() || !(originalPath instanceof String path)
+                    || !path.startsWith(httpRequest.getContextPath() + "/api/")
+                    || !(originalStatus instanceof Integer value) || value < 400 || value >= 600) {
+                chain.doFilter(request, response);
+                return;
+            }
+
+            HttpStatusCode status = HttpStatusCode.valueOf(value);
+            HttpStatus knownStatus = HttpStatus.resolve(value);
+            String code = knownStatus == null ? "HTTP_ERROR" : knownStatus.name();
+            String detail = status.is5xxServerError()
+                    ? "No fue posible completar la operación."
+                    : "No fue posible procesar la solicitud.";
+            ApiProblem.write(httpResponse, objectMapper, status, code, detail, path);
+        });
+        registration.setDispatcherTypes(DispatcherType.ERROR);
+        return registration;
     }
 }

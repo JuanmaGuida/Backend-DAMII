@@ -351,12 +351,15 @@ class SecurityHardeningIntegrationTest {
     void authenticatedMultipartWithoutRequiredDataUsesCanonicalBadRequest() throws Exception {
         mockMvc.perform(withBearer(multipart("/api/tickets"), validToken()))
                 .andExpect(status().isBadRequest())
-                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
                 .andExpect(jsonPath("$.message").value("Falta el part obligatorio 'data'"))
-                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.type").value("about:blank"))
+                .andExpect(jsonPath("$.title").value("Bad Request"))
+                .andExpect(jsonPath("$.detail").value("Falta el part obligatorio 'data'"))
+                .andExpect(jsonPath("$.instance").value("/api/tickets"))
                 .andExpect(jsonPath("$.timestamp").doesNotExist())
-                .andExpect(jsonPath("$.status").doesNotExist())
                 .andExpect(jsonPath("$.error").doesNotExist())
                 .andExpect(jsonPath("$.path").doesNotExist());
     }
@@ -495,7 +498,8 @@ class SecurityHardeningIntegrationTest {
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("INVALID_TOKEN"))
                 .andExpect(jsonPath("$.message").value("La sesión no es válida"))
-                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.status").value(401))
                 .andExpect(header().doesNotExist("Location"));
     }
 
@@ -504,6 +508,7 @@ class SecurityHardeningIntegrationTest {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("FORBIDDEN"))
                 .andExpect(jsonPath("$.message").value("No tiene permisos para realizar esta operación"))
-                .andExpect(jsonPath("$.length()").value(2));
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.status").value(403));
     }
 }

@@ -1,7 +1,10 @@
 openapi: 3.0.3
 info:
   title: M2 - Atención Ciudadana API
-  description: API REST del módulo M2 de Atención Ciudadana, Reclamos y Solicitudes.
+  description: >-
+    API REST del módulo M2 de Atención Ciudadana, Reclamos y Solicitudes.
+    Los errores de la aplicación se devuelven como application/problem+json
+    (RFC 9457), con code y message como extensiones de compatibilidad.
   version: 1.0.0
 servers:
   - url: /
@@ -62,7 +65,7 @@ paths:
         '400':
           $ref: '#/components/responses/InvalidRequest'
         '401':
-          description: Requiere autenticación.
+          $ref: '#/components/responses/InvalidToken'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -91,10 +94,14 @@ paths:
         '401':
           description: Credenciales inválidas.
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
               example:
+                type: about:blank
+                title: Unauthorized
+                status: 401
+                detail: Usuario o contraseña inválidos
                 code: INVALID_CREDENTIALS
                 message: Usuario o contraseña inválidos
         '415':
@@ -108,10 +115,14 @@ paths:
               description: Segundos hasta que se puede volver a intentar.
               schema: { type: integer, minimum: 1, example: 900 }
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
               example:
+                type: about:blank
+                title: Too Many Requests
+                status: 429
+                detail: Demasiados intentos. Intentá de nuevo más tarde.
                 code: TOO_MANY_ATTEMPTS
                 message: Demasiados intentos. Intentá de nuevo más tarde.
   /api/auth/me:
@@ -463,10 +474,14 @@ paths:
             existente y activa, o ya existe una subcategoría con ese nombre
             en la categoría seleccionada.
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
               example:
+                type: about:blank
+                title: Bad Request
+                status: 400
+                detail: La categoría seleccionada no existe o está inactiva
                 code: INVALID_REQUEST
                 message: La categoría seleccionada no existe o está inactiva
         '401':
@@ -552,10 +567,14 @@ paths:
         '400':
           description: La categoría padre de la subcategoría está inactiva.
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
               example:
+                type: about:blank
+                title: Bad Request
+                status: 400
+                detail: No se puede activar la subcategoría porque su categoría está inactiva
                 code: INVALID_REQUEST
                 message: No se puede activar la subcategoría porque su categoría está inactiva
         '401':
@@ -615,10 +634,14 @@ paths:
             tipo de solicitud con ese código o con ese nombre en la
             subcategoría seleccionada.
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
               example:
+                type: about:blank
+                title: Bad Request
+                status: 400
+                detail: Ya existe un Request Type con el código indicado
                 code: INVALID_REQUEST
                 message: Ya existe un Request Type con el código indicado
         '401':
@@ -703,10 +726,14 @@ paths:
         '400':
           description: La subcategoría o la categoría padre del tipo de solicitud están inactivas.
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
               example:
+                type: about:blank
+                title: Bad Request
+                status: 400
+                detail: No se puede activar el Request Type porque su subcategoría está inactiva
                 code: INVALID_REQUEST
                 message: No se puede activar el Request Type porque su subcategoría está inactiva
         '401':
@@ -744,10 +771,14 @@ paths:
         '404':
           description: El Request Type no existe, o no tiene un formulario configurado todavía.
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
               example:
+                type: about:blank
+                title: Not Found
+                status: 404
+                detail: El Request Type no tiene un formulario configurado
                 code: NOT_FOUND
                 message: El Request Type no tiene un formulario configurado
     put:
@@ -872,12 +903,12 @@ paths:
         '409':
           description: TRACKING_CODE_NOT_RECOVERABLE; ticket creado sin material recuperable.
           content:
-            application/json:
+            application/problem+json:
               schema: { $ref: '#/components/schemas/ApiError' }
         '503':
           description: TRACKING_CODE_UNAVAILABLE; error operativo sin detalles criptográficos.
           content:
-            application/json:
+            application/problem+json:
               schema: { $ref: '#/components/schemas/ApiError' }
   /api/indicators/overview:
     get:
@@ -1285,16 +1316,24 @@ paths:
         '400':
           description: Request inválido, part `data` ausente o adjunto inválido. INVALID_ATTACHMENT sólo aplica a multipart.
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
               examples:
                 missingData:
                   value:
+                    type: about:blank
+                    title: Bad Request
+                    status: 400
+                    detail: Falta el part obligatorio 'data'
                     code: INVALID_REQUEST
                     message: Falta el part obligatorio 'data'
                 invalidAttachment:
                   value:
+                    type: about:blank
+                    title: Bad Request
+                    status: 400
+                    detail: Cada evidencia debe contener un archivo no vacío.
                     code: INVALID_ATTACHMENT
                     message: Cada evidencia debe contener un archivo no vacío.
         '401':
@@ -1307,42 +1346,58 @@ paths:
             Cache-Control:
               schema: { type: string, enum: [no-store] }
           content:
-            application/json:
+            application/problem+json:
               schema: { $ref: '#/components/schemas/ApiError' }
         '413':
           description: Límite de adjuntos excedido; sólo aplica a multipart.
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
               example:
+                type: about:blank
+                title: Content Too Large
+                status: 413
+                detail: La evidencia supera el tamaño máximo permitido.
                 code: PAYLOAD_TOO_LARGE
                 message: La evidencia supera el tamaño máximo permitido.
         '415':
           description: Content-Type del request no soportado o MIME de evidencia no admitido. El MIME de evidencia sólo aplica a multipart.
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
               example:
+                type: about:blank
+                title: Unsupported Media Type
+                status: 415
+                detail: Tipo de contenido no soportado
                 code: UNSUPPORTED_MEDIA_TYPE
                 message: Tipo de contenido no soportado
         '422':
           description: El riesgo calculado requiere al menos una evidencia.
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
               example:
+                type: about:blank
+                title: Unprocessable Content
+                status: 422
+                detail: El nivel de riesgo detectado requiere adjuntar al menos una evidencia.
                 code: EVIDENCE_REQUIRED
                 message: El nivel de riesgo detectado requiere adjuntar al menos una evidencia.
         '503':
           description: El almacenamiento de adjuntos no está disponible; sólo aplica cuando multipart contiene evidencia.
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
               example:
+                type: about:blank
+                title: Service Unavailable
+                status: 503
+                detail: No fue posible almacenar la evidencia. Intentá nuevamente más tarde.
                 code: ATTACHMENT_STORAGE_UNAVAILABLE
                 message: No fue posible almacenar la evidencia. Intentá nuevamente más tarde.
   /api/tickets/{ticketId}:
@@ -1417,11 +1472,11 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '413':
           description: Se excedió el límite de cantidad o tamaño de adjuntos.
-          content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } }
+          content: { application/problem+json: { schema: { $ref: '#/components/schemas/ApiError' } } }
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '503':
           description: El almacenamiento de adjuntos no está disponible.
-          content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } }
+          content: { application/problem+json: { schema: { $ref: '#/components/schemas/ApiError' } } }
   /api/staff/labels:
     get:
       tags: [ Labels ]
@@ -1697,7 +1752,7 @@ paths:
               description: Segundos hasta que se puede volver a intentar.
               schema: { type: integer, minimum: 1 }
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
   /api/staff/tickets/{ticketId}/ai-insights:
@@ -1734,7 +1789,7 @@ paths:
         '404':
           description: El ticket no existe.
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
         '429':
@@ -1744,7 +1799,7 @@ paths:
               description: Segundos hasta que se puede volver a intentar.
               schema: { type: integer, minimum: 1 }
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
   /api/staff/tickets/{ticketId}/duplicate-candidates:
@@ -1778,7 +1833,7 @@ paths:
         '404':
           description: El ticket origen no existe.
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
   /api/staff/tickets/{ticketId}/duplicate:
@@ -2014,10 +2069,14 @@ paths:
         '410':
           description: El plazo para responder venció.
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
               example:
+                type: about:blank
+                title: Gone
+                status: 410
+                detail: El plazo para responder la solicitud de información venció
                 code: INFORMATION_REQUEST_EXPIRED
                 message: El plazo para responder la solicitud de información venció
         '415':
@@ -2149,10 +2208,14 @@ paths:
         '409':
           description: El ticket no está cerrado o ya posee una encuesta.
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
               example:
+                type: about:blank
+                title: Conflict
+                status: 409
+                detail: La encuesta sólo puede registrarse cuando el ticket está cerrado
                 code: SATISFACTION_SURVEY_CONFLICT
                 message: La encuesta sólo puede registrarse cuando el ticket está cerrado
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
@@ -2451,11 +2514,11 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '413':
           description: Se excedió el límite de cantidad o tamaño de adjuntos.
-          content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } }
+          content: { application/problem+json: { schema: { $ref: '#/components/schemas/ApiError' } } }
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '503':
           description: El almacenamiento de adjuntos no está disponible.
-          content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } }
+          content: { application/problem+json: { schema: { $ref: '#/components/schemas/ApiError' } } }
   /api/tracking/access:
     post:
       tags: [Tracking]
@@ -2492,10 +2555,14 @@ paths:
         '404':
           description: El código es inválido, inexistente o no corresponde a una solicitud.
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
               example:
+                type: about:blank
+                title: Not Found
+                status: 404
+                detail: No se encontró una solicitud para el código de seguimiento indicado.
                 code: TRACKING_TICKET_NOT_FOUND
                 message: No se encontró una solicitud para el código de seguimiento indicado.
         '415':
@@ -2574,7 +2641,7 @@ paths:
         '410':
           description: La solicitud de información expiró.
           content:
-            application/json:
+            application/problem+json:
               schema: { $ref: '#/components/schemas/ApiError' }
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
   /api/tracking/actions/messages:
@@ -2704,43 +2771,43 @@ paths:
         '400':
           description: 'Datos inválidos o incompletos'
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
         '401':
           description: 'Autenticación requerida'
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
         '403':
           description: 'Rol no autorizado o ticket propio'
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
         '404':
           description: 'Ticket, tipo o propuesta no encontrados; asociación ticket/propuesta inválida'
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
         '409':
           description: 'Estado incompatible, propuesta abierta, autorización vencida o identificación requerida'
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
         '410':
           description: INFORMATION_REQUEST_EXPIRED; esperar procesamiento INFO_TIMEOUT
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
         '422':
           description: 'EVIDENCE_REQUIRED: riesgo HIGH/CRITICAL sin evidencia válida'
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
     get:
@@ -2768,43 +2835,43 @@ paths:
         '400':
           description: 'Datos inválidos o incompletos'
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
         '401':
           description: 'Autenticación requerida'
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
         '403':
           description: 'Rol no autorizado o ticket propio'
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
         '404':
           description: 'Ticket, tipo o propuesta no encontrados; asociación ticket/propuesta inválida'
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
         '409':
           description: 'Estado incompatible, propuesta abierta, autorización vencida o identificación requerida'
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
         '410':
           description: INFORMATION_REQUEST_EXPIRED; esperar procesamiento INFO_TIMEOUT
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
         '422':
           description: 'EVIDENCE_REQUIRED: riesgo HIGH/CRITICAL sin evidencia válida'
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
   /api/staff/tickets/{ticketId}/reclassification-proposals/{proposalId}:
@@ -2840,43 +2907,43 @@ paths:
         '400':
           description: 'Datos inválidos o incompletos'
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
         '401':
           description: 'Autenticación requerida'
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
         '403':
           description: 'Rol no autorizado o ticket propio'
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
         '404':
           description: 'Ticket, tipo o propuesta no encontrados; asociación ticket/propuesta inválida'
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
         '409':
           description: 'Estado incompatible, propuesta abierta, autorización vencida o identificación requerida'
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
         '410':
           description: INFORMATION_REQUEST_EXPIRED; esperar procesamiento INFO_TIMEOUT
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
         '422':
           description: 'EVIDENCE_REQUIRED: riesgo HIGH/CRITICAL sin evidencia válida'
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
   /api/staff/tickets/{ticketId}/reclassification-proposals/{proposalId}/confirm:
@@ -2912,43 +2979,43 @@ paths:
         '400':
           description: 'Datos inválidos o incompletos'
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
         '401':
           description: 'Autenticación requerida'
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
         '403':
           description: 'Rol no autorizado o ticket propio'
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
         '404':
           description: 'Ticket, tipo o propuesta no encontrados; asociación ticket/propuesta inválida'
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
         '409':
           description: 'Estado incompatible, propuesta abierta, autorización vencida o identificación requerida'
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
         '410':
           description: INFORMATION_REQUEST_EXPIRED; esperar procesamiento INFO_TIMEOUT
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
         '422':
           description: 'EVIDENCE_REQUIRED: riesgo HIGH/CRITICAL sin evidencia válida'
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
   /api/staff/tickets/{ticketId}/reclassification-proposals/{proposalId}/abandon:
@@ -2990,43 +3057,43 @@ paths:
         '400':
           description: 'Datos inválidos o incompletos'
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
         '401':
           description: 'Autenticación requerida'
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
         '403':
           description: 'Rol no autorizado o ticket propio'
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
         '404':
           description: 'Ticket, tipo o propuesta no encontrados; asociación ticket/propuesta inválida'
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
         '409':
           description: 'Estado incompatible, propuesta abierta, autorización vencida o identificación requerida'
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
         '410':
           description: INFORMATION_REQUEST_EXPIRED; esperar procesamiento INFO_TIMEOUT
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
         '422':
           description: 'EVIDENCE_REQUIRED: riesgo HIGH/CRITICAL sin evidencia válida'
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
   /api/tickets/{ticketId}/cancellation-requests:
@@ -3118,7 +3185,7 @@ paths:
         '400':
           $ref: '#/components/responses/InvalidRequest'
         '401':
-          description: INVALID_ANONYMOUS_TICKET_CREDENTIALS. Código y contraseña obligatorios.
+          $ref: '#/components/responses/InvalidAnonymousTicketCredentials'
         '429':
           $ref: '#/components/responses/TooManyTrackingAttempts'
         '403':
@@ -3153,7 +3220,7 @@ paths:
         '400':
           $ref: '#/components/responses/InvalidRequest'
         '401':
-          description: INVALID_ANONYMOUS_TICKET_CREDENTIALS. Código y contraseña obligatorios.
+          $ref: '#/components/responses/InvalidAnonymousTicketCredentials'
         '429':
           $ref: '#/components/responses/TooManyTrackingAttempts'
         '403':
@@ -3486,44 +3553,69 @@ components:
     PreconditionFailed:
       description: If-Match no coincide con la versión actual; no se modifica el recurso ni se generan efectos secundarios.
       content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ApiError'
-          example: { code: PRECONDITION_FAILED, message: If-Match no coincide con la versión actual del recurso }
-    InvalidRequest:
-      description: Solicitud inválida.
-      content:
-        application/json:
+        application/problem+json:
           schema:
             $ref: '#/components/schemas/ApiError'
           example:
+            type: about:blank
+            title: Precondition Failed
+            status: 412
+            detail: If-Match no coincide con la versión actual del recurso
+            code: PRECONDITION_FAILED
+            message: If-Match no coincide con la versión actual del recurso
+    InvalidRequest:
+      description: Solicitud inválida.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          example:
+            type: about:blank
+            title: Bad Request
+            status: 400
+            detail: El request es inválido
             code: INVALID_REQUEST
             message: El request es inválido
     InvalidToken:
       description: Token Bearer ausente o inválido.
+      headers:
+        Cache-Control:
+          schema: { type: string, example: 'no-cache, no-store, max-age=0, must-revalidate' }
       content:
-        application/json:
+        application/problem+json:
           schema:
             $ref: '#/components/schemas/ApiError'
           example:
+            type: about:blank
+            title: Unauthorized
+            status: 401
+            detail: La sesión no es válida
             code: INVALID_TOKEN
             message: La sesión no es válida
     Forbidden:
       description: La identidad autenticada no tiene permiso para realizar la operación.
       content:
-        application/json:
+        application/problem+json:
           schema:
             $ref: '#/components/schemas/ApiError'
           example:
+            type: about:blank
+            title: Forbidden
+            status: 403
+            detail: No está autorizado para realizar esta operación
             code: FORBIDDEN
             message: No está autorizado para realizar esta operación
     InvalidAnonymousTicketCredentials:
       description: Tracking y contraseña no acreditan al propietario de un ticket anónimo.
       content:
-        application/json:
+        application/problem+json:
           schema:
             $ref: '#/components/schemas/ApiError'
           example:
+            type: about:blank
+            title: Unauthorized
+            status: 401
+            detail: Las credenciales del ticket anónimo no son válidas
             code: INVALID_ANONYMOUS_TICKET_CREDENTIALS
             message: Las credenciales del ticket anónimo no son válidas
     TooManyTrackingAttempts:
@@ -3536,55 +3628,79 @@ components:
           description: Segundos hasta que se puede volver a intentar.
           schema: { type: integer, minimum: 1, example: 900 }
       content:
-        application/json:
+        application/problem+json:
           schema:
             $ref: '#/components/schemas/ApiError'
           example:
+            type: about:blank
+            title: Too Many Requests
+            status: 429
+            detail: Demasiados intentos. Intentá de nuevo más tarde.
             code: TOO_MANY_ATTEMPTS
             message: Demasiados intentos. Intentá de nuevo más tarde.
     NotFound:
       description: Recurso no encontrado.
       content:
-        application/json:
+        application/problem+json:
           schema:
             $ref: '#/components/schemas/ApiError'
           example:
+            type: about:blank
+            title: Not Found
+            status: 404
+            detail: Recurso no encontrado
             code: NOT_FOUND
             message: Recurso no encontrado
     InformationRequestConflict:
       description: El estado del ticket o de su solicitud pendiente impide la operación.
       content:
-        application/json:
+        application/problem+json:
           schema:
             $ref: '#/components/schemas/ApiError'
           example:
+            type: about:blank
+            title: Conflict
+            status: 409
+            detail: El estado actual del ticket no permite realizar esta operación
             code: INFORMATION_REQUEST_CONFLICT
             message: El estado actual del ticket no permite realizar esta operación
     TicketResolutionConflict:
       description: El área responsable o el estado actual impiden la resolución manual.
       content:
-        application/json:
+        application/problem+json:
           schema:
             $ref: '#/components/schemas/ApiError'
           example:
+            type: about:blank
+            title: Conflict
+            status: 409
+            detail: El estado actual del ticket no permite su resolución manual
             code: TICKET_RESOLUTION_CONFLICT
             message: El estado actual del ticket no permite su resolución manual
     TicketStateConflict:
       description: El estado actual del ticket no permite la transición solicitada.
       content:
-        application/json:
+        application/problem+json:
           schema:
             $ref: '#/components/schemas/ApiError'
           example:
+            type: about:blank
+            title: Conflict
+            status: 409
+            detail: El ticket está en un estado que no permite esta operación
             code: TICKET_STATE_CONFLICT
             message: El ticket está en un estado que no permite esta operación
     UnsupportedMediaType:
       description: Tipo de contenido no soportado.
       content:
-        application/json:
+        application/problem+json:
           schema:
             $ref: '#/components/schemas/ApiError'
           example:
+            type: about:blank
+            title: Unsupported Media Type
+            status: 415
+            detail: Tipo de contenido no soportado
             code: UNSUPPORTED_MEDIA_TYPE
             message: Tipo de contenido no soportado
     DataIntegrityConflict:
@@ -3594,10 +3710,14 @@ components:
         entre dos altas/ediciones concurrentes que el pre-check de la
         aplicación no alcanzó a frenar).
       content:
-        application/json:
+        application/problem+json:
           schema:
             $ref: '#/components/schemas/ApiError'
           example:
+            type: about:blank
+            title: Conflict
+            status: 409
+            detail: La operación entra en conflicto con datos existentes
             code: DATA_INTEGRITY_CONFLICT
             message: La operación entra en conflicto con datos existentes
   schemas:
@@ -3761,13 +3881,33 @@ components:
         reason: { type: string, nullable: true }
     ApiError:
       type: object
-      required: [code, message]
+      description: Problem Details según RFC 9457.
+      required: [type, title, status, detail, code, message]
       properties:
+        type:
+          type: string
+          format: uri-reference
+          example: about:blank
+        title:
+          type: string
+          description: Frase estándar del estado HTTP.
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+        detail:
+          type: string
+          description: Detalle del error apto para mostrar al usuario.
+        instance:
+          type: string
+          format: uri-reference
+          description: Ruta sin query string, cuando puede informarse.
         code:
           type: string
+          description: Código de error de M2.
         message:
           type: string
-      additionalProperties: false
+          description: Alias de detail para clientes existentes.
     LoginRequest:
       type: object
       required: [username, password]

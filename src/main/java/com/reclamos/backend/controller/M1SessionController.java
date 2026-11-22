@@ -1,7 +1,6 @@
 package com.reclamos.backend.controller;
 
 import com.reclamos.backend.dto.auth.LoginResponse;
-import com.reclamos.backend.dto.error.ApiErrorResponse;
 import com.reclamos.backend.security.LoginAttemptLimiter;
 import com.reclamos.backend.security.M1SessionCookies;
 import com.reclamos.backend.service.AuthService;
@@ -9,12 +8,15 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.CacheControl;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Arrays;
+
+import static com.reclamos.backend.dto.error.ApiProblem.response;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -52,8 +54,8 @@ public class M1SessionController {
                 return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(LoginResponse.from(session));
             }).orElseGet(() -> {
                 cookies.clear(response);
-                return ResponseEntity.status(401).cacheControl(CacheControl.noStore())
-                        .body(new ApiErrorResponse("INVALID_TOKEN", "La sesión no es válida"));
+                return response(HttpStatus.UNAUTHORIZED, "INVALID_TOKEN", "La sesión no es válida")
+                        .cacheControl(CacheControl.noStore()).build();
             });
         } catch (RuntimeException notARejectedToken) {
             // M1 no disponible o respuesta inválida: no es un intento fallido del cliente.

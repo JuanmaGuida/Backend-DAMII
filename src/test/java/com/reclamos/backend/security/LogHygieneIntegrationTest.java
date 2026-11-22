@@ -18,6 +18,7 @@ import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import tools.jackson.databind.ObjectMapper;
 
 import java.net.URI;
 import java.util.UUID;
@@ -54,6 +55,7 @@ class LogHygieneIntegrationTest {
     @Autowired private ApplicationContext context;
     @Autowired private Environment environment;
     @Autowired private MockMvc mockMvc;
+    @Autowired private ObjectMapper json;
     @Value("${local.server.port}") private int port;
 
     @MockitoBean private CatalogService catalogService;
@@ -77,7 +79,7 @@ class LogHygieneIntegrationTest {
     }
 
     @Test
-    void anUnhandledExceptionReachesTheClientAsABareInternalError() throws Exception {
+    void anUnhandledExceptionReachesTheClientAsASanitizedProblem() throws Exception {
         when(catalogService.getCategories()).thenThrow(new IllegalStateException(INTERNAL_DETAIL));
 
         HttpResponse<String> response = HttpClient.newHttpClient().send(
@@ -86,6 +88,15 @@ class LogHygieneIntegrationTest {
                 HttpResponse.BodyHandlers.ofString());
 
         assertThat(response.statusCode()).isEqualTo(500);
+        assertThat(response.headers().firstValue("Content-Type"))
+                .contains(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
+        var problem = json.readTree(response.body());
+        assertThat(problem.path("type").asText()).isEqualTo("about:blank");
+        assertThat(problem.path("title").asText()).isEqualTo("Internal Server Error");
+        assertThat(problem.path("status").asInt()).isEqualTo(500);
+        assertThat(problem.path("code").asText()).isEqualTo("INTERNAL_SERVER_ERROR");
+        assertThat(problem.path("detail").asText()).isEqualTo("No fue posible completar la operación.");
+        assertThat(problem.path("message")).isEqualTo(problem.path("detail"));
         assertThat(response.body())
                 .doesNotContain(INTERNAL_DETAIL)
                 .doesNotContain("svc_internal")
