@@ -19,9 +19,11 @@ import org.springframework.beans.factory.support.StaticListableBeanFactory;
 import org.springframework.core.env.PropertySourcesPropertyResolver;
 import org.springframework.core.env.MutablePropertySources;
 import org.springframework.core.io.support.ResourcePropertySource;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.net.URI;
 import java.time.Clock;
@@ -132,9 +134,16 @@ class M1TimeoutWireMockIntegrationTest {
 
     private void assertSafeError(MvcResult result) throws Exception {
         assertThat(result.getResponse().getStatus()).isEqualTo(503);
+        assertThat(result.getResponse().getContentType()).isEqualTo(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
         assertThat(result.getResponse().getHeader("Cache-Control")).contains("no-store");
-        assertThat(result.getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8))
-                .isEqualTo("{\"code\":\"IDENTITY_UNAVAILABLE\",\"message\":\"El servicio de identidad no está disponible. Intente nuevamente.\"}");
+        var problem = new JsonMapper().readTree(result.getResponse().getContentAsByteArray());
+        assertThat(problem.path("type").asText()).isEqualTo("about:blank");
+        assertThat(problem.path("status").asInt()).isEqualTo(503);
+        assertThat(problem.path("instance").asText()).isEqualTo(result.getRequest().getRequestURI());
+        assertThat(problem.path("code").asText()).isEqualTo("IDENTITY_UNAVAILABLE");
+        assertThat(problem.path("detail").asText())
+                .isEqualTo("El servicio de identidad no está disponible. Intente nuevamente.");
+        assertThat(problem.path("message")).isEqualTo(problem.path("detail"));
         assertThat(result.getResponse().getHeaderNames()).doesNotContain("Authorization", "X-Refresh-Token", "Set-Cookie");
         assertThat(result.getResolvedException()).isInstanceOf(IdentityProviderException.class).hasNoCause();
         assertThat(result.getResponse().getContentAsString()).doesNotContain("trace", "stack", "Exception",

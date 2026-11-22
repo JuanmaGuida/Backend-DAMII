@@ -29,6 +29,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -60,7 +61,8 @@ class TicketControllerErrorTest {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("FORBIDDEN"))
                 .andExpect(jsonPath("$.message").value("No está autorizado para realizar esta operación"))
-                .andExpect(jsonPath("$.length()").value(2));
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.status").value(403));
     }
 
     @Test
@@ -72,7 +74,8 @@ class TicketControllerErrorTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("INFORMATION_REQUEST_CONFLICT"))
                 .andExpect(jsonPath("$.message").value("Ya existe una solicitud pendiente"))
-                .andExpect(jsonPath("$.length()").value(2));
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.status").value(409));
     }
 
     @Test
@@ -86,7 +89,8 @@ class TicketControllerErrorTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("TICKET_RESOLUTION_CONFLICT"))
                 .andExpect(jsonPath("$.message").value("Estado incompatible"))
-                .andExpect(jsonPath("$.length()").value(2));
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.status").value(409));
     }
 
     @Test
@@ -162,7 +166,8 @@ class TicketControllerErrorTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("TICKET_RESOLUTION_CONFLICT"))
                 .andExpect(jsonPath("$.message").value("Estado incompatible"))
-                .andExpect(jsonPath("$.length()").value(2));
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.status").value(409));
 
         when(ticketResolutionService.reopen(any(), any(), nullable(AuthenticatedIdentity.class)))
                 .thenThrow(new UnauthorizedTicketOperationException());
@@ -170,7 +175,8 @@ class TicketControllerErrorTest {
                         .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"Motivo\"}"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("FORBIDDEN"))
-                .andExpect(jsonPath("$.length()").value(2));
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.status").value(403));
     }
 
 
@@ -193,7 +199,8 @@ class TicketControllerErrorTest {
                 .andExpect(jsonPath("$.code").value("EVIDENCE_REQUIRED"))
                 .andExpect(jsonPath("$.message").value(
                         "El nivel de riesgo detectado requiere adjuntar al menos una evidencia."))
-                .andExpect(jsonPath("$.length()").value(2));
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.status").value(422));
     }
 
     @Test
@@ -204,7 +211,8 @@ class TicketControllerErrorTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
                 .andExpect(jsonPath("$.message").isString())
-                .andExpect(jsonPath("$.length()").value(2));
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.status").value(400));
     }
 
     @Test
@@ -215,7 +223,8 @@ class TicketControllerErrorTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
                 .andExpect(jsonPath("$.message").value("El cuerpo de la solicitud es inválido"))
-                .andExpect(jsonPath("$.length()").value(2));
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.status").value(400));
     }
 
     @Test
@@ -223,14 +232,16 @@ class TicketControllerErrorTest {
         mockMvc.perform(get("/api/tickets/10000000-0000-0000-0000-000000000001/information-request"))
                 .andExpect(status().isMethodNotAllowed())
                 .andExpect(jsonPath("$.code").value("METHOD_NOT_ALLOWED"))
-                .andExpect(jsonPath("$.length()").value(2));
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.status").value(405));
 
         mockMvc.perform(post("/api/tickets/10000000-0000-0000-0000-000000000001/information-request")
                         .contentType(MediaType.TEXT_PLAIN)
                         .content("message"))
                 .andExpect(status().isUnsupportedMediaType())
                 .andExpect(jsonPath("$.code").value("UNSUPPORTED_MEDIA_TYPE"))
-                .andExpect(jsonPath("$.length()").value(2));
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.status").value(415));
     }
 
     @Test

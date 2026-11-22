@@ -202,7 +202,6 @@ class OpenApiContractTest {
             "GET /api/attachments/{attachmentId}/content"
     );
     private static final Set<String> RESPONSE_SCHEMAS_WITH_STABLE_PRESENCE = Set.of(
-            "ApiError",
             "LoginResponse",
             "IdentityResponse",
             "AgentDirectoryEntry",
@@ -369,7 +368,7 @@ class OpenApiContractTest {
         assertEquals("array", map(multipartProperties, "evidence").get("type"));
         assertEquals("binary", map(map(multipartProperties, "evidence"), "items").get("format"));
 
-        Map<String, Object> response422 = map(operation, "responses", "422", "content", "application/json");
+        Map<String, Object> response422 = map(operation, "responses", "422", "content", "application/problem+json");
         assertEquals("#/components/schemas/ApiError", map(response422, "schema").get("$ref"));
         assertEquals("EVIDENCE_REQUIRED", map(response422, "example").get("code"));
 
@@ -423,9 +422,22 @@ class OpenApiContractTest {
     }
 
     @Test
+    void externalAttachmentsDocumentTheUnauthorizedProblem() {
+        Map<String, Object> response = map(operation("GET /api/tickets/{ticketId}/external-attachments"),
+                "responses", "401");
+        assertEquals("#/components/responses/InvalidToken", response.get("$ref"));
+        Map<String, Object> invalidToken = map(spec, "components", "responses", "InvalidToken");
+        assertEquals("#/components/schemas/ApiError",
+                map(invalidToken, "content", "application/problem+json", "schema").get("$ref"));
+    }
+
+    @Test
     void reusableSchemasExposeOnlyTheCurrentRestModel() {
         Map<String, Object> schemas = map(spec, "components", "schemas");
-        assertEquals(Set.of("code", "message"), map(schemas, "ApiError", "properties").keySet());
+        assertEquals(Set.of("type", "title", "status", "detail", "instance", "code", "message"),
+                map(schemas, "ApiError", "properties").keySet());
+        assertEquals(Set.of("type", "title", "status", "detail", "code", "message"),
+                Set.copyOf(list(map(schemas, "ApiError"), "required")));
         assertEquals(Set.of("code", "label", "type", "required", "allowUnknown", "displayOrder", "config"),
                 map(schemas, "FormFieldResponse", "properties").keySet());
         assertEquals(Set.of("M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8", "M9"),

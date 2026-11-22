@@ -111,7 +111,8 @@ class AuthControllerSecurityTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
                 .andExpect(jsonPath("$.message").value("Username y password son obligatorios"))
-                .andExpect(jsonPath("$.length()").value(2));
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.status").value(400));
     }
 
     @Test
@@ -132,7 +133,8 @@ class AuthControllerSecurityTest {
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("INVALID_TOKEN"))
                 .andExpect(jsonPath("$.message").value("La sesión no es válida"))
-                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.status").value(401))
                 .andExpect(header().doesNotExist("Location"));
     }
 
@@ -145,13 +147,15 @@ class AuthControllerSecurityTest {
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("INVALID_TOKEN"))
                 .andExpect(jsonPath("$.message").value("La sesión no es válida"))
-                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.status").value(401))
                 .andReturn();
         MvcResult expired = meWithToken("expired")
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("INVALID_TOKEN"))
                 .andExpect(jsonPath("$.message").value("La sesión no es válida"))
-                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.status").value(401))
                 .andReturn();
 
         assertEquals(invalid.getResponse().getContentAsString(), expired.getResponse().getContentAsString());
@@ -211,7 +215,8 @@ class AuthControllerSecurityTest {
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"))
                 .andExpect(jsonPath("$.message").value("Usuario o contraseña inválidos"))
-                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.status").value(401))
                 .andReturn();
     }
 

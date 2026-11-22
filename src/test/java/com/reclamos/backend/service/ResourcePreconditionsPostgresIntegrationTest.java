@@ -7,6 +7,7 @@ import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
@@ -72,7 +73,11 @@ class ResourcePreconditionsPostgresIntegrationTest {
         var before = snapshot(id);
         mvc.perform(patch(path).with(authentication(auth(agent))).header("If-Match", old)
                 .contentType("application/json").content(classificationBody(type)))
-                .andExpect(status().isPreconditionFailed()).andExpect(jsonPath("$.code").value("PRECONDITION_FAILED"));
+                .andExpect(status().isPreconditionFailed())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.status").value(412))
+                .andExpect(jsonPath("$.instance").value(path))
+                .andExpect(jsonPath("$.code").value("PRECONDITION_FAILED"));
         assertThat(snapshot(id)).isEqualTo(before);
         // A functional change retains its existing conflict, and rolls back the revision too.
         mvc.perform(patch(path).with(authentication(auth(agent))).header("If-Match", next)
