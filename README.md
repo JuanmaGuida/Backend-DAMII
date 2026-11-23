@@ -357,8 +357,7 @@ La detección está limitada a los patrones y formatos reconocidos; no es cobert
 Publicar y desplegar requiere que G6 termine correctamente, además de los gates existentes.
 Un fallo, cancelación u omisión de G6 bloquea ambas operaciones; no afecta la versión ya desplegada.
 
-Para INT-05, consultar la [política de ACK/NACK e idempotencia del Inbox](docs/integrations/m2-m4.md#acknack-e-idempotencia).
-Queda pendiente versionar el runbook de reprocesamiento.
+Para INT-05, consultar la [política de ACK/NACK e idempotencia del Inbox](docs/integrations/m2-m4.md#acknack-e-idempotencia) y el [runbook de reprocesamiento](docs/integrations/int-05-inbox-y-reprocesamiento.md), que también declara lo que no está acreditado con el Core real.
 
 ## Copias locales de adjuntos externos
 
