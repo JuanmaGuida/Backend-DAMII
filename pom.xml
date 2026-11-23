@@ -36,6 +36,9 @@
 		<sonar.tests>src/test/java,.github/tests</sonar.tests>
 		<sonar.exclusions>.github/tests/**</sonar.exclusions>
 		<jacoco.version>0.8.13</jacoco.version>
+		<!-- TST-02: minimums for the business layer (service + entity), see jacoco-check-business. -->
+		<coverage.business.line.min>0.80</coverage.business.line.min>
+		<coverage.business.branch.min>0.70</coverage.business.branch.min>
 		<jjwt.version>0.13.0</jjwt.version>
 	</properties>
 	<dependencies>
@@ -229,6 +232,37 @@
 											<counter>LINE</counter>
 											<value>COVEREDRATIO</value>
 											<minimum>0.85</minimum>
+										</limit>
+									</limits>
+								</rule>
+							</rules>
+						</configuration>
+					</execution>
+					<execution>
+						<id>jacoco-check-business</id>
+						<phase>verify</phase>
+						<goals>
+							<goal>check</goal>
+						</goals>
+						<configuration>
+							<!-- Business layer only. If these patterns match no class JaCoCo skips the rule silently, so keep them aligned with the package names. -->
+							<includes>
+								<include>com/reclamos/backend/service/**</include>
+								<include>com/reclamos/backend/entity/**</include>
+							</includes>
+							<rules>
+								<rule>
+									<element>BUNDLE</element>
+									<limits>
+										<limit>
+											<counter>LINE</counter>
+											<value>COVEREDRATIO</value>
+											<minimum>${coverage.business.line.min}</minimum>
+										</limit>
+										<limit>
+											<counter>BRANCH</counter>
+											<value>COVEREDRATIO</value>
+											<minimum>${coverage.business.branch.min}</minimum>
 										</limit>
 									</limits>
 								</rule>
