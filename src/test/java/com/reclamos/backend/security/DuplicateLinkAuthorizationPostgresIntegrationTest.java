@@ -3,6 +3,7 @@ package com.reclamos.backend.security;
 import com.reclamos.backend.identity.AuthenticatedIdentity;
 import com.reclamos.backend.identity.ModuleRole;
 import com.reclamos.backend.service.TrackingCodeService;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -62,6 +63,7 @@ class DuplicateLinkAuthorizationPostgresIntegrationTest {
     @Autowired MockMvc mvc;
     @Autowired JdbcTemplate db;
     @Autowired TrackingCodeService tracking;
+    @Autowired EntityManager entityManager;
 
     private final UUID duplicateOwner = UUID.randomUUID();
     private final UUID mainOwner = UUID.randomUUID();
@@ -97,6 +99,9 @@ class DuplicateLinkAuthorizationPostgresIntegrationTest {
                 .andExpect(jsonPath("$.mainTicketId").value(mainOtherArea.toString()))
                 .andExpect(jsonPath("$.currentStatus").value("DUPLICATE"));
 
+        // El servicio modifica entidades dentro de la transaccion del test; JdbcTemplate es SQL nativo y no dispara
+        // el flush de Hibernate, asi que se fuerza antes de leer la base.
+        entityManager.flush();
         assertThat(db.queryForObject("SELECT main_ticket_id FROM tickets WHERE id=?", UUID.class, duplicate))
                 .isEqualTo(mainOtherArea);
         assertThat(db.queryForObject("SELECT current_status FROM tickets WHERE id=?", String.class, duplicate))
@@ -151,6 +156,7 @@ class DuplicateLinkAuthorizationPostgresIntegrationTest {
 
     /** Foto de lo que un vínculo indebido tocaría: tickets (estado/vínculo/versión temporal), actividad y outbox. */
     private List<Object> state() {
+        entityManager.flush();
         List<Map<String, Object>> tickets = db.queryForList(
                 "SELECT id, current_status, main_ticket_id, updated_at FROM tickets WHERE id IN (?,?,?) ORDER BY id",
                 duplicate, mainSameArea, mainOtherArea);
