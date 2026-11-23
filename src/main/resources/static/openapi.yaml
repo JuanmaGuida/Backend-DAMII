@@ -195,6 +195,8 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/CategoryResponse'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
         '500':
           $ref: '#/components/responses/InternalServerError'
   /api/catalog/neighborhoods:
@@ -1533,6 +1535,7 @@ paths:
           content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/LabelResponse' } } } }
         '401': { $ref: '#/components/responses/InvalidToken' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '406': { $ref: '#/components/responses/NotAcceptable' }
     post:
       tags: [ Labels ]
       summary: Crear una etiqueta
@@ -1543,6 +1546,12 @@ paths:
         content: { application/json: { schema: { $ref: '#/components/schemas/CreateLabelRequest' } } }
       responses:
         '201': { description: Etiqueta creada, content: { application/json: { schema: { $ref: '#/components/schemas/LabelResponse' } } } }
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
         '409':
           $ref: '#/components/responses/LabelConflict'
         '401':
@@ -3807,6 +3816,12 @@ components:
             detail: El ticket está en un estado que no permite esta operación
             code: TICKET_STATE_CONFLICT
             message: El ticket está en un estado que no permite esta operación
+    NotAcceptable:
+      description: NOT_ACCEPTABLE cuando la cabecera Accept no admite la representación application/json.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
     UnsupportedMediaType:
       description: Tipo de contenido no soportado.
       content:
@@ -4707,7 +4722,11 @@ components:
     CreateLabelRequest:
       type: object
       required: [ code, name ]
-      properties: { code: { type: string, maxLength: 100 }, name: { type: string, maxLength: 150 }, description: { type: string, nullable: true } }
+      properties:
+        # El patrón usa los espacios en blanco de String.isBlank(), como @NotBlank.
+        code: { type: string, minLength: 1, maxLength: 100, pattern: '[^\u0009-\u000D\u001C-\u0020\u1680\u2000-\u2006\u2008-\u200A\u2028\u2029\u205F\u3000]' }
+        name: { type: string, minLength: 1, maxLength: 150, pattern: '[^\u0009-\u000D\u001C-\u0020\u1680\u2000-\u2006\u2008-\u200A\u2028\u2029\u205F\u3000]' }
+        description: { type: string, nullable: true }
     UpdateLabelRequest:
       type: object
       required: [ name, active ]

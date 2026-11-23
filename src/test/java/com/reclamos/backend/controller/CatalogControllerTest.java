@@ -15,6 +15,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.web.servlet.MockMvc;
@@ -23,6 +25,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import java.util.List;
 import java.util.UUID;
 
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -121,19 +124,29 @@ class CatalogControllerTest {
                 .andExpect(jsonPath("$.status").value(400));
     }
 
-    @Test
-    void listsCategories() throws Exception {
+    @ParameterizedTest
+    @ValueSource(strings = {MediaType.APPLICATION_JSON_VALUE, MediaType.ALL_VALUE,
+            "application/problem+json, application/json;q=0.5"})
+    void listsCategoriesAsJsonForCompatibleAccept(String accept) throws Exception {
         CategoryResponse category = new CategoryResponse();
         category.setId(1L);
         category.setName("Infraestructura");
         category.setDescription("Espacio urbano");
         when(catalogService.getCategories()).thenReturn(List.of(category));
 
-        mockMvc.perform(get("/api/catalog/categories"))
+        mockMvc.perform(get("/api/catalog/categories").accept(accept))
                 .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$[0].id").value(1))
                 .andExpect(jsonPath("$[0].name").value("Infraestructura"))
                 .andExpect(jsonPath("$[0].active").doesNotExist());
+    }
+
+    @Test
+    void incompatibleAcceptRejectsCategoryListBeforeCallingService() throws Exception {
+        mockMvc.perform(get("/api/catalog/categories").accept(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(status().isNotAcceptable());
+        verifyNoInteractions(catalogService);
     }
 
     @Test
