@@ -66,10 +66,15 @@ class ResourcePreconditionsPostgresIntegrationTest {
         UUID id = ticket(); String path = classification(id);
         String old = etag(path, agent);
         assertThat(etag(path, agent)).isEqualTo(old).startsWith("\"classification-");
+        var unchangedColumns = Map.of("tickets", "to_jsonb(t) - ARRAY['updated_at', 'resource_version']");
+        var protectedState = snapshot(id, unchangedColumns);
         String next = mvc.perform(patch(path).with(authentication(auth(agent)))
-                .header("If-Match", old).contentType("application/json").content(classificationBody(type)))
+                .header("If-Match", old).contentType("application/json").content("""
+                        {"requestTypeId":%d,"currentStatus":"RESOLVED","responsibleAreaId":"M6","currentPriority":"CRITICAL"}
+                        """.formatted(type)))
                 .andExpect(status().isOk()).andReturn().getResponse().getHeader("ETag");
         assertThat(next).isNotEqualTo(old).isEqualTo(etag(path, agent));
+        assertThat(snapshot(id, unchangedColumns)).isEqualTo(protectedState);
         var before = snapshot(id);
         mvc.perform(patch(path).with(authentication(auth(agent))).header("If-Match", old)
                 .contentType("application/json").content(classificationBody(type)))
@@ -89,11 +94,18 @@ class ResourcePreconditionsPostgresIntegrationTest {
     @Test void messageGetEditNewRevisionAndStaleRejectionHaveNoSideEffects() throws Exception {
         UUID id = ticket(); Long message = message(id, owner, MessageVisibility.PUBLIC);
         String path = messagePath(id, message); String old = etag(path, owner);
+        var unchangedColumns = Map.of("ticket_messages", "to_jsonb(t) - ARRAY['text', 'updated_at', 'resource_version']");
+        var protectedState = snapshot(id, unchangedColumns);
         String next = mvc.perform(patch(path).with(authentication(auth(owner))).header("If-Match", old)
-                .contentType("application/json").content("{\"text\":\"editado\"}"))
+                .contentType("application/json").content("""
+                        {"text":"editado","visibility":"INTERNAL","authorType":"ADMIN","sourceModuleId":"M6"}
+                        """))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.text").value("editado"))
                 .andReturn().getResponse().getHeader("ETag");
         assertThat(next).isNotEqualTo(old).isEqualTo(etag(path, owner));
+        assertThat(db.queryForObject("SELECT text FROM ticket_messages WHERE id=?", String.class, message))
+                .isEqualTo("editado");
+        assertThat(snapshot(id, unchangedColumns)).isEqualTo(protectedState);
         var before = snapshot(id);
         mvc.perform(patch(path).with(authentication(auth(owner))).header("If-Match", old)
                 .contentType("application/json").content("{\"text\":\"rechazado\"}"))
@@ -209,10 +221,15 @@ class ResourcePreconditionsPostgresIntegrationTest {
                 .andExpect(header().exists("ETag")).andReturn().getResponse().getHeader("ETag");
     }
     List<Object> snapshot(UUID id) {
+        return snapshot(id, Map.of());
+    }
+    List<Object> snapshot(UUID id, Map<String, String> projections) {
         List<Object> result = new ArrayList<>();
-        for (String table : List.of("tickets", "ticket_messages", "ticket_activities", "outbox_events", "notification_logs"))
-            result.add(db.queryForList("SELECT row_to_json(t)::text FROM " + table + " t WHERE "
+        for (String table : List.of("tickets", "ticket_messages", "ticket_activities", "outbox_events", "notification_logs")) {
+            String projection = projections.getOrDefault(table, "row_to_json(t)");
+            result.add(db.queryForList("SELECT (" + projection + ")::text FROM " + table + " t WHERE "
                     + (table.equals("tickets") ? "id" : "ticket_id") + "=? ORDER BY id", String.class, id));
+        }
         return result;
     }
     void race(String path, UUID actor, String tag, String body) throws Exception {

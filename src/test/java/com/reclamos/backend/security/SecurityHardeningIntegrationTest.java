@@ -4,6 +4,7 @@ import com.reclamos.backend.dto.response.*;
 import com.reclamos.backend.entity.InformationRequestStatus;
 import com.reclamos.backend.entity.TicketStatus;
 import com.reclamos.backend.identity.IdentityProvider;
+import com.reclamos.backend.identity.ModuleRole;
 import com.reclamos.backend.service.CatalogService;
 import com.reclamos.backend.service.AnonymousTicketAccessService;
 import com.reclamos.backend.service.AttachmentAccessService;
@@ -18,11 +19,14 @@ import com.reclamos.backend.entity.ResolutionType;
 import jakarta.servlet.DispatcherType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.core.io.ByteArrayResource;
+import org.springframework.data.domain.Page;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -128,6 +132,8 @@ class SecurityHardeningIntegrationTest {
 
         when(ticketService.create(any(), any(), any())).thenReturn(new CreateTicketResponse(
                 TICKET_ID, "TK-2026-000123", "tracking-code", TicketStatus.REGISTERED));
+        when(ticketService.listTickets(any(), any())).thenReturn(Page.empty());
+        when(ticketService.listAreaTickets(any(), any(), any())).thenReturn(Page.empty());
         InformationRequestResponse informationResponse = new InformationRequestResponse(
                 InformationRequestStatus.PENDING, TicketStatus.PENDING_INFORMATION, "Dato requerido",
                 Instant.parse("2026-09-01T10:00:00Z"), Instant.parse("2026-09-04T10:00:00Z"),
@@ -243,6 +249,19 @@ class SecurityHardeningIntegrationTest {
         mockMvc.perform(head("/api/catalog/categories/1/subcategories")).andExpect(status().isOk());
         mockMvc.perform(head("/api/catalog/subcategories/1/request-types")).andExpect(status().isOk());
         mockMvc.perform(head("/api/catalog/request-types/1/form")).andExpect(status().isOk());
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "/api/admin/agents, AGENT, ADMIN",
+            "/api/indicators/overview, AREA_RESPONSIBLE, AGENT",
+            "/api/tickets, CITIZEN, AGENT",
+            "/api/staff/labels, CITIZEN, ADMIN",
+            "/api/staff/tickets/area, AGENT, AREA_RESPONSIBLE"
+    })
+    void headUsesTheSameRoleGateAsGet(String path, ModuleRole denied, ModuleRole allowed) throws Exception {
+        mockMvc.perform(withBearer(head(path), tokenFor(denied))).andExpect(status().isForbidden());
+        mockMvc.perform(withBearer(head(path), tokenFor(allowed))).andExpect(status().isOk());
     }
 
     @Test
@@ -402,9 +421,18 @@ class SecurityHardeningIntegrationTest {
     }
 
     private String validToken() {
-        return identityProvider.authenticate("citizen@example.test", "citizen-test-password")
-                .orElseThrow()
-                .token();
+        return tokenFor(ModuleRole.CITIZEN);
+    }
+
+    private String tokenFor(ModuleRole role) {
+        var session = switch (role) {
+            case CITIZEN -> identityProvider.authenticate("citizen@example.test", "citizen-test-password");
+            case AGENT -> identityProvider.authenticate("agent@example.test", "agent-test-password");
+            case AREA_RESPONSIBLE -> identityProvider.authenticate(
+                    "area.responsible@example.test", "area-test-password");
+            case ADMIN -> identityProvider.authenticate("module.admin@example.test", "admin-test-password");
+        };
+        return session.orElseThrow().token();
     }
 
     private MockHttpServletRequestBuilder ticketJsonRequest() {
