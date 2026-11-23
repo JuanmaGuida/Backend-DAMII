@@ -179,6 +179,32 @@ jobs:
             }
           ' target/site/jacoco/jacoco.csv >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Publish coverage by package (informational, no gate)
+        shell: bash
+        run: |
+          csv=target/site/jacoco/jacoco.csv
+          pct='function pct(c, m) { t = c + m; return t == 0 ? "n/a" : sprintf("%.1f%% (%d/%d)", c * 100 / t, c, t) }'
+          {
+            echo "### Backend coverage by package (informational, no gate)"
+            echo ""
+            echo "| Package | Lines | Branches |"
+            echo "|---|---|---|"
+            awk -F, "$pct"'
+              NR > 1 { lm[$2] += $8; lc[$2] += $9; bm[$2] += $6; bc[$2] += $7 }
+              END { for (p in lm) printf "| %s | %s | %s |\n", p, pct(lc[p], lm[p]), pct(bc[p], bm[p]) }
+            ' "$csv" | sort
+            awk -F, "$pct"'
+              NR > 1 {
+                tlm += $8; tlc += $9; tbm += $6; tbc += $7
+                if ($2 ~ /\.(service|entity)(\.|$)/) { slm += $8; slc += $9; sbm += $6; sbc += $7 }
+              }
+              END {
+                printf "| **service + entity (business candidates)** | %s | %s |\n", pct(slc, slm), pct(sbc, sbm)
+                printf "| **TOTAL bundle** | %s | %s |\n", pct(tlc, tlm), pct(tbc, tbm)
+              }
+            ' "$csv"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Build Backend container image
         run: |
           docker build --pull --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" --label "org.opencontainers.image.revision=$GITHUB_SHA" --tag backend-ci:${{ github.sha }} .
