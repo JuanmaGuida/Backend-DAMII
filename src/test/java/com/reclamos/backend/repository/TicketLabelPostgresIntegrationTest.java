@@ -1,4 +1,7 @@
 package com.reclamos.backend.repository;
+import com.reclamos.backend.testsupport.TestPostgres;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 
 import com.reclamos.backend.dto.TicketFilter;
 import com.reclamos.backend.entity.*;
@@ -23,6 +26,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @SpringBootTest
 @ActiveProfiles("dev")
 class TicketLabelPostgresIntegrationTest {
+    @DynamicPropertySource
+    static void testcontainersPostgres(DynamicPropertyRegistry registry) {
+        TestPostgres.register(registry);
+    }
+
 
     @Autowired
     private TicketRepository tickets;

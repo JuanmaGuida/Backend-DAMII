@@ -1,4 +1,7 @@
 package com.reclamos.backend.repository;
+import com.reclamos.backend.testsupport.TestPostgres;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 
 import com.reclamos.backend.entity.Category;
 import com.reclamos.backend.entity.ModuleUser;
@@ -31,6 +34,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 @ActiveProfiles("dev")
 @Transactional
 class DuplicateCandidateRepositoryIntegrationTest {
+    @DynamicPropertySource
+    static void testcontainersPostgres(DynamicPropertyRegistry registry) {
+        TestPostgres.register(registry);
+    }
+
     private static final Instant SOURCE_CREATED_AT = Instant.parse("2026-09-18T12:00:00Z");
     private static final Duration WINDOW = Duration.ofHours(24);
     private static final Set<TicketStatus> ELIGIBLE_STATUSES = Set.of(

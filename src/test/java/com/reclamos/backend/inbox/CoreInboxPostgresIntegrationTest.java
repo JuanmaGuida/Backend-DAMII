@@ -1,4 +1,7 @@
 package com.reclamos.backend.inbox;
+import com.reclamos.backend.testsupport.TestPostgres;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.rabbitmq.client.*;
@@ -41,6 +44,11 @@ import static org.mockito.Mockito.*;
         "notification.pending-scan-delay=3600000","ticket.priority.scan-delay=3600000"})
 @ActiveProfiles("dev")
 class CoreInboxPostgresIntegrationTest {
+    @DynamicPropertySource
+    static void testcontainersPostgres(DynamicPropertyRegistry registry) {
+        TestPostgres.register(registry);
+    }
+
     @Autowired CoreInboxProcessor processor;
     @Autowired CoreIncomingEventValidator validator;
     @Autowired CitizenEventProjection projection;

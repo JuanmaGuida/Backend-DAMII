@@ -1,4 +1,7 @@
 package com.reclamos.backend.outbox;
+import com.reclamos.backend.testsupport.TestPostgres;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 
 import com.reclamos.backend.dto.request.CreateTicketRequest;
 import com.reclamos.backend.entity.*;
@@ -33,6 +36,11 @@ import static org.mockito.Mockito.*;
         "ticket.sla.milestone-scan-delay=3600000","notification.pending-scan-delay=3600000","ticket.priority.scan-delay=3600000"})
 @ActiveProfiles("dev")
 class AutomaticOutboxPostgresIntegrationTest {
+    @DynamicPropertySource
+    static void testcontainersPostgres(DynamicPropertyRegistry registry) {
+        TestPostgres.register(registry);
+    }
+
     @Autowired CorePublicationPolicy policy;
     @Autowired CoreOutboxProcessor processor;
     @Autowired OutgoingEventValidator validator;

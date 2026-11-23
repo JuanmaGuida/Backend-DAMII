@@ -141,6 +141,9 @@ jobs:
           CORE_INBOX_ENABLED: "false"
           CORE_OUTBOX_AUTO_APPROVE_NEW_EVENTS: "false"
           CORE_OUTBOX_APPROVED_EVENT_IDS: ""
+          # TST-01: Postgres en Testcontainers para las pruebas que lo declaran (ver TestPostgres).
+          # Quitar esta linea vuelve a usar el servicio postgres del workflow.
+          TESTCONTAINERS_POSTGRES: "true"
         run: ./mvnw -B clean verify
 
       - name: Upload executable JAR for Newman

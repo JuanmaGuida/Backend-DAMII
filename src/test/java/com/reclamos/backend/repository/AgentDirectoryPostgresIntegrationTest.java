@@ -1,4 +1,7 @@
 package com.reclamos.backend.repository;
+import com.reclamos.backend.testsupport.TestPostgres;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 
 import com.reclamos.backend.dto.response.AgentDirectoryEntry;
 import org.junit.jupiter.api.BeforeEach;
@@ -30,6 +33,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @SpringBootTest @ActiveProfiles("dev") @AutoConfigureMockMvc @Transactional
 class AgentDirectoryPostgresIntegrationTest {
+    @DynamicPropertySource
+    static void testcontainersPostgres(DynamicPropertyRegistry registry) {
+        TestPostgres.register(registry);
+    }
+
     @Autowired JdbcTemplate db;
     @Autowired AgentDirectoryRepository repository;
     @Autowired MockMvc mvc;

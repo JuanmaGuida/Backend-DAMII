@@ -1,4 +1,7 @@
 package com.reclamos.backend.outbox;
+import com.reclamos.backend.testsupport.TestPostgres;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 
 import com.reclamos.backend.entity.*;
 import com.reclamos.backend.identity.IdentitySource;
@@ -39,6 +42,11 @@ import static org.mockito.Mockito.*;
 })
 @ActiveProfiles("dev")
 class CoreOutboxPostgresIntegrationTest {
+    @DynamicPropertySource
+    static void testcontainersPostgres(DynamicPropertyRegistry registry) {
+        TestPostgres.register(registry);
+    }
+
     private static final UUID FIRST = UUID.fromString("6c5a4e23-1482-4a2d-8c3b-c713011e0001");
     private static final UUID SECOND = UUID.fromString("6c5a4e23-1482-4a2d-8c3b-c713011e0002");
     @Autowired CoreOutboxProcessor processor;
