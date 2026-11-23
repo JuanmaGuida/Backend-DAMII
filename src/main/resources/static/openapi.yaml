@@ -165,6 +165,33 @@ paths:
           $ref: '#/components/responses/IdentityBadGateway'
         '503':
           $ref: '#/components/responses/IdentityUnavailable'
+  /api/auth/logout:
+    post:
+      tags: [Authentication]
+      summary: Cerrar la sesión de M1 en el navegador
+      description: Disponible con M1 activo. Requiere origen y cabecera anti-CSRF. Elimina la cookie de renovación del navegador.
+      operationId: logoutM1Session
+      security: []
+      parameters:
+        - name: Origin
+          in: header
+          required: true
+          schema: { type: string }
+        - name: X-M2-CSRF
+          in: header
+          required: true
+          schema: { type: string, enum: ['1'] }
+      responses:
+        '204':
+          description: Cookie de renovación eliminada.
+          headers:
+            Cache-Control:
+              schema: { type: string, example: no-store }
+            Set-Cookie:
+              description: Cookie de renovación eliminada con Max-Age=0.
+              schema: { type: string }
+        '403':
+          $ref: '#/components/responses/Forbidden'
   /api/auth/me:
     get:
       tags: [Authentication]
@@ -215,6 +242,8 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/NeighborhoodResponse'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
   /api/catalog/neighborhoods/{neighborhoodId}:
     get:
       tags: [ Catalog ]
@@ -240,6 +269,8 @@ paths:
           $ref: '#/components/responses/InvalidRequest'
         '404':
           $ref: '#/components/responses/NotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
   /api/catalog/categories/{categoryId}/subcategories:
     get:
       tags: [Catalog]
@@ -2525,10 +2556,18 @@ paths:
             X-Content-Type-Options:
               schema: { type: string, example: nosniff }
           content:
-            application/octet-stream:
-              schema:
-                type: string
-                format: binary
+            image/jpeg:
+              schema: { type: string, format: binary }
+            image/png:
+              schema: { type: string, format: binary }
+            image/webp:
+              schema: { type: string, format: binary }
+            image/heic:
+              schema: { type: string, format: binary }
+            image/heif:
+              schema: { type: string, format: binary }
+            application/pdf:
+              schema: { type: string, format: binary }
         '401': { $ref: '#/components/responses/InvalidToken' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -2561,10 +2600,18 @@ paths:
             Cache-Control:
               schema: { type: string, example: no-store }
           content:
-            application/octet-stream:
-              schema:
-                type: string
-                format: binary
+            image/jpeg:
+              schema: { type: string, format: binary }
+            image/png:
+              schema: { type: string, format: binary }
+            image/webp:
+              schema: { type: string, format: binary }
+            image/heic:
+              schema: { type: string, format: binary }
+            image/heif:
+              schema: { type: string, format: binary }
+            application/pdf:
+              schema: { type: string, format: binary }
         '400': { $ref: '#/components/responses/InvalidRequest' }
         '401': { $ref: '#/components/responses/InvalidAnonymousTicketCredentials' }
         '429': { $ref: '#/components/responses/TooManyTrackingAttempts' }
@@ -4007,7 +4054,7 @@ components:
         quality:
           type: string
           nullable: true
-          enum: [ OK, TOO_VAGUE, OFF_TOPIC ]
+          enum: [ OK, TOO_VAGUE, OFF_TOPIC, null ]
         suggestedRequestTypeId: { type: integer, format: int64, nullable: true }
         suggestedRequestTypeName: { type: string, nullable: true }
         suggestedCategoryName: { type: string, nullable: true }
@@ -4025,7 +4072,7 @@ components:
         urgencyHint:
           type: string
           nullable: true
-          enum: [ LOW, MEDIUM, HIGH, CRITICAL ]
+          enum: [ LOW, MEDIUM, HIGH, CRITICAL, null ]
         urgencyReason: { type: string, nullable: true }
         duplicates:
           type: array
@@ -4112,9 +4159,13 @@ components:
         displayName:
           type: string
         areaId:
-          allOf:
-            - $ref: '#/components/schemas/ModuleId'
+          type: string
           nullable: true
+          anyOf:
+            - $ref: '#/components/schemas/ModuleId'
+            - type: string
+              nullable: true
+              enum: [null]
         role:
           $ref: '#/components/schemas/ModuleRole'
     CategoryResponse:
@@ -4518,8 +4569,7 @@ components:
           format: int64
         operator:
           $ref: '#/components/schemas/RiskOperator'
-        expectedValue:
-          nullable: true
+        expectedValue: {}
         valueFrom:
           type: number
           nullable: true
@@ -4664,9 +4714,13 @@ components:
         escalated:
           type: boolean
         escalationReasonCode:
-          allOf:
-            - $ref: '#/components/schemas/EscalationReasonCode'
+          type: string
           nullable: true
+          anyOf:
+            - $ref: '#/components/schemas/EscalationReasonCode'
+            - type: string
+              nullable: true
+              enum: [null]
         escalatedAt:
           type: string
           format: date-time
@@ -4827,9 +4881,13 @@ components:
         escalated:
           type: boolean
         escalationReasonCode:
-          allOf:
-            - $ref: '#/components/schemas/EscalationReasonCode'
+          type: string
           nullable: true
+          anyOf:
+            - $ref: '#/components/schemas/EscalationReasonCode'
+            - type: string
+              nullable: true
+              enum: [null]
         escalatedAt:
           type: string
           format: date-time
@@ -4886,9 +4944,13 @@ components:
           items:
             $ref: '#/components/schemas/LabelSummaryResponse'
         pendingInformationRequest:
-          allOf:
-            - $ref: '#/components/schemas/PendingInformationRequestResponse'
+          type: object
           nullable: true
+          anyOf:
+            - $ref: '#/components/schemas/PendingInformationRequestResponse'
+            - type: object
+              nullable: true
+              enum: [null]
     LinkDuplicateRequest:
       type: object
       required: [ mainTicketId ]
@@ -4917,11 +4979,21 @@ components:
               additionalProperties: true
               description: Respuestas confirmadas; conserva false, 0 y null. No contiene datos provisionales.
             formTemplate:
-              allOf: [{ $ref: '#/components/schemas/StaffTicketFormResponse' }]
+              type: object
               nullable: true
+              anyOf:
+                - $ref: '#/components/schemas/StaffTicketFormResponse'
+                - type: object
+                  nullable: true
+                  enum: [null]
             location:
-              allOf: [{ $ref: '#/components/schemas/StaffTicketLocationResponse' }]
+              type: object
               nullable: true
+              anyOf:
+                - $ref: '#/components/schemas/StaffTicketLocationResponse'
+                - type: object
+                  nullable: true
+                  enum: [null]
             currentProgress:
               type: integer
               minimum: 0
@@ -4929,13 +5001,21 @@ components:
               nullable: true
               description: Progreso operativo persistido; null indica desconocido.
             anonymousContact:
-              allOf:
+              type: object
+              nullable: true
+              anyOf:
                 - $ref: '#/components/schemas/AnonymousContact'
-              nullable: true
+                - type: object
+                  nullable: true
+                  enum: [null]
             pendingInformationRequestContext:
-              allOf:
-                - $ref: '#/components/schemas/StaffInformationRequestContextResponse'
+              type: object
               nullable: true
+              anyOf:
+                - $ref: '#/components/schemas/StaffInformationRequestContextResponse'
+                - type: object
+                  nullable: true
+                  enum: [null]
     StaffTicketFormResponse:
       type: object
       description: Versión exacta fijada por Ticket.formTemplateId; nunca se sustituye por la activa. Sólo metadatos de presentación, sin RiskRule.
@@ -5020,13 +5100,21 @@ components:
                  CANCELLATION_REJECTED, CANCELLED, CLOSED, PUBLIC_MESSAGE_SENT,
                  INTERNAL_MESSAGE_ADDED, ATTACHMENT_ADDED, RECLASSIFICATION_PROPOSED, RECLASSIFICATION_ABANDONED]
         previousStatus:
-          allOf:
-            - $ref: '#/components/schemas/TicketStatus'
+          type: string
           nullable: true
+          anyOf:
+            - $ref: '#/components/schemas/TicketStatus'
+            - type: string
+              nullable: true
+              enum: [null]
         newStatus:
-          allOf:
-            - $ref: '#/components/schemas/TicketStatus'
+          type: string
           nullable: true
+          anyOf:
+            - $ref: '#/components/schemas/TicketStatus'
+            - type: string
+              nullable: true
+              enum: [null]
         occurredAt:
           type: string
           format: date-time
@@ -5034,17 +5122,29 @@ components:
           type: string
           nullable: true
         actorType:
-          allOf:
+          type: string
+          nullable: true
+          anyOf:
             - $ref: '#/components/schemas/ActorType'
-          nullable: true
+            - type: string
+              nullable: true
+              enum: [null]
         previousPriority:
-          allOf:
-            - $ref: '#/components/schemas/Priority'
+          type: string
           nullable: true
+          anyOf:
+            - $ref: '#/components/schemas/Priority'
+            - type: string
+              nullable: true
+              enum: [null]
         newPriority:
-          allOf:
-            - $ref: '#/components/schemas/Priority'
+          type: string
           nullable: true
+          anyOf:
+            - $ref: '#/components/schemas/Priority'
+            - type: string
+              nullable: true
+              enum: [null]
         message:
           type: string
           nullable: true
@@ -5295,9 +5395,13 @@ components:
             $ref: '#/components/schemas/TicketAttachmentResponse'
         purpose: { type: string, enum: [GENERAL, RECLASSIFICATION] }
         reclassification:
+          type: object
           nullable: true
-          allOf:
+          anyOf:
             - $ref: '#/components/schemas/ReclassificationRequirementsResponse'
+            - type: object
+              nullable: true
+              enum: [null]
     StaffInformationRequestContextResponse:
       type: object
       required: [internalMessage, requestedByModuleId, requestedByActorType, resumeStatus]
@@ -5413,8 +5517,13 @@ components:
         occurredAt: { type: string, format: date-time }
         status: { $ref: '#/components/schemas/CancellationRequestStatus' }
         cancellationScope:
-          allOf: [{ $ref: '#/components/schemas/CancellationScope' }]
+          type: string
           nullable: true
+          anyOf:
+            - $ref: '#/components/schemas/CancellationScope'
+            - type: string
+              nullable: true
+              enum: [null]
         decisionReason: { type: string, nullable: true }
         publicMessage: { type: string, nullable: true }
         internalMessage: { type: string, nullable: true, description: Sólo staff. Nunca sale en eventos. }
@@ -5472,8 +5581,13 @@ components:
         reviewedAt: { type: string, format: date-time, nullable: true }
         reviewedBy: { type: string, format: uuid, nullable: true }
         cancellationScope:
-          allOf: [{ $ref: '#/components/schemas/CancellationScope' }]
+          type: string
           nullable: true
+          anyOf:
+            - $ref: '#/components/schemas/CancellationScope'
+            - type: string
+              nullable: true
+              enum: [null]
         decisionReason: { type: string, nullable: true }
       additionalProperties: false
     CancelTicketRequest:
@@ -5610,9 +5724,13 @@ components:
             $ref: '#/components/schemas/TicketAttachmentResponse'
           description: Sólo adjuntos PUBLIC; el propietario anónimo nunca ve INTERNAL a través de tracking.
         pendingInformationRequest:
-          allOf:
-            - $ref: '#/components/schemas/PendingInformationRequestResponse'
+          type: object
           nullable: true
+          anyOf:
+            - $ref: '#/components/schemas/PendingInformationRequestResponse'
+            - type: object
+              nullable: true
+              enum: [null]
         neighborhoodName:
           type: string
           nullable: true
@@ -5747,7 +5865,11 @@ components:
         updatedAt: { type: string, format: date-time }
         resolvedAt: { type: string, format: date-time, nullable: true }
         requirements:
+          type: object
           nullable: true
-          allOf:
+          anyOf:
             - $ref: '#/components/schemas/ReclassificationRequirementsResponse'
+            - type: object
+              nullable: true
+              enum: [null]
       description: Sólo staff; snapshot inmutable y propuestas finales históricas. No exponer en proyecciones ciudadanas o eventos.

@@ -49,6 +49,7 @@ class OpenApiContractTest {
             "POST /api/staff/tickets/{ticketId}/ai-insights",
             "POST /api/auth/login",
             "POST /api/auth/refresh",
+            "POST /api/auth/logout",
             "GET /api/auth/me",
             "GET /api/catalog/categories",
             "GET /api/catalog/neighborhoods",
@@ -300,7 +301,7 @@ class OpenApiContractTest {
     void versionedFileIsAValidOpenApi3DocumentWithExactlyTheCurrentBusinessOperations() {
         assertTrue(string(spec.get("openapi")).startsWith("3."));
         assertEquals("3.0.3", parsedOpenApi.getOpenapi());
-        assertEquals(84, parsedOpenApi.getPaths().size());
+        assertEquals(85, parsedOpenApi.getPaths().size());
         assertNotNull(map(spec, "info").get("title"));
         assertNotNull(map(spec, "components").get("schemas"));
         assertEquals(EXPECTED_OPERATIONS, documentedOperations());
@@ -497,7 +498,7 @@ class OpenApiContractTest {
         Map<String, Object> staffProperties = map(map(staffDetailAllOf.get(1)), "properties");
         assertEquals(Set.of("anonymousContact", "pendingInformationRequestContext", "formData", "formTemplate", "location", "currentProgress"), staffProperties.keySet());
         assertEquals("#/components/schemas/AnonymousContact",
-                map(list(map(staffProperties, "anonymousContact"), "allOf").getFirst()).get("$ref"));
+                map(list(map(staffProperties, "anonymousContact"), "anyOf").getFirst()).get("$ref"));
         assertTrue(map(schemas, "TrackingTicketResponse", "properties")
                 .containsKey("pendingInformationRequest"));
 
@@ -667,8 +668,6 @@ class OpenApiContractTest {
                 }
             }
         }
-        // Logout is a browser-only session action outside the published business contract.
-        operations.remove("POST /api/auth/logout");
         assertEquals("#/components/responses/Forbidden",
                 map(operation("GET /api/tickets"), "responses", "403").get("$ref"));
         return operations;

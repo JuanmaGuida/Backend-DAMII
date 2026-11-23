@@ -143,6 +143,15 @@ jobs:
           CORE_OUTBOX_APPROVED_EVENT_IDS: ""
         run: ./mvnw -B clean verify
 
+      - name: Upload executable JAR for Newman
+        uses: actions/upload-artifact@v7
+        with:
+          name: backend-api-qa-jar
+          path: target/backend-*.jar
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
+
       - name: Collect Maven dependencies including test scope (no tests rerun)
         run: ./mvnw -B org.apache.maven.plugins:maven-dependency-plugin:3.11.0:copy-dependencies -DincludeScope=test -DoutputDirectory=target/sca-dependencies
 
@@ -230,6 +239,75 @@ jobs:
           VALIDATED_REF: ${{ github.ref }}
           VALIDATED_SHA: ${{ github.sha }}
         run: printf 'Backend ref=%s commit=%s\n' "$VALIDATED_REF" "$VALIDATED_SHA" >> "$GITHUB_STEP_SUMMARY"
+
+  api_qa:
+    name: Newman API and OpenAPI contracts
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: m2_newman_qa
+          POSTGRES_USER: m2_newman_qa
+          POSTGRES_PASSWORD: m2_ci_password
+        ports:
+          - 127.0.0.1:5432:5432
+        options: >-
+          --health-cmd="pg_isready -U m2_newman_qa -d m2_newman_qa"
+          --health-interval=3s
+          --health-timeout=3s
+          --health-retries=15
+    env:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://127.0.0.1:5432/m2_newman_qa
+      SPRING_DATASOURCE_USERNAME: m2_newman_qa
+      SPRING_DATASOURCE_PASSWORD: m2_ci_password
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: qa/api-newman/package-lock.json
+      - uses: actions/download-artifact@v7
+        with:
+          name: backend-api-qa-jar
+          path: ${{ runner.temp }}/api-qa-jar
+      - name: Check the QA lock with npm audit
+        run: |
+          mkdir -p "$RUNNER_TEMP/api-qa-results"
+          npm audit --prefix qa/api-newman --package-lock-only --audit-level=high --json > "$RUNNER_TEMP/api-qa-results/npm-audit.json"
+      - name: Install locked QA dependencies
+        run: npm ci --prefix qa/api-newman --ignore-scripts --no-audit --no-fund
+      - name: Check the versioned collection and coverage matrix
+        run: npm run --prefix qa/api-newman check:generated
+      - name: Run API and contract checks against the validated JAR
+        env:
+          QA_POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          shopt -s nullglob
+          jars=("$RUNNER_TEMP"/api-qa-jar/backend-*.jar)
+          test "${#jars[@]}" -eq 1
+          bash qa/api-newman/ci.sh "${jars[0]}" "$QA_POSTGRES_CONTAINER" "$RUNNER_TEMP/api-qa-results"
+      - name: Upload sanitized Newman results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: backend-newman-results
+          path: |
+            ${{ runner.temp }}/api-qa-results/*.json
+            ${{ runner.temp }}/api-qa-results/*.xml
+            ${{ runner.temp }}/api-qa-results/*.md
+            ${{ runner.temp }}/api-qa-results/*.txt
+          if-no-files-found: error
+          retention-days: 14
 
   sonar:
     name: SonarCloud Quality Gate

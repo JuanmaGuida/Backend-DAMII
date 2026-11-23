@@ -1,0 +1,6720 @@
+{
+  "info": {
+    "name": "M2 API y OpenAPI mock",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "list-neighborhoods",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/catalog/neighborhoods"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));",
+              "pm.test(\"seeded neighborhoods are available\", () => pm.expect(pm.response.json()).to.be.a(\"array\").that.is.not.empty);",
+              "if (pm.response.code === 200) pm.environment.set(\"neighborhoodId\", pm.response.json()[0].id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "read-neighborhood",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/catalog/neighborhoods/{{neighborhoodId}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "unknown-neighborhood",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/catalog/neighborhoods/00000000-0000-4000-8000-000000000001"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(404));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "neighborhoods-unacceptable",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/catalog/neighborhoods"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(406));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "neighborhood-unacceptable",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/catalog/neighborhoods/{{neighborhoodId}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(406));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "invalid-login",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/auth/login",
+        "body": {
+          "mode": "raw",
+          "raw": "{}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(400));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "identity-without-token",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/auth/me"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "login-admin",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/auth/login",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"username\":\"module.admin@example.test\",\"password\":\"{{passwordAdmin}}\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));",
+              "pm.test(\"expected identity role\", () => pm.expect(pm.response.json().identity.role).to.eql(\"ADMIN\"));",
+              "if (pm.response.code === 200) pm.environment.set(\"tokenAdmin\", pm.response.json().token);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "login-citizen",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/auth/login",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"username\":\"citizen@example.test\",\"password\":\"{{passwordCitizen}}\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));",
+              "pm.test(\"expected identity role\", () => pm.expect(pm.response.json().identity.role).to.eql(\"CITIZEN\"));",
+              "if (pm.response.code === 200) pm.environment.set(\"tokenCitizen\", pm.response.json().token);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "login-agent",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/auth/login",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"username\":\"agent@example.test\",\"password\":\"{{passwordAgent}}\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));",
+              "pm.test(\"expected identity role\", () => pm.expect(pm.response.json().identity.role).to.eql(\"AGENT\"));",
+              "if (pm.response.code === 200) pm.environment.set(\"tokenAgent\", pm.response.json().token);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "login-area",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/auth/login",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"username\":\"area.responsible@example.test\",\"password\":\"{{passwordArea}}\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));",
+              "pm.test(\"expected identity role\", () => pm.expect(pm.response.json().identity.role).to.eql(\"AREA_RESPONSIBLE\"));",
+              "if (pm.response.code === 200) pm.environment.set(\"tokenArea\", pm.response.json().token);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "identity-as-admin",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAdmin}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/auth/me"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "directory-as-citizen",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenCitizen}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/agents"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(403));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "directory-as-admin",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAdmin}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/agents"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "create-label-as-citizen",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenCitizen}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/labels",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"code\":\"DDA2_NEWMAN_FORBIDDEN\",\"name\":\"Etiqueta rechazada\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(403));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "create-label",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAdmin}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/labels",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"code\":\"DDA2_NEWMAN_OK\",\"name\":\"Etiqueta Newman QA\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(201));",
+              "if (pm.response.code < 300) pm.environment.set(\"primaryLabelId\", pm.response.json()[\"id\"]);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "duplicate-label",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAdmin}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/labels",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"code\":\"DDA2_NEWMAN_OK\",\"name\":\"Etiqueta Newman QA\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(409));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "create-label-unacceptable",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAdmin}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/labels",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"code\":\"DDA2_NEWMAN_REJECTED\",\"name\":\"Etiqueta rechazada\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(406));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "list-labels",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAdmin}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/labels"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));",
+              "pm.test(\"created label is present\", () => pm.expect(pm.response.json().map(label => label.code)).to.include(\"DDA2_NEWMAN_OK\"));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "labels-without-token",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/labels"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "categories",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/catalog/categories"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "categories-unacceptable",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/catalog/categories"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(406));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "admin-categories",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAdmin}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/catalog/categories"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "create-category",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAdmin}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/catalog/categories",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"name\":\"Categoría Newman QA\",\"description\":\"Fixture de catálogo\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(201));",
+              "if (pm.response.code < 300) pm.environment.set(\"catalogCategoryId\", pm.response.json()[\"id\"]);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "update-category",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAdmin}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/catalog/categories/{{catalogCategoryId}}",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"name\":\"Categoría Newman QA actualizada\",\"description\":\"Fixture de catálogo\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "deactivate-category",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAdmin}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/catalog/categories/{{catalogCategoryId}}/deactivate"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));",
+              "pm.test(\"resource is inactive\", () => pm.expect(pm.response.json().active).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "activate-category",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAdmin}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/catalog/categories/{{catalogCategoryId}}/activate"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));",
+              "pm.test(\"resource is active\", () => pm.expect(pm.response.json().active).to.eql(true));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "create-subcategory",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAdmin}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/catalog/subcategories",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"categoryId\":{{catalogCategoryId}},\"name\":\"Subcategoría Newman QA\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(201));",
+              "if (pm.response.code < 300) pm.environment.set(\"catalogSubcategoryId\", pm.response.json()[\"id\"]);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "update-subcategory",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAdmin}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/catalog/subcategories/{{catalogSubcategoryId}}",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"categoryId\":{{catalogCategoryId}},\"name\":\"Subcategoría Newman QA actualizada\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "deactivate-subcategory",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAdmin}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/catalog/subcategories/{{catalogSubcategoryId}}/deactivate"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));",
+              "pm.test(\"resource is inactive\", () => pm.expect(pm.response.json().active).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "activate-subcategory",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAdmin}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/catalog/subcategories/{{catalogSubcategoryId}}/activate"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));",
+              "pm.test(\"resource is active\", () => pm.expect(pm.response.json().active).to.eql(true));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "admin-subcategories",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAdmin}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/catalog/categories/{{catalogCategoryId}}/subcategories"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "public-subcategories",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/catalog/categories/{{catalogCategoryId}}/subcategories"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "public-subcategories-bad-id",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/catalog/categories/invalid/subcategories"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(400));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "create-request-type",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAdmin}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/catalog/request-types",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"subcategoryId\":{{catalogSubcategoryId}},\"code\":\"DDA2_NEWMAN_TYPE\",\"name\":\"Reclamo sintético QA\",\"description\":\"Tipo exclusivo de Newman\",\"ticketType\":\"COMPLAINT\",\"responsibleAreaId\":\"M2\",\"minimumPriority\":\"LOW\",\"baseRisk\":\"LOW\",\"affectedPopulationFactor\":0,\"allowsAnonymous\":true,\"requiresLocation\":false}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(201));",
+              "if (pm.response.code < 300) pm.environment.set(\"catalogTypeId\", pm.response.json()[\"id\"]);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "create-alternative-type",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAdmin}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/catalog/request-types",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"subcategoryId\":{{catalogSubcategoryId}},\"code\":\"DDA2_NEWMAN_ALTERNATIVE\",\"name\":\"Reclasificación sintética QA\",\"description\":\"Tipo exclusivo de Newman\",\"ticketType\":\"COMPLAINT\",\"responsibleAreaId\":\"M2\",\"minimumPriority\":\"LOW\",\"baseRisk\":\"LOW\",\"affectedPopulationFactor\":0,\"allowsAnonymous\":true,\"requiresLocation\":false}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(201));",
+              "if (pm.response.code < 300) pm.environment.set(\"alternativeTypeId\", pm.response.json()[\"id\"]);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "update-request-type",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAdmin}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/catalog/request-types/{{catalogTypeId}}",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"subcategoryId\":{{catalogSubcategoryId}},\"code\":\"DDA2_NEWMAN_TYPE\",\"name\":\"Reclamo sintético QA actualizado\",\"description\":\"Tipo exclusivo de Newman\",\"ticketType\":\"COMPLAINT\",\"responsibleAreaId\":\"M2\",\"minimumPriority\":\"LOW\",\"baseRisk\":\"LOW\",\"affectedPopulationFactor\":0,\"allowsAnonymous\":true,\"requiresLocation\":false}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "deactivate-request-type",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAdmin}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/catalog/request-types/{{catalogTypeId}}/deactivate"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));",
+              "pm.test(\"resource is inactive\", () => pm.expect(pm.response.json().active).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "activate-request-type",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAdmin}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/catalog/request-types/{{catalogTypeId}}/activate"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));",
+              "pm.test(\"resource is active\", () => pm.expect(pm.response.json().active).to.eql(true));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "admin-request-types",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAdmin}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/catalog/subcategories/{{catalogSubcategoryId}}/request-types"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "public-request-types",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/catalog/subcategories/{{catalogSubcategoryId}}/request-types"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "public-request-types-bad-id",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/catalog/subcategories/invalid/request-types"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(400));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "save-request-form",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAdmin}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/catalog/request-types/{{catalogTypeId}}/form",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"fields\":[{\"code\":\"qa_detail\",\"label\":\"Detalle adicional\",\"type\":\"TEXT\",\"displayOrder\":1,\"required\":false}]}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "admin-request-form",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAdmin}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/catalog/request-types/{{catalogTypeId}}/form"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "public-request-form",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/catalog/request-types/{{catalogTypeId}}/form"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "public-request-form-bad-id",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/catalog/request-types/invalid/form"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(400));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "create-owned-ticket",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "newman-owned-ticket"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenCitizen}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"requestTypeId\":{{catalogTypeId}},\"summary\":\"Reclamo identificado QA Newman\",\"description\":\"Detalle sintético del reclamo identificado\",\"formData\":{}}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(201));",
+              "if (pm.response.code < 300) pm.environment.set(\"ownedTicketId\", pm.response.json()[\"ticketId\"]);",
+              "if (pm.response.code < 300) pm.environment.set(\"ownedPublicId\", pm.response.json()[\"publicId\"]);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "retry-owned-ticket",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "newman-owned-ticket"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenCitizen}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"requestTypeId\":{{catalogTypeId}},\"summary\":\"Reclamo identificado QA Newman\",\"description\":\"Detalle sintético del reclamo identificado\",\"formData\":{}}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(201));",
+              "pm.test(\"retry returns the same resource\", () => pm.expect(pm.response.json().ticketId).to.eql(pm.environment.get(\"ownedTicketId\")));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "conflicting-ticket-key",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "newman-owned-ticket"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenCitizen}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"requestTypeId\":{{catalogTypeId}},\"summary\":\"Resumen modificado para verificar conflicto\",\"description\":\"Detalle sintético del reclamo identificado\",\"formData\":{}}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(409));",
+              "pm.test(\"idempotency conflict\", () => pm.expect(pm.response.json().code).to.eql(\"IDEMPOTENCY_KEY_CONFLICT\"));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "create-anonymous-ticket",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"requestTypeId\":{{catalogTypeId}},\"summary\":\"Reclamo anónimo QA Newman\",\"description\":\"Detalle sintético del reclamo identificado\",\"formData\":{}}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(201));",
+              "if (pm.response.code < 300) pm.environment.set(\"anonymousTicketId\", pm.response.json()[\"ticketId\"]);",
+              "if (pm.response.code < 300) pm.environment.set(\"anonymousTrackingCode\", pm.response.json()[\"trackingCode\"]);",
+              "if (pm.response.code < 300) pm.environment.set(\"anonymousAccess\", pm.response.json()[\"generatedAnonymousAccessPassword\"]);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "owned-ticket-detail",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenCitizen}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/{{ownedTicketId}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "get-own-tracking-code",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenCitizen}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/me/tickets/{{ownedTicketId}}/tracking-code"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "external-attachment-references",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenCitizen}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/{{ownedTicketId}}/external-attachments"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "staff-ticket-detail",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAgent}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/tickets/{{ownedTicketId}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "staff-citizen-view",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAgent}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/tickets/{{ownedTicketId}}/citizen-view"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "duplicate-candidates",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAgent}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/tickets/{{ownedTicketId}}/duplicate-candidates"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "ticket-insights-fallback",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAgent}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/tickets/{{ownedTicketId}}/ai-insights"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "classify-fallback",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/ai/classify",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"description\":\"Detalle sintético de luminaria durante la prueba local\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "classify-invalid",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/ai/classify",
+        "body": {
+          "mode": "raw",
+          "raw": "{}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(400));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "assign-primary-label",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAdmin}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/tickets/{{ownedTicketId}}/labels",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"labelIds\":[\"{{primaryLabelId}}\"]}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(204));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "remove-primary-label",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAdmin}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/tickets/{{ownedTicketId}}/labels/{{primaryLabelId}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(204));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "add-owned-message",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenCitizen}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/{{ownedTicketId}}/messages",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"visibility\":\"PUBLIC\",\"text\":\"Mensaje sintético de QA\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(201));",
+              "if (pm.response.code < 300) pm.environment.set(\"messageId\", pm.response.json()[\"id\"]);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "list-owned-messages",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenCitizen}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/{{ownedTicketId}}/messages"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "read-owned-message",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenCitizen}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/{{ownedTicketId}}/messages/{{messageId}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "edit-owned-message",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenCitizen}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/{{ownedTicketId}}/messages/{{messageId}}",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"text\":\"Mensaje sintético actualizado\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "delete-owned-message",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenCitizen}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/{{ownedTicketId}}/messages/{{messageId}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(204));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "upload-owned-attachment",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenCitizen}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/{{ownedTicketId}}/attachments",
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "data",
+              "type": "text",
+              "value": "{\"visibility\":\"PUBLIC\"}",
+              "contentType": "application/json"
+            },
+            {
+              "key": "attachments",
+              "type": "file",
+              "src": "src/test/resources/attachments/valid.png",
+              "contentType": "image/png"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(201));",
+              "if (pm.response.code === 201) pm.environment.set(\"ownedAttachmentId\", pm.response.json()[0].id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "download-owned-attachment",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "image/png, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenCitizen}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/attachments/{{ownedAttachmentId}}/content"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "access-anonymous-ticket",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tracking/access",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"trackingCode\":\"{{anonymousTrackingCode}}\",\"anonymousAccessPassword\":\"{{anonymousAccess}}\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "tracking-empty",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tracking/access",
+        "body": {
+          "mode": "raw",
+          "raw": "{}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(400));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "anonymous-message",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tracking/actions/messages",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"trackingCode\":\"{{anonymousTrackingCode}}\",\"anonymousAccessPassword\":\"{{anonymousAccess}}\",\"payload\":{\"visibility\":\"PUBLIC\",\"text\":\"Mensaje sintético de QA\"}}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(201));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "anonymous-message-invalid",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tracking/actions/messages",
+        "body": {
+          "mode": "raw",
+          "raw": "{}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(400));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "upload-anonymous-attachment",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tracking/actions/attachments",
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "data",
+              "type": "text",
+              "value": "{\"trackingCode\":\"{{anonymousTrackingCode}}\",\"anonymousAccessPassword\":\"{{anonymousAccess}}\",\"payload\":{\"visibility\":\"PUBLIC\"}}",
+              "contentType": "application/json"
+            },
+            {
+              "key": "attachments",
+              "type": "file",
+              "src": "src/test/resources/attachments/valid.png",
+              "contentType": "image/png"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(201));",
+              "if (pm.response.code === 201) pm.environment.set(\"anonymousAttachmentId\", pm.response.json()[0].id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "upload-anonymous-no-file",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tracking/actions/attachments",
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "data",
+              "type": "text",
+              "value": "{}",
+              "contentType": "application/json"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(400));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "download-anonymous-attachment",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "image/png, application/problem+json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tracking/actions/attachments/{{anonymousAttachmentId}}/content",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"trackingCode\":\"{{anonymousTrackingCode}}\",\"anonymousAccessPassword\":\"{{anonymousAccess}}\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "download-anonymous-invalid",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tracking/actions/attachments/{{anonymousAttachmentId}}/content",
+        "body": {
+          "mode": "raw",
+          "raw": "{}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(400));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "label-detail",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAdmin}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/labels/{{primaryLabelId}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "update-label",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAdmin}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/labels/{{primaryLabelId}}",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"name\":\"Etiqueta Newman QA actualizada\",\"active\":true}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "label-tickets",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAdmin}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/labels/{{primaryLabelId}}/tickets"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "create-disposable-label",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAdmin}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/labels",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"code\":\"DDA2_NEWMAN_DELETE\",\"name\":\"Etiqueta descartable Newman\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(201));",
+              "if (pm.response.code < 300) pm.environment.set(\"deleteLabelId\", pm.response.json()[\"id\"]);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "delete-disposable-label",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAdmin}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/labels/{{deleteLabelId}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(204));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "indicators-overview",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAdmin}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/indicators/overview"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "indicators-export",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "text/csv, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAdmin}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/indicators/export"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));",
+              "pm.test(\"CSV attachment is present\", () => { pm.expect(pm.response.headers.get(\"Content-Disposition\")).to.include(\"metricas.csv\"); const rows = pm.response.text().trim().split(/\\r?\\n/); pm.expect(rows[0]).to.include(\"Creado\"); pm.expect(rows.slice(1).some(row => row.includes(pm.environment.get(\"ownedPublicId\")))).to.eql(true); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "indicators-categories",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAdmin}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/indicators/categories"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "indicators-neighborhoods",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAdmin}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/indicators/neighborhoods"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "indicators-priorities",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAdmin}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/indicators/priorities"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "indicators-areas",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAdmin}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/indicators/areas"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "indicators-sla",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAdmin}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/indicators/sla"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "area-tickets",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenArea}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/tickets/area"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "own-tickets",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenCitizen}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/me/tickets"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "ticket-inbox",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAgent}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "own-cancellation-history",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenCitizen}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/{{ownedTicketId}}/cancellation-requests"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "staff-cancellation-requests",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAgent}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/tickets/{{ownedTicketId}}/cancellation-requests"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "staff-cancellation-conflicts",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAgent}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/tickets/{{ownedTicketId}}/cancellation-conflicts"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "staff-reclassification-proposals",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAgent}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/tickets/{{ownedTicketId}}/reclassification-proposals"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "anonymous-cancellation-history",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tracking/actions/cancellation-requests/history",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"trackingCode\":\"{{anonymousTrackingCode}}\",\"anonymousAccessPassword\":\"{{anonymousAccess}}\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "anonymous-cancellation-history-invalid",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tracking/actions/cancellation-requests/history",
+        "body": {
+          "mode": "raw",
+          "raw": "{}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(400));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "review-owned",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAgent}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/{{ownedTicketId}}/review"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "classification",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAgent}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/{{ownedTicketId}}/classification"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));",
+              "pm.test(\"classification exposes ETag\", () => pm.expect(pm.response.headers.get(\"ETag\")).to.be.ok);",
+              "if (pm.response.code === 200) pm.environment.set(\"classificationTag\", pm.response.headers.get(\"ETag\"));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "correct-classification",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "If-Match",
+            "value": "{{classificationTag}}"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAgent}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/{{ownedTicketId}}/classification",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"requestTypeId\":{{catalogTypeId}}}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "request-owned-information",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAgent}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/{{ownedTicketId}}/information-request",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"messageForCitizen\":\"Detalle adicional para verificar el reclamo.\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(201));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "answer-owned-information",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenCitizen}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/{{ownedTicketId}}/information-response",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"responseMessage\":\"Respuesta de la persona propietaria.\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "route-owned",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAgent}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/{{ownedTicketId}}/route"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "resolve-owned",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAgent}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/{{ownedTicketId}}/resolution",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"type\":\"ACTION_COMPLETED\",\"publicMessage\":\"Gestión de prueba completada.\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(201));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "reopen-owned",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenCitizen}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/{{ownedTicketId}}/resolution/reopen",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"reason\":\"Verificar el ciclo de reapertura con datos sintéticos.\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "resolve-owned-again",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAgent}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/{{ownedTicketId}}/resolution",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"type\":\"ACTION_COMPLETED\",\"publicMessage\":\"Gestión de prueba completada.\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(201));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "confirm-owned",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenCitizen}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/{{ownedTicketId}}/resolution/confirm"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "survey-owned",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenCitizen}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/{{ownedTicketId}}/satisfaction-survey",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"score\":5,\"comment\":\"Evaluación sintética\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(201));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "review-anonymous",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAgent}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/{{anonymousTicketId}}/review"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "request-anonymous-information",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAgent}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/{{anonymousTicketId}}/information-request",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"messageForCitizen\":\"Detalle adicional para verificar el reclamo.\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(201));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "answer-anonymous-information",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tracking/actions/information-response",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"trackingCode\":\"{{anonymousTrackingCode}}\",\"anonymousAccessPassword\":\"{{anonymousAccess}}\",\"payload\":{\"responseMessage\":\"Respuesta de la persona propietaria.\"}}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "answer-anonymous-information-invalid",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tracking/actions/information-response",
+        "body": {
+          "mode": "raw",
+          "raw": "{}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(400));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "route-anonymous",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAgent}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/{{anonymousTicketId}}/route"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "resolve-anonymous",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAgent}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/{{anonymousTicketId}}/resolution",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"type\":\"ACTION_COMPLETED\",\"publicMessage\":\"Gestión de prueba completada.\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(201));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "reopen-anonymous",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tracking/actions/reopen",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"trackingCode\":\"{{anonymousTrackingCode}}\",\"anonymousAccessPassword\":\"{{anonymousAccess}}\",\"payload\":{\"reason\":\"Verificar el ciclo de reapertura con datos sintéticos.\"}}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "reopen-anonymous-invalid",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tracking/actions/reopen",
+        "body": {
+          "mode": "raw",
+          "raw": "{}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(400));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "resolve-anonymous-again",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAgent}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/{{anonymousTicketId}}/resolution",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"type\":\"ACTION_COMPLETED\",\"publicMessage\":\"Gestión de prueba completada.\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(201));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "confirm-anonymous",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tracking/actions/confirm-resolution",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"trackingCode\":\"{{anonymousTrackingCode}}\",\"anonymousAccessPassword\":\"{{anonymousAccess}}\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "confirm-anonymous-invalid",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tracking/actions/confirm-resolution",
+        "body": {
+          "mode": "raw",
+          "raw": "{}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(400));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "create-cancellable-owned",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenCitizen}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"requestTypeId\":{{catalogTypeId}},\"summary\":\"Fixture Newman para cancelar\",\"description\":\"Reclamo separado del flujo de revisión y resolución\",\"formData\":{}}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(201));",
+              "if (pm.response.code < 300) pm.environment.set(\"cancellableOwnedId\", pm.response.json()[\"ticketId\"]);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "cancel-owned",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenCitizen}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/{{cancellableOwnedId}}/cancel",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"reasonCode\":\"WITHDRAWN_BY_CITIZEN\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "create-cancellable-anonymous",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"requestTypeId\":{{catalogTypeId}},\"summary\":\"Fixture anónimo Newman para cancelar\",\"description\":\"Reclamo separado del flujo de revisión y resolución\",\"formData\":{}}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(201));",
+              "if (pm.response.code < 300) pm.environment.set(\"cancellableTrackingCode\", pm.response.json()[\"trackingCode\"]);",
+              "if (pm.response.code < 300) pm.environment.set(\"cancellableAccess\", pm.response.json()[\"generatedAnonymousAccessPassword\"]);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "cancel-anonymous",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tracking/actions/cancel",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"trackingCode\":\"{{cancellableTrackingCode}}\",\"anonymousAccessPassword\":\"{{cancellableAccess}}\",\"payload\":{\"reasonCode\":\"WITHDRAWN_BY_CITIZEN\"}}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "cancel-anonymous-invalid",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tracking/actions/cancel",
+        "body": {
+          "mode": "raw",
+          "raw": "{}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(400));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "read-pending-conflict",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAgent}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/tickets/ebc00000-0000-4000-8000-000000000001/cancellation-conflicts"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));",
+              "pm.test(\"pending conflict exists\", () => pm.expect(pm.response.json()[0].status).to.eql(\"PENDING\"));",
+              "if (pm.response.code === 200) pm.environment.set(\"cancellationConflictId\", pm.response.json()[0].id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "resolve-cancellation-conflict",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAgent}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/tickets/ebc00000-0000-4000-8000-000000000001/cancellation-conflicts/{{cancellationConflictId}}/resolve",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"decision\":\"REJECTED\",\"decisionReason\":\"Se mantiene el reclamo de prueba.\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));",
+              "pm.test(\"conflict was rejected\", () => pm.expect(pm.response.json().status).to.eql(\"REJECTED\"));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "fixture-reclassification",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenCitizen}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"requestTypeId\":{{catalogTypeId}},\"summary\":\"Newman QA reclassification\",\"description\":\"Fixture de Reclasificación inicial\",\"formData\":{}}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(201));",
+              "if (pm.response.code < 300) pm.environment.set(\"reclassificationId\", pm.response.json()[\"ticketId\"]);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "review-reclassification",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAgent}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/{{reclassificationId}}/review"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "propose-reclassification",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAgent}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/tickets/{{reclassificationId}}/reclassification-proposals",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"requestTypeId\":{{alternativeTypeId}}}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(201));",
+              "if (pm.response.code < 300) pm.environment.set(\"proposalId\", pm.response.json()[\"id\"]);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "reclassification-detail",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAgent}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/tickets/{{reclassificationId}}/reclassification-proposals/{{proposalId}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "abandon-reclassification",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAgent}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/tickets/{{reclassificationId}}/reclassification-proposals/{{proposalId}}/abandon",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"reason\":\"Fixture de primera propuesta descartada.\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "propose-reclassification-again",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAgent}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/tickets/{{reclassificationId}}/reclassification-proposals",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"requestTypeId\":{{alternativeTypeId}}}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(201));",
+              "if (pm.response.code < 300) pm.environment.set(\"proposalId\", pm.response.json()[\"id\"]);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "confirm-reclassification",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAgent}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/tickets/{{reclassificationId}}/reclassification-proposals/{{proposalId}}/confirm"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "fixture-identifiedMain",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenCitizen}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"requestTypeId\":{{catalogTypeId}},\"summary\":\"Newman QA identifiedMain\",\"description\":\"Fixture de Principal identificado\",\"formData\":{}}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(201));",
+              "if (pm.response.code < 300) pm.environment.set(\"identifiedMainId\", pm.response.json()[\"ticketId\"]);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "fixture-identifiedChild",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenCitizen}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"requestTypeId\":{{catalogTypeId}},\"summary\":\"Newman QA identifiedChild\",\"description\":\"Fixture de Duplicado identificado\",\"formData\":{}}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(201));",
+              "if (pm.response.code < 300) pm.environment.set(\"identifiedChildId\", pm.response.json()[\"ticketId\"]);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "link-identified-duplicate",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAgent}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/tickets/{{identifiedChildId}}/duplicate",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"mainTicketId\":\"{{identifiedMainId}}\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "request-cancellation",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenCitizen}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/{{identifiedMainId}}/cancellation-requests",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"reasonCode\":\"WITHDRAWN_BY_CITIZEN\",\"reason\":\"Solicitud sintética para comprobar revisión.\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(201));",
+              "if (pm.response.code < 300) pm.environment.set(\"cancelRequestId\", pm.response.json()[\"id\"]);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "get-cancellation-request",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAgent}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/tickets/{{identifiedMainId}}/cancellation-requests/{{cancelRequestId}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "reject-cancellation-request",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAgent}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/tickets/{{identifiedMainId}}/cancellation-requests/{{cancelRequestId}}/reject",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"decisionReason\":\"Justificación sintética de rechazo.\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "request-cancellation-again",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenCitizen}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/{{identifiedMainId}}/cancellation-requests",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"reasonCode\":\"WITHDRAWN_BY_CITIZEN\",\"reason\":\"Solicitud sintética para comprobar revisión.\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(201));",
+              "if (pm.response.code < 300) pm.environment.set(\"cancelRequestId\", pm.response.json()[\"id\"]);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "approve-cancellation-request",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAgent}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/tickets/{{identifiedMainId}}/cancellation-requests/{{cancelRequestId}}/approve",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"cancellationScope\":\"GLOBAL\",\"decisionReason\":\"Cancelación global sintética.\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "fixture-anonymousMain",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"requestTypeId\":{{catalogTypeId}},\"summary\":\"Newman QA anonymousMain\",\"description\":\"Fixture de Principal anónimo\",\"formData\":{}}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(201));",
+              "if (pm.response.code < 300) pm.environment.set(\"anonymousMainId\", pm.response.json()[\"ticketId\"]);",
+              "if (pm.response.code < 300) pm.environment.set(\"anonymousMainTracking\", pm.response.json()[\"trackingCode\"]);",
+              "if (pm.response.code < 300) pm.environment.set(\"anonymousMainCredential\", pm.response.json()[\"generatedAnonymousAccessPassword\"]);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "fixture-anonymousChild",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenCitizen}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"requestTypeId\":{{catalogTypeId}},\"summary\":\"Newman QA anonymousChild\",\"description\":\"Fixture de Duplicado del principal anónimo\",\"formData\":{}}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(201));",
+              "if (pm.response.code < 300) pm.environment.set(\"anonymousChildId\", pm.response.json()[\"ticketId\"]);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "link-anonymous-duplicate",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tokenAgent}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/tickets/{{anonymousChildId}}/duplicate",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"mainTicketId\":\"{{anonymousMainId}}\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "request-anonymous-cancellation",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tracking/actions/cancellation-requests",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"trackingCode\":\"{{anonymousMainTracking}}\",\"anonymousAccessPassword\":\"{{anonymousMainCredential}}\",\"payload\":{\"reasonCode\":\"WITHDRAWN_BY_CITIZEN\",\"reason\":\"Solicitud sintética para comprobar revisión.\"}}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(201));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "request-anonymous-cancellation-invalid",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tracking/actions/cancellation-requests",
+        "body": {
+          "mode": "raw",
+          "raw": "{}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(400));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-listExternalAttachmentReferences",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/00000000-0000-4000-8000-000000000001/external-attachments"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-getAdminCategories",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/catalog/categories"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-createCategory",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/catalog/categories"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-updateCategory",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/catalog/categories/1"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-getAdminSubcategoriesByCategory",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/catalog/categories/1/subcategories"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-deactivateCategory",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/catalog/categories/1/deactivate"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-activateCategory",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/catalog/categories/1/activate"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-createSubcategory",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/catalog/subcategories"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-updateSubcategory",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/catalog/subcategories/1"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-deactivateSubcategory",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/catalog/subcategories/1/deactivate"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-activateSubcategory",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/catalog/subcategories/1/activate"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-getAdminRequestTypesBySubcategory",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/catalog/subcategories/1/request-types"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-createRequestType",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/catalog/request-types"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-updateRequestType",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/catalog/request-types/1"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-deactivateRequestType",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/catalog/request-types/1/deactivate"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-activateRequestType",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/catalog/request-types/1/activate"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-getRequestTypeFormAdmin",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/catalog/request-types/1/form"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-saveRequestTypeForm",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/catalog/request-types/1/form"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-listMyTickets",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/me/tickets"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-getOwnTrackingCode",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/me/tickets/00000000-0000-4000-8000-000000000001/tracking-code"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-getIndicatorOverview",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/indicators/overview"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-exportIndicatorTickets",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/indicators/export"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-getCategoryIndicators",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/indicators/categories"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-getNeighborhoodIndicators",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/indicators/neighborhoods"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-getPriorityIndicators",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/indicators/priorities"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-getAreaIndicators",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/indicators/areas"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-getSlaIndicators",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/indicators/sla"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-listTickets",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-getTicketById",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/00000000-0000-4000-8000-000000000001"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-uploadTicketAttachments",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/00000000-0000-4000-8000-000000000001/attachments"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-getLabel",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/labels/00000000-0000-4000-8000-000000000001"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-updateLabel",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/labels/00000000-0000-4000-8000-000000000001"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-deleteLabel",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/labels/00000000-0000-4000-8000-000000000001"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-listTicketsByLabel",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/labels/00000000-0000-4000-8000-000000000001/tickets"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-assignTicketLabels",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/tickets/00000000-0000-4000-8000-000000000001/labels"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-removeTicketLabel",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/tickets/00000000-0000-4000-8000-000000000001/labels/00000000-0000-4000-8000-000000000001"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-listAreaTickets",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/tickets/area"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-getStaffTicketDetail",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/tickets/00000000-0000-4000-8000-000000000001"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-getStaffTicketCitizenView",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/tickets/00000000-0000-4000-8000-000000000001/citizen-view"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-getTicketAiInsights",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/tickets/00000000-0000-4000-8000-000000000001/ai-insights"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-getDuplicateCandidates",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/tickets/00000000-0000-4000-8000-000000000001/duplicate-candidates"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-linkDuplicateTicket",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/tickets/00000000-0000-4000-8000-000000000001/duplicate"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-startTicketReview",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/00000000-0000-4000-8000-000000000001/review"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-getTicketClassification",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/00000000-0000-4000-8000-000000000001/classification"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-correctTicketClassification",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/00000000-0000-4000-8000-000000000001/classification"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-routeTicketToArea",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/00000000-0000-4000-8000-000000000001/route"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-requestTicketInformation",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/00000000-0000-4000-8000-000000000001/information-request"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-answerTicketInformation",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/00000000-0000-4000-8000-000000000001/information-response"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-resolveTicketManually",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/00000000-0000-4000-8000-000000000001/resolution"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-confirmTicketResolution",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/00000000-0000-4000-8000-000000000001/resolution/confirm"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-reopenTicketResolution",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/00000000-0000-4000-8000-000000000001/resolution/reopen"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-createSatisfactionSurvey",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/00000000-0000-4000-8000-000000000001/satisfaction-survey"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-cancelTicket",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/00000000-0000-4000-8000-000000000001/cancel"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-createTicketMessage",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/00000000-0000-4000-8000-000000000001/messages"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-listTicketMessages",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/00000000-0000-4000-8000-000000000001/messages"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-getTicketMessage",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/00000000-0000-4000-8000-000000000001/messages/1"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-updateTicketMessage",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/00000000-0000-4000-8000-000000000001/messages/1"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-deleteTicketMessage",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/00000000-0000-4000-8000-000000000001/messages/1"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-downloadAttachment",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/attachments/1/content"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-proposeReclassification",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/tickets/00000000-0000-4000-8000-000000000001/reclassification-proposals"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-listReclassifications",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/tickets/00000000-0000-4000-8000-000000000001/reclassification-proposals"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-getReclassification",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/tickets/00000000-0000-4000-8000-000000000001/reclassification-proposals/1"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-confirmReclassification",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/tickets/00000000-0000-4000-8000-000000000001/reclassification-proposals/1/confirm"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-abandonReclassification",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/tickets/00000000-0000-4000-8000-000000000001/reclassification-proposals/1/abandon"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-createCancellationRequest",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/00000000-0000-4000-8000-000000000001/cancellation-requests"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-ownCancellationRequests",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tickets/00000000-0000-4000-8000-000000000001/cancellation-requests"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-staffCancellationRequests",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/tickets/00000000-0000-4000-8000-000000000001/cancellation-requests"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-getCancellationRequest",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/tickets/00000000-0000-4000-8000-000000000001/cancellation-requests/00000000-0000-4000-8000-000000000001"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-approveCancellationRequest",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/tickets/00000000-0000-4000-8000-000000000001/cancellation-requests/00000000-0000-4000-8000-000000000001/approve"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-rejectCancellationRequest",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/tickets/00000000-0000-4000-8000-000000000001/cancellation-requests/00000000-0000-4000-8000-000000000001/reject"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-listCancellationConflicts",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/tickets/00000000-0000-4000-8000-000000000001/cancellation-conflicts"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "without-bearer-resolveCancellationConflict",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/staff/tickets/00000000-0000-4000-8000-000000000001/cancellation-conflicts/1/resolve"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,206 @@
+{
+  "info": {
+    "name": "M2 API y OpenAPI m1",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "m1-refresh-without-cookie",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Origin",
+            "value": "https://m2.example.test"
+          },
+          {
+            "key": "X-M2-CSRF",
+            "value": "1"
+          }
+        ],
+        "url": "{{baseUrl}}/api/auth/refresh"
+      },
+      "protocolProfileBehavior": {
+        "disableCookies": true
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(401));",
+              "pm.test(\"session cookie was cleared\", () => pm.expect(pm.response.headers.get(\"Set-Cookie\")).to.include(\"Max-Age=0\"));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "m1-login",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Origin",
+            "value": "https://m2.example.test"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/auth/login",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"username\":\"session-qa@example.test\",\"password\":\"{{m1FixtureCredential}}\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "protocolProfileBehavior": {
+        "disableCookies": true
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));",
+              "pm.test(\"M1 cookie is secured\", () => { const value = pm.response.headers.get(\"Set-Cookie\"); pm.expect(value).to.include(\"HttpOnly\"); pm.expect(value).to.include(\"Secure\"); });",
+              "if (pm.response.code === 200) pm.environment.set(\"m1SessionCookie\", pm.response.headers.get(\"Set-Cookie\").split(\";\")[0]);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "m1-refresh",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Origin",
+            "value": "https://m2.example.test"
+          },
+          {
+            "key": "X-M2-CSRF",
+            "value": "1"
+          },
+          {
+            "key": "Cookie",
+            "value": "{{m1SessionCookie}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/auth/refresh"
+      },
+      "protocolProfileBehavior": {
+        "disableCookies": true
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(200));",
+              "pm.test(\"M1 cookie rotated\", () => { const value = pm.response.headers.get(\"Set-Cookie\").split(\";\")[0]; pm.expect(value).to.not.eql(pm.environment.get(\"m1SessionCookie\")); pm.environment.set(\"m1SessionCookie\", value); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "m1-logout-without-csrf",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Origin",
+            "value": "https://m2.example.test"
+          },
+          {
+            "key": "Cookie",
+            "value": "{{m1SessionCookie}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/auth/logout"
+      },
+      "protocolProfileBehavior": {
+        "disableCookies": true
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(403));",
+              "pm.test(\"invalid logout does not clear cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "m1-logout",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, application/problem+json"
+          },
+          {
+            "key": "Origin",
+            "value": "https://m2.example.test"
+          },
+          {
+            "key": "X-M2-CSRF",
+            "value": "1"
+          },
+          {
+            "key": "Cookie",
+            "value": "{{m1SessionCookie}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/auth/logout"
+      },
+      "protocolProfileBehavior": {
+        "disableCookies": true
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"expected HTTP status\", () => pm.response.to.have.status(204));",
+              "pm.test(\"session cookie was cleared\", () => pm.expect(pm.response.headers.get(\"Set-Cookie\")).to.include(\"Max-Age=0\"));"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
