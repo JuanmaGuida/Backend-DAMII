@@ -2,6 +2,7 @@ package com.reclamos.backend.controller;
 
 import com.reclamos.backend.config.SecurityConfiguration;
 import com.reclamos.backend.dto.TicketResponse;
+import com.reclamos.backend.dto.response.LabelResponse;
 import com.reclamos.backend.entity.TicketStatus;
 import com.reclamos.backend.exception.LabelConflictException;
 import com.reclamos.backend.exception.ResourceNotFoundException;
@@ -24,15 +25,19 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.*;
 import java.util.*;
 import java.util.stream.Stream;
+import static com.reclamos.backend.openapi.ProblemContractAssertions.matchesProblem;
 import static org.mockito.Mockito.*;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.request;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 
 @WebMvcTest(StaffLabelController.class)
 @Import({SecurityConfiguration.class, BearerTokenAuthenticationFilter.class})
 class StaffLabelControllerSecurityTest {
+    private static final String LABELS = "/api/staff/labels";
+    private static final String PREFER_PROBLEM = "application/problem+json, application/json;q=0.5";
     private static final String CREATE = "{\"code\":\"URGENTE\",\"name\":\"Urgente\"}";
     private static final String UPDATE = "{\"name\":\"Urgente editada\",\"active\":false}";
     private static final RoleAuth ADMIN = auth(ModuleRole.ADMIN);
@@ -42,6 +47,62 @@ class StaffLabelControllerSecurityTest {
     @Autowired MockMvc mvc;
     @MockitoBean LabelService labels;
     @MockitoBean AuthService authService;
+
+    @ParameterizedTest
+    @ValueSource(strings = {MediaType.APPLICATION_JSON_VALUE, MediaType.ALL_VALUE, PREFER_PROBLEM})
+    void createAndListReturnJsonForCompatibleAccept(String accept) throws Exception {
+        var label = new LabelResponse(UUID.randomUUID(), "URGENTE", "Urgente", null, true, 0);
+        when(labels.create(any())).thenReturn(label);
+        when(labels.list()).thenReturn(List.of(label));
+
+        mvc.perform(request(HttpMethod.POST, LABELS).with(authentication(AGENT.token()))
+                        .accept(accept).contentType(MediaType.APPLICATION_JSON).content(CREATE))
+                .andExpect(status().isCreated())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.id").value(label.getId().toString()))
+                .andExpect(jsonPath("$.code").value(label.getCode()));
+        mvc.perform(request(HttpMethod.GET, LABELS).with(authentication(AGENT.token())).accept(accept))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$[0].id").value(label.getId().toString()));
+    }
+
+    @Test
+    void incompatibleAcceptRejectsCreateAndListBeforeCallingService() throws Exception {
+        mvc.perform(request(HttpMethod.POST, LABELS).with(authentication(AGENT.token()))
+                        .accept(MediaType.APPLICATION_PROBLEM_JSON).contentType(MediaType.APPLICATION_JSON).content(CREATE))
+                .andExpect(status().isNotAcceptable());
+        mvc.perform(request(HttpMethod.GET, LABELS).with(authentication(AGENT.token()))
+                        .accept(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(status().isNotAcceptable());
+        verifyNoInteractions(labels);
+    }
+
+    @Test
+    void createErrorsMatchProblemContractWhenJsonIsAcceptable() throws Exception {
+        mvc.perform(request(HttpMethod.POST, LABELS).with(authentication(AGENT.token()))
+                        .accept(PREFER_PROBLEM).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"code\":\"URGENTE\",\"name\":\" \"}"))
+                .andExpect(matchesProblem(LABELS, 400))
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+        mvc.perform(request(HttpMethod.POST, LABELS).accept(PREFER_PROBLEM)
+                        .contentType(MediaType.APPLICATION_JSON).content(CREATE))
+                .andExpect(matchesProblem(LABELS, 401));
+        mvc.perform(request(HttpMethod.POST, LABELS).with(authentication(CITIZEN.token()))
+                        .accept(PREFER_PROBLEM).contentType(MediaType.APPLICATION_JSON).content(CREATE))
+                .andExpect(matchesProblem(LABELS, 403));
+        mvc.perform(request(HttpMethod.POST, LABELS).with(authentication(AGENT.token()))
+                        .accept(PREFER_PROBLEM).contentType(MediaType.TEXT_PLAIN).content(CREATE))
+                .andExpect(matchesProblem(LABELS, 415))
+                .andExpect(jsonPath("$.code").value("UNSUPPORTED_MEDIA_TYPE"));
+        verifyNoInteractions(labels);
+
+        when(labels.create(any())).thenThrow(new LabelConflictException("Código duplicado"));
+        mvc.perform(request(HttpMethod.POST, LABELS).with(authentication(AGENT.token()))
+                        .accept(PREFER_PROBLEM).contentType(MediaType.APPLICATION_JSON).content(CREATE))
+                .andExpect(matchesProblem(LABELS, 409))
+                .andExpect(jsonPath("$.code").value("LABEL_CONFLICT"));
+    }
 
     @ParameterizedTest @MethodSource("writes")
     void administrationRequiresAuthentication(Endpoint endpoint) throws Exception {

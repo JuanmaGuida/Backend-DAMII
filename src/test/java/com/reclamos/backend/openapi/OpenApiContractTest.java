@@ -18,6 +18,7 @@ import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -745,6 +746,37 @@ class OpenApiContractTest {
                 .anyMatch(parameter -> "labelIds".equals(parameter.get("name"))));
         assertFalse(meParameters.stream().map(value -> map(value))
                 .anyMatch(parameter -> "search".equals(parameter.get("name"))));
+    }
+
+    @Test
+    void labelAndCategoryOperationsDocumentJsonSuccessAndNotAcceptableProblem() {
+        Map.of("POST /api/staff/labels", "201",
+                "GET /api/staff/labels", "200",
+                "GET /api/catalog/categories", "200").forEach((methodAndPath, success) -> {
+            var operation = operation(methodAndPath);
+            assertEquals(Set.of("application/json"), map(operation, "responses", success, "content").keySet());
+            assertEquals("#/components/responses/NotAcceptable", map(operation, "responses", "406").get("$ref"));
+        });
+        assertEquals("#/components/schemas/ApiError", map(spec, "components", "responses",
+                "NotAcceptable", "content", "application/problem+json", "schema").get("$ref"));
+    }
+
+    @Test
+    void createLabelDocumentsValidationAndUnsupportedRequestMedia() {
+        var create = operation("POST /api/staff/labels");
+        assertEquals("#/components/responses/InvalidRequest", map(create, "responses", "400").get("$ref"));
+        assertEquals("#/components/responses/UnsupportedMediaType", map(create, "responses", "415").get("$ref"));
+
+        var schema = map(spec, "components", "schemas", "CreateLabelRequest");
+        assertEquals(Set.of("code", "name"), Set.copyOf(list(schema, "required")));
+        Map.of("code", 100, "name", 150).forEach((field, maxLength) -> {
+            var property = map(schema, "properties", field);
+            assertEquals(1, property.get("minLength"));
+            assertEquals(maxLength, property.get("maxLength"));
+            var nonBlank = Pattern.compile(string(property.get("pattern")));
+            assertFalse(nonBlank.matcher(" \t\n\u2003").find());
+            assertTrue(nonBlank.matcher(" Etiqueta ").find());
+        });
     }
 
     @Test

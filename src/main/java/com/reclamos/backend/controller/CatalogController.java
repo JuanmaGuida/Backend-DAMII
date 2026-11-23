@@ -33,7 +33,7 @@ public class CatalogController {
         return neighborhoodService.findById(neighborhoodId);
     }
 
-    @GetMapping("/categories")
+    @GetMapping(value = "/categories", produces = MediaType.APPLICATION_JSON_VALUE)
     public List<CategoryResponse> getCategories() {
         return catalogService.getCategories();
     }
