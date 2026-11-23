@@ -19,7 +19,6 @@ import org.springframework.beans.factory.support.StaticListableBeanFactory;
 import org.springframework.core.env.PropertySourcesPropertyResolver;
 import org.springframework.core.env.MutablePropertySources;
 import org.springframework.core.io.support.ResourcePropertySource;
-import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -32,6 +31,7 @@ import java.util.List;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options;
+import static com.reclamos.backend.openapi.ProblemContractAssertions.assertProblem;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -133,8 +133,9 @@ class M1TimeoutWireMockIntegrationTest {
     }
 
     private void assertSafeError(MvcResult result) throws Exception {
-        assertThat(result.getResponse().getStatus()).isEqualTo(503);
-        assertThat(result.getResponse().getContentType()).isEqualTo(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
+        var response = result.getResponse();
+        assertProblem("POST", result.getRequest().getRequestURI(), 503,
+                response.getStatus(), response.getContentType(), response.getContentAsString());
         assertThat(result.getResponse().getHeader("Cache-Control")).contains("no-store");
         var problem = new JsonMapper().readTree(result.getResponse().getContentAsByteArray());
         assertThat(problem.path("type").asText()).isEqualTo("about:blank");

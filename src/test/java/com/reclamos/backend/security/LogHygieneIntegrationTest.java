@@ -26,6 +26,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 
+import static com.reclamos.backend.openapi.ProblemContractAssertions.assertProblem;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
@@ -87,9 +88,8 @@ class LogHygieneIntegrationTest {
                         .header("Accept", MediaType.APPLICATION_JSON_VALUE).GET().build(),
                 HttpResponse.BodyHandlers.ofString());
 
-        assertThat(response.statusCode()).isEqualTo(500);
-        assertThat(response.headers().firstValue("Content-Type"))
-                .contains(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
+        assertProblem("GET", "/api/catalog/categories", 500, response.statusCode(),
+                response.headers().firstValue("Content-Type").orElse(null), response.body());
         var problem = json.readTree(response.body());
         assertThat(problem.path("type").asText()).isEqualTo("about:blank");
         assertThat(problem.path("title").asText()).isEqualTo("Internal Server Error");

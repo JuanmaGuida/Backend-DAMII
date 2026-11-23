@@ -11,6 +11,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -74,9 +75,11 @@ public class SecurityConfiguration {
                                 .policy(ReferrerPolicyHeaderWriter.ReferrerPolicy.NO_REFERRER))
                         .addHeaderWriter(new ApiContentSecurityPolicyHeaderWriter()))
                 .exceptionHandling(exceptions -> exceptions
-                        .authenticationEntryPoint((request, response, exception) -> ApiProblem.write(
-                                response, objectMapper, HttpStatus.UNAUTHORIZED, "INVALID_TOKEN",
-                                "La sesión no es válida", request.getRequestURI()))
+                        .authenticationEntryPoint((request, response, exception) -> {
+                            response.setHeader(HttpHeaders.WWW_AUTHENTICATE, "Bearer");
+                            ApiProblem.write(response, objectMapper, HttpStatus.UNAUTHORIZED, "INVALID_TOKEN",
+                                    "La sesión no es válida", request.getRequestURI());
+                        })
                         .accessDeniedHandler((request, response, exception) -> ApiProblem.write(
                                 response, objectMapper, HttpStatus.FORBIDDEN, "FORBIDDEN",
                                 "No tiene permisos para realizar esta operación", request.getRequestURI())))
