@@ -16,16 +16,22 @@ import com.reclamos.backend.repository.SubcategoryRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.web.servlet.MockMvc;
 
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
  * QA (FAIL de "consulta y actualización del schema de Request Types"):
@@ -39,6 +45,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 @SpringBootTest
 @ActiveProfiles("dev")
+@AutoConfigureMockMvc
 class FormAdminServiceVersioningIntegrationTest {
     @Autowired
     private FormAdminService formAdminService;
@@ -50,9 +57,12 @@ class FormAdminServiceVersioningIntegrationTest {
     private RequestTypeRepository requestTypeRepository;
     @Autowired
     private JdbcTemplate jdbcTemplate;
+    @Autowired
+    private MockMvc mvc;
 
     @Test
-    void savingASecondFormVersionDoesNotConflictWithTheStillActivePreviousVersion() {
+    @WithMockUser(roles = "ADMIN")
+    void putCreatesTheNextVersionAndKeepsServerManagedFields() throws Exception {
         Category category = categoryRepository.save(category());
         Subcategory subcategory = subcategoryRepository.save(subcategory(category));
         RequestType requestType = requestTypeRepository.save(requestType(subcategory));
@@ -63,11 +73,36 @@ class FormAdminServiceVersioningIntegrationTest {
             assertEquals(1, v1.getVersion());
             assertTrue(v1.isActive());
 
-            FormTemplateAdminResponse v2 = assertDoesNotThrow(() -> formAdminService.saveForm(
-                    requestType.getId(), templateRequest()));
+            Long previousField = v1.getFields().getFirst().getId();
+            mvc.perform(put("/api/admin/catalog/request-types/{id}/form", requestType.getId())
+                            .contentType(MediaType.APPLICATION_JSON).content("""
+                                    {
+                                      "id": %d,
+                                      "version": 99,
+                                      "active": false,
+                                      "fields": [{
+                                        "id": %d,
+                                        "formTemplateId": %d,
+                                        "code": "DESCRIPCION",
+                                        "label": "Detalle actualizado",
+                                        "type": "TEXT",
+                                        "displayOrder": 1
+                                      }]
+                                    }
+                                    """.formatted(v1.getId(), previousField, v1.getId())))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.version").value(2))
+                    .andExpect(jsonPath("$.active").value(true));
 
-            assertEquals(2, v2.getVersion());
-            assertTrue(v2.isActive());
+            assertEquals("Descripción", jdbcTemplate.queryForObject(
+                    "SELECT label FROM form_fields WHERE id = ? AND form_template_id = ?",
+                    String.class, previousField, v1.getId()));
+            assertEquals(Boolean.FALSE, jdbcTemplate.queryForObject(
+                    "SELECT active FROM form_templates WHERE id = ?", Boolean.class, v1.getId()));
+            assertEquals("Detalle actualizado", jdbcTemplate.queryForObject("""
+                    SELECT f.label FROM form_fields f JOIN form_templates t ON t.id = f.form_template_id
+                    WHERE t.request_type_id = ? AND t.version = 2 AND t.active
+                    """, String.class, requestType.getId()));
             assertEquals(1, jdbcTemplate.queryForObject(
                     "SELECT COUNT(*) FROM form_templates WHERE request_type_id = ? AND active = TRUE",
                     Integer.class, requestType.getId()));

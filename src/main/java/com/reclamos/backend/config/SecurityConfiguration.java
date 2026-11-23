@@ -246,6 +246,15 @@ public class SecurityConfiguration {
                         // Directorio de personal (panel "Agentes"): lista correos y carga de
                         // trabajo de todo el equipo, así que es exclusivo de ADMIN.
                         .requestMatchers(HttpMethod.GET, "/api/admin/agents").hasRole("ADMIN")
+                        // MVC maps HEAD to GET handlers. Apply the same role gates before the fallback.
+                        .requestMatchers(HttpMethod.HEAD, "/api/admin/agents").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.HEAD, "/api/staff/tickets/area").hasRole("AREA_RESPONSIBLE")
+                        .requestMatchers(HttpMethod.HEAD, "/api/indicators/**", "/api/tickets",
+                                "/api/tickets/*/classification", "/api/staff/labels", "/api/staff/labels/*",
+                                "/api/staff/labels/*/tickets", "/api/staff/tickets/*/duplicate-candidates")
+                        .hasAnyRole("AGENT", "ADMIN")
+                        .requestMatchers(HttpMethod.HEAD, "/api/staff/tickets/*", "/api/staff/tickets/*/citizen-view")
+                        .hasAnyRole("AGENT", "AREA_RESPONSIBLE", "ADMIN")
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(bearerTokenAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
