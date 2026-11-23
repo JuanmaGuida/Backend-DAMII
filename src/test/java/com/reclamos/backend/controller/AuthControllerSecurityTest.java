@@ -1,5 +1,7 @@
 package com.reclamos.backend.controller;
 
+import static com.reclamos.backend.openapi.ProblemContractAssertions.matchesProblem;
+
 import com.reclamos.backend.config.SecurityConfiguration;
 import com.reclamos.backend.dto.auth.LoginRequest;
 import com.reclamos.backend.dto.auth.LoginResponse;
@@ -135,6 +137,8 @@ class AuthControllerSecurityTest {
                 .andExpect(jsonPath("$.message").value("La sesión no es válida"))
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
                 .andExpect(jsonPath("$.status").value(401))
+                .andExpect(matchesProblem("/api/auth/me", 401))
+                .andExpect(header().string("WWW-Authenticate", "Bearer"))
                 .andExpect(header().doesNotExist("Location"));
     }
 
@@ -145,6 +149,7 @@ class AuthControllerSecurityTest {
 
         MvcResult invalid = meWithToken("invalid")
                 .andExpect(status().isUnauthorized())
+                .andExpect(header().string("WWW-Authenticate", "Bearer"))
                 .andExpect(jsonPath("$.code").value("INVALID_TOKEN"))
                 .andExpect(jsonPath("$.message").value("La sesión no es válida"))
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
@@ -152,6 +157,7 @@ class AuthControllerSecurityTest {
                 .andReturn();
         MvcResult expired = meWithToken("expired")
                 .andExpect(status().isUnauthorized())
+                .andExpect(header().string("WWW-Authenticate", "Bearer"))
                 .andExpect(jsonPath("$.code").value("INVALID_TOKEN"))
                 .andExpect(jsonPath("$.message").value("La sesión no es válida"))
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
@@ -180,7 +186,7 @@ class AuthControllerSecurityTest {
     void httpBasicIsNotAnAlternativeAuthenticationMechanism() throws Exception {
         mockMvc.perform(get("/api/auth/me").with(httpBasic("user", "password")))
                 .andExpect(status().isUnauthorized())
-                .andExpect(header().doesNotExist("WWW-Authenticate"));
+                .andExpect(header().string("WWW-Authenticate", "Bearer"));
     }
 
     @Test

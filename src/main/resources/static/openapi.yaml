@@ -73,8 +73,8 @@ paths:
   /api/auth/login:
     post:
       tags: [Authentication]
-      summary: Iniciar sesión en el entorno DEV
-      description: Endpoint de autenticación utilizado por el proveedor de identidad mock del entorno DEV actual. No representa el mecanismo productivo definitivo.
+      summary: Iniciar sesión
+      description: Autentica con el proveedor configurado. Con M1, una sesión iniciada también establece la cookie de renovación.
       operationId: login
       requestBody:
         required: true
@@ -107,24 +107,64 @@ paths:
         '415':
           $ref: '#/components/responses/UnsupportedMediaType'
         '429':
-          description: |
-            Se superó el máximo de intentos fallidos desde el mismo origen o contra el mismo usuario.
-            No se consultan las credenciales; reintentar una vez transcurrido Retry-After.
+          $ref: '#/components/responses/TooManyAuthenticationAttempts'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '502':
+          $ref: '#/components/responses/IdentityBadGateway'
+        '503':
+          $ref: '#/components/responses/IdentityUnavailable'
+  /api/auth/refresh:
+    post:
+      tags: [Authentication]
+      summary: Renovar la sesión de M1
+      description: Disponible con M1 activo. La renovación usa una cookie HttpOnly y exige el origen configurado y la cabecera anti-CSRF. No recibe un cuerpo.
+      operationId: refreshSession
+      security: []
+      parameters:
+        - name: __Host-M2-Refresh
+          in: cookie
+          required: true
+          schema: { type: string }
+        - name: Origin
+          in: header
+          required: true
+          schema: { type: string }
+        - name: X-M2-CSRF
+          in: header
+          required: true
+          schema: { type: string, enum: ['1'] }
+      responses:
+        '200':
+          description: Sesión renovada.
           headers:
-            Retry-After:
-              description: Segundos hasta que se puede volver a intentar.
-              schema: { type: integer, minimum: 1, example: 900 }
+            Cache-Control:
+              schema: { type: string, example: no-store }
+            Set-Cookie:
+              description: Cookie de renovación rotada con Path=/, Secure, HttpOnly y SameSite=Strict.
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          description: Cookie ausente o inválida. Se elimina la cookie de renovación.
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
-              example:
-                type: about:blank
-                title: Too Many Requests
-                status: 429
-                detail: Demasiados intentos. Intentá de nuevo más tarde.
-                code: TOO_MANY_ATTEMPTS
-                message: Demasiados intentos. Intentá de nuevo más tarde.
+        '403':
+          description: Origen o cabecera anti-CSRF inválidos, o cuenta sin acceso a M2.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/TooManyAuthenticationAttempts'
+        '502':
+          $ref: '#/components/responses/IdentityBadGateway'
+        '503':
+          $ref: '#/components/responses/IdentityUnavailable'
   /api/auth/me:
     get:
       tags: [Authentication]
@@ -155,6 +195,8 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/CategoryResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
   /api/catalog/neighborhoods:
     get:
       tags: [ Catalog ]
@@ -1388,7 +1430,7 @@ paths:
                 code: EVIDENCE_REQUIRED
                 message: El nivel de riesgo detectado requiere adjuntar al menos una evidencia.
         '503':
-          description: El almacenamiento de adjuntos no está disponible; sólo aplica cuando multipart contiene evidencia.
+          description: ATTACHMENT_STORAGE_UNAVAILABLE al adjuntar evidencia, o TRACKING_CODE_UNAVAILABLE al generar o recuperar el código de un alta autenticada.
           content:
             application/problem+json:
               schema:
@@ -1400,6 +1442,8 @@ paths:
                 detail: No fue posible almacenar la evidencia. Intentá nuevamente más tarde.
                 code: ATTACHMENT_STORAGE_UNAVAILABLE
                 message: No fue posible almacenar la evidencia. Intentá nuevamente más tarde.
+        '500':
+          $ref: '#/components/responses/InternalServerError'
   /api/tickets/{ticketId}:
     get:
       tags: [ Tickets ]
@@ -1499,27 +1543,50 @@ paths:
         content: { application/json: { schema: { $ref: '#/components/schemas/CreateLabelRequest' } } }
       responses:
         '201': { description: Etiqueta creada, content: { application/json: { schema: { $ref: '#/components/schemas/LabelResponse' } } } }
-        '409': { description: Código duplicado }
+        '409':
+          $ref: '#/components/responses/LabelConflict'
+        '401':
+          $ref: '#/components/responses/InvalidToken'
+        '403':
+          $ref: '#/components/responses/Forbidden'
   /api/staff/labels/{labelId}:
     get:
       tags: [ Labels ]
       operationId: getLabel
       security: [ { bearerAuth: [ ] } ]
       parameters: [ { name: labelId, in: path, required: true, schema: { type: string, format: uuid } } ]
-      responses: { '200': { description: Etiqueta, content: { application/json: { schema: { $ref: '#/components/schemas/LabelResponse' } } } }, '404': { $ref: '#/components/responses/NotFound' } }
+      responses:
+        '200': { description: Etiqueta, content: { application/json: { schema: { $ref: '#/components/schemas/LabelResponse' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '401':
+          $ref: '#/components/responses/InvalidToken'
+        '403':
+          $ref: '#/components/responses/Forbidden'
     put:
       tags: [ Labels ]
       operationId: updateLabel
       security: [ { bearerAuth: [ ] } ]
       parameters: [ { name: labelId, in: path, required: true, schema: { type: string, format: uuid } } ]
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/UpdateLabelRequest' } } } }
-      responses: { '200': { description: Etiqueta modificada, content: { application/json: { schema: { $ref: '#/components/schemas/LabelResponse' } } } } }
+      responses:
+        '200': { description: Etiqueta modificada, content: { application/json: { schema: { $ref: '#/components/schemas/LabelResponse' } } } }
+        '401':
+          $ref: '#/components/responses/InvalidToken'
+        '403':
+          $ref: '#/components/responses/Forbidden'
     delete:
       tags: [ Labels ]
       operationId: deleteLabel
       security: [ { bearerAuth: [ ] } ]
       parameters: [ { name: labelId, in: path, required: true, schema: { type: string, format: uuid } } ]
-      responses: { '204': { description: Eliminada }, '409': { description: La etiqueta está referenciada } }
+      responses:
+        '204': { description: Eliminada }
+        '401':
+          $ref: '#/components/responses/InvalidToken'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/LabelConflict'
   /api/staff/labels/{labelId}/tickets:
     get:
       tags: [ Labels ]
@@ -1552,7 +1619,14 @@ paths:
       security: [ { bearerAuth: [ ] } ]
       parameters: [ { $ref: '#/components/parameters/TicketId' } ]
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/AssignLabelsRequest' } } } }
-      responses: { '204': { description: Asignadas }, '403': { $ref: '#/components/responses/Forbidden' }, '404': { $ref: '#/components/responses/NotFound' } }
+      responses:
+        '204': { description: Asignadas }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '401':
+          $ref: '#/components/responses/InvalidToken'
+        '409':
+          $ref: '#/components/responses/LabelConflict'
   /api/staff/tickets/{ticketId}/labels/{labelId}:
     delete:
       tags: [ Labels ]
@@ -1562,7 +1636,11 @@ paths:
       parameters:
         - { $ref: '#/components/parameters/TicketId' }
         - { name: labelId, in: path, required: true, schema: { type: string, format: uuid } }
-      responses: { '204': { description: Retirada o ya ausente }, '403': { $ref: '#/components/responses/Forbidden' } }
+      responses:
+        '204': { description: Retirada o ya ausente }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '401':
+          $ref: '#/components/responses/InvalidToken'
   /api/staff/tickets/area:
     get:
       tags: [ Tickets ]
@@ -1862,7 +1940,10 @@ paths:
               schema: { $ref: '#/components/schemas/DuplicateLinkResponse' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
-        '409': { description: Vínculo o estado incompatible. }
+        '409':
+          $ref: '#/components/responses/TicketStateConflict'
+        '401':
+          $ref: '#/components/responses/InvalidToken'
   /api/tickets/{ticketId}/review:
     post:
       tags: [ Tickets ]
@@ -1986,6 +2067,8 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/TicketStateConflict'
+        '422':
+          $ref: '#/components/responses/EvidenceRequired'
   /api/tickets/{ticketId}/information-request:
     post:
       tags: [Information Requests]
@@ -2081,6 +2164,10 @@ paths:
                 message: El plazo para responder la solicitud de información venció
         '415':
           $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/EvidenceRequired'
+        '503':
+          $ref: '#/components/responses/AttachmentStorageUnavailable'
   /api/tickets/{ticketId}/resolution:
     post:
       tags: [ Tickets ]
@@ -2436,6 +2523,8 @@ paths:
         '401': { $ref: '#/components/responses/InvalidToken' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '503':
+          $ref: '#/components/responses/AttachmentStorageUnavailable'
   /api/tracking/actions/attachments/{attachmentId}/content:
     post:
       tags: [Attachments, Tracking]
@@ -2472,6 +2561,8 @@ paths:
         '429': { $ref: '#/components/responses/TooManyTrackingAttempts' }
         '404': { $ref: '#/components/responses/NotFound' }
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '503':
+          $ref: '#/components/responses/AttachmentStorageUnavailable'
   /api/tracking/actions/attachments:
     post:
       tags: [Attachments, Tracking]
@@ -2644,6 +2735,10 @@ paths:
             application/problem+json:
               schema: { $ref: '#/components/schemas/ApiError' }
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '422':
+          $ref: '#/components/responses/EvidenceRequired'
+        '503':
+          $ref: '#/components/responses/AttachmentStorageUnavailable'
   /api/tracking/actions/messages:
     post:
       tags: [Tracking]
@@ -3579,6 +3674,9 @@ components:
     InvalidToken:
       description: Token Bearer ausente o inválido.
       headers:
+        WWW-Authenticate:
+          description: Desafío en el 401 emitido por Spring Security para un recurso protegido.
+          schema: { type: string, example: Bearer }
         Cache-Control:
           schema: { type: string, example: 'no-cache, no-store, max-age=0, must-revalidate' }
       content:
@@ -3618,11 +3716,30 @@ components:
             detail: Las credenciales del ticket anónimo no son válidas
             code: INVALID_ANONYMOUS_TICKET_CREDENTIALS
             message: Las credenciales del ticket anónimo no son válidas
+    TooManyAuthenticationAttempts:
+      description: Se superó el máximo de intentos de autenticación. El login limita por origen o usuario y la renovación limita por origen.
+      headers:
+        Cache-Control:
+          schema: { type: string, example: no-store }
+        Retry-After:
+          description: Segundos hasta que se puede volver a intentar.
+          schema: { type: integer, minimum: 1, example: 900 }
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          example:
+            type: about:blank
+            title: Too Many Requests
+            status: 429
+            detail: Demasiados intentos. Intentá de nuevo más tarde.
+            code: TOO_MANY_ATTEMPTS
+            message: Demasiados intentos. Intentá de nuevo más tarde.
     TooManyTrackingAttempts:
       description: |
         Se superó el máximo de intentos fallidos de acceso anónimo desde el mismo origen
         o contra el mismo ticket. La respuesta no depende de que las credenciales sean
-        correctas; reintentar una vez transcurrido Retry-After.
+        correctas; reintentar una vez transcurrido Retry-After. El proxy también limita las solicitudes de tracking por origen.
       headers:
         Retry-After:
           description: Segundos hasta que se puede volver a intentar.
@@ -3703,6 +3820,42 @@ components:
             detail: Tipo de contenido no soportado
             code: UNSUPPORTED_MEDIA_TYPE
             message: Tipo de contenido no soportado
+    LabelConflict:
+      description: LABEL_CONFLICT al crear una etiqueta duplicada, eliminar una etiqueta asignada o asignar una etiqueta inactiva.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    EvidenceRequired:
+      description: EVIDENCE_REQUIRED cuando el riesgo requiere al menos una evidencia válida.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    AttachmentStorageUnavailable:
+      description: ATTACHMENT_STORAGE_UNAVAILABLE al guardar o leer evidencia en el almacenamiento.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    IdentityBadGateway:
+      description: IDENTITY_RESPONSE_INVALID si M1 devuelve una respuesta inválida. Solo con M1 activo.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    IdentityUnavailable:
+      description: IDENTITY_UNAVAILABLE si M1 no está disponible. Solo con M1 activo.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    InternalServerError:
+      description: INTERNAL_SERVER_ERROR inesperado de la aplicación, sin detalles internos.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
     DataIntegrityConflict:
       description: |
         La operación entra en conflicto con datos existentes (violación de

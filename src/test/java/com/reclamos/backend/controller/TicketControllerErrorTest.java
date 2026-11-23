@@ -1,5 +1,7 @@
 package com.reclamos.backend.controller;
 
+import static com.reclamos.backend.openapi.ProblemContractAssertions.matchesProblem;
+
 import com.reclamos.backend.exception.*;
 import com.reclamos.backend.identity.AuthenticatedIdentity;
 import com.reclamos.backend.service.InformationRequestService;
@@ -62,7 +64,7 @@ class TicketControllerErrorTest {
                 .andExpect(jsonPath("$.code").value("FORBIDDEN"))
                 .andExpect(jsonPath("$.message").value("No está autorizado para realizar esta operación"))
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.status").value(403));
+                .andExpect(matchesProblem("/api/tickets/{ticketId}/information-request", 403));
     }
 
     @Test
@@ -75,7 +77,7 @@ class TicketControllerErrorTest {
                 .andExpect(jsonPath("$.code").value("INFORMATION_REQUEST_CONFLICT"))
                 .andExpect(jsonPath("$.message").value("Ya existe una solicitud pendiente"))
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.status").value(409));
+                .andExpect(matchesProblem("/api/tickets/{ticketId}/information-request", 409));
     }
 
     @Test
@@ -200,7 +202,7 @@ class TicketControllerErrorTest {
                 .andExpect(jsonPath("$.message").value(
                         "El nivel de riesgo detectado requiere adjuntar al menos una evidencia."))
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.status").value(422));
+                .andExpect(matchesProblem("/api/tickets", 422));
     }
 
     @Test
@@ -212,7 +214,7 @@ class TicketControllerErrorTest {
                 .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
                 .andExpect(jsonPath("$.message").isString())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.status").value(400));
+                .andExpect(matchesProblem("/api/tickets/{ticketId}/information-request", 400));
     }
 
     @Test

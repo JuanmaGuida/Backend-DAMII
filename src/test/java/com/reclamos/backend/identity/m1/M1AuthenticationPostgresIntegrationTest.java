@@ -10,6 +10,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.HttpHeaders;
@@ -29,9 +30,13 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.time.Instant;
 import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.*;
+import static com.reclamos.backend.openapi.ProblemContractAssertions.assertProblem;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
@@ -39,7 +44,8 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@SpringBootTest(properties = {"app.identity.provider=M1", "spring.jpa.show-sql=false",
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+        properties = {"app.identity.provider=M1", "spring.jpa.show-sql=false",
         "ticket.information-request.expiration-scan-delay=3600000",
         "ticket.resolution.confirmation-scan-delay=3600000", "ticket.sla.milestone-scan-delay=3600000"})
 @ActiveProfiles("dev") @AutoConfigureMockMvc @Transactional
@@ -52,6 +58,7 @@ class M1AuthenticationPostgresIntegrationTest {
     @Autowired JdbcTemplate db;
     @Autowired ObjectMapper json;
     @Autowired EntityManager entityManager;
+    @Value("${local.server.port}") int port;
 
     static RestClient simulatedM1() {
         RestClient.Builder builder = RestClient.builder().baseUrl(M1TestTokens.BASE);
@@ -68,6 +75,31 @@ class M1AuthenticationPostgresIntegrationTest {
 
     @BeforeEach void reset() { server.reset(); }
     @AfterEach void verify() { server.verify(); }
+
+    @Test
+    void simulatedM1FailureReturnsSanitized503OverHttp() throws Exception {
+        String upstreamDetail = "internal-upstream-detail-" + UUID.randomUUID();
+        server.expect(requestTo(M1TestTokens.BASE + "/auth/usuario/login"))
+                .andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE).body(upstreamDetail));
+
+        String path = "/api/auth/login";
+        HttpResponse<String> response = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + path))
+                        .header(HttpHeaders.ORIGIN, M1TestTokens.ORIGIN)
+                        .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+                        .POST(HttpRequest.BodyPublishers.ofString("""
+                                {"username":"qa-int09@example.test","password":"%s"}
+                                """.formatted(UUID.randomUUID())))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+
+        assertProblem("POST", path, 503, response.statusCode(),
+                response.headers().firstValue(HttpHeaders.CONTENT_TYPE).orElse(null), response.body());
+        assertThat(response.headers().firstValue(HttpHeaders.CACHE_CONTROL)).hasValue("no-store");
+        assertThat(response.headers().firstValue(HttpHeaders.SET_COOKIE)).isEmpty();
+        assertThat(json.readTree(response.body()).path("code").asText()).isEqualTo("IDENTITY_UNAVAILABLE");
+        assertThat(response.body()).doesNotContain(upstreamDetail, M1TestTokens.BASE, "trace", "Exception", "java.");
+    }
 
     @Test
     void firstLoginCreatesRealCitizenWithLocalRoleAndHttpOnlyRefreshCookie() throws Exception {

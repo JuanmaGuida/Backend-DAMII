@@ -1,5 +1,7 @@
 package com.reclamos.backend.controller;
 
+import static com.reclamos.backend.openapi.ProblemContractAssertions.matchesProblem;
+
 import com.reclamos.backend.config.SecurityConfiguration;
 import com.reclamos.backend.dto.response.TicketMessageResponse;
 import com.reclamos.backend.dto.response.TrackingTicketResponse;
@@ -115,7 +117,7 @@ class TrackingControllerTest {
                     .andExpect(jsonPath("$.code").value(TrackingTicketNotFoundException.CODE))
                     .andExpect(jsonPath("$.message").value(TrackingTicketNotFoundException.MESSAGE))
                     .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                    .andExpect(jsonPath("$.status").value(404))
+                    .andExpect(matchesProblem("/api/tracking/access", 404))
                     .andExpect(content().string(not(containsString("TrackingTicketNotFoundException"))));
         }
     }
@@ -135,7 +137,7 @@ class TrackingControllerTest {
                 .andExpect(header().string(HttpHeaders.CACHE_CONTROL, containsString("no-store")))
                 .andExpect(jsonPath("$.code").value(TooManyTrackingAttemptsException.CODE))
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.status").value(429));
+                .andExpect(matchesProblem("/api/tracking/access", 429));
     }
 
     @Test

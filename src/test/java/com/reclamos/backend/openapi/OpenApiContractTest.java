@@ -6,6 +6,7 @@ import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.context.annotation.ClassPathScanningCandidateComponentProvider;
 import org.springframework.core.annotation.AnnotatedElementUtils;
 import org.springframework.core.type.filter.AnnotationTypeFilter;
+import org.springframework.mock.env.MockEnvironment;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RestController;
@@ -46,6 +47,7 @@ class OpenApiContractTest {
             "POST /api/ai/classify",
             "POST /api/staff/tickets/{ticketId}/ai-insights",
             "POST /api/auth/login",
+            "POST /api/auth/refresh",
             "GET /api/auth/me",
             "GET /api/catalog/categories",
             "GET /api/catalog/neighborhoods",
@@ -297,7 +299,7 @@ class OpenApiContractTest {
     void versionedFileIsAValidOpenApi3DocumentWithExactlyTheCurrentBusinessOperations() {
         assertTrue(string(spec.get("openapi")).startsWith("3."));
         assertEquals("3.0.3", parsedOpenApi.getOpenapi());
-        assertEquals(83, parsedOpenApi.getPaths().size());
+        assertEquals(84, parsedOpenApi.getPaths().size());
         assertNotNull(map(spec, "info").get("title"));
         assertNotNull(map(spec, "components").get("schemas"));
         assertEquals(EXPECTED_OPERATIONS, documentedOperations());
@@ -647,6 +649,7 @@ class OpenApiContractTest {
         Set<String> operations = new LinkedHashSet<>();
         ClassPathScanningCandidateComponentProvider scanner =
                 new ClassPathScanningCandidateComponentProvider(false);
+        scanner.setEnvironment(new MockEnvironment().withProperty("app.identity.provider", "M1"));
         scanner.addIncludeFilter(new AnnotationTypeFilter(RestController.class));
 
         for (BeanDefinition candidate : scanner.findCandidateComponents("com.reclamos.backend.controller")) {
@@ -663,6 +666,8 @@ class OpenApiContractTest {
                 }
             }
         }
+        // Logout is a browser-only session action outside the published business contract.
+        operations.remove("POST /api/auth/logout");
         assertEquals("#/components/responses/Forbidden",
                 map(operation("GET /api/tickets"), "responses", "403").get("$ref"));
         return operations;
