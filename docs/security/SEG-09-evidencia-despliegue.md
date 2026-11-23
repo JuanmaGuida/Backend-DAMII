@@ -3,7 +3,7 @@
 Criterio de finalización del ítem: `curl -I` contra el despliegue muestra los headers esperados.
 
 - **Host:** `https://atencion-ciudadana.ddnsfree.com`
-- **Fecha y hora:** lunes 23/11/2026, 18:15 UTC (15:15 hora de Buenos Aires)
+- **Fecha y hora (secciones 1 a 3, estado previo al fix):** lunes 23/11/2026, 18:15 UTC (15:15 hora de Buenos Aires). La repetición posterior al despliegue está en la sección 4.
 - **Comandos** (PowerShell, Windows; `--ssl-no-revoke` por el chequeo de revocación de schannel):
 
 ```
@@ -61,18 +61,46 @@ No aparece `Access-Control-Allow-Origin` ni `Access-Control-Allow-Credentials`: 
 
 (Se omitieron de este resumen `Date`, `Content-Length`, `Etag`, `Last-Modified`, `Expires`, `Pragma`, `Accept-Ranges` y `Content-Type` cuando no aportan al criterio.)
 
+## 4. Repetición después de desplegar el fix de `/api/`
+
+- **Fecha y hora:** lunes 23/11/2026, aprox. 19:41 UTC (16:41 hora de Buenos Aires).
+- **Despliegue:** front `main`, commit `c68c1ae6b0d68ee25d4d755b9a2373038605263f` (`proxy_hide_header` de las tres cabeceras en `location /api/`), imagen `sha256:d8b88dc7ea36aa916d1bd9e039c92fbf400aefe8734baa8a88e8cc5a1ef48b89`. Fuente del commit y del digest: el job `Deploy Frontend to Lightsail` ([run 45238696530](https://github.com/SantiMussi/front-desarrollo-apps-2/actions/runs/45238696530)). No se contrastó contra el contenedor en ejecución: lo que prueba qué está sirviendo el host son las cabeceras de abajo.
+- **Comandos** (PowerShell; GET, no HEAD; salida filtrada a las cabeceras de seguridad):
+
+```
+curl.exe --ssl-no-revoke -s -D - -o NUL https://atencion-ciudadana.ddnsfree.com/api/catalog/categories | Select-String "referrer-policy|x-content-type|x-frame|content-security|strict-transport"
+curl.exe --ssl-no-revoke -s -D - -o NUL "https://atencion-ciudadana.ddnsfree.com/api/staff/tickets?page=0&size=1" | Select-String "referrer-policy|x-content-type|x-frame|content-security|strict-transport"
+curl.exe --ssl-no-revoke -s -D - -o NUL https://atencion-ciudadana.ddnsfree.com/ | Select-String "referrer-policy|x-content-type|x-frame|content-security|strict-transport"
+```
+
+- **Limitación:** el filtro no incluía la línea de estado, así que esta repetición **no registra los códigos HTTP** (el catálogo es público y `/api/staff/tickets` sin token debería dar 401, pero no quedó capturado).
+
+`/api/catalog/categories` y `/api/staff/tickets?page=0&size=1` (salida idéntica en las dos rutas):
+
+```
+Content-Security-Policy: default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'
+Referrer-Policy: strict-origin-when-cross-origin
+Strict-Transport-Security: max-age=86400
+X-Content-Type-Options: nosniff
+X-Frame-Options: DENY
+```
+
+`/` (portal): `Content-Security-Policy` sin cambios respecto de la sección 1, `Referrer-Policy: strict-origin-when-cross-origin`, `Strict-Transport-Security: max-age=86400`, `X-Content-Type-Options: nosniff` y `X-Frame-Options: DENY`, una sola vez cada una.
+
+Resultado: en `/api/` ya sale **una** ocurrencia de `Referrer-Policy`, `X-Content-Type-Options` y `X-Frame-Options`. Subsiste solo el valor del nginx (`strict-origin-when-cross-origin`); el `no-referrer` del backend queda oculto por el proxy. CSP y HSTS se mantienen, y el portal no cambió.
+
 ## Lectura
 
 | Criterio | Resultado |
 |---|---|
 | CSP | Presente en el front y en la API. |
 | HSTS | Presente, `max-age=86400`, una sola vez. Lo emite Caddy; nginx descarta el del backend (`proxy_hide_header`). Es un valor corto a propósito: el sitio vive en un dominio de DDNS y un valor largo vuelve difícil revertir un problema de certificado. |
-| `X-Content-Type-Options: nosniff` | Presente. En la API sale duplicado. |
+| `X-Content-Type-Options: nosniff` | Presente. En la API salía duplicado en la captura de las 15:15; en la repetición de las 16:41 (sección 4) sale una sola vez. |
 | CORS sin comodín | Cumple: no se concede `Access-Control-Allow-Origin` a un origen ajeno. |
 | Cookies Secure/HttpOnly/SameSite | **No verificado con estos `curl`.** La cookie de sesión `__Host-M2-Refresh` se define con Secure, HttpOnly y SameSite=Strict en `M1SessionCookies`, que solo existe con el proveedor de identidad M1; los tres `M1SessionCookiesTest` lo verifican en prueba. Falta observarla en el despliegue tras un login. |
 
 ## Hallazgos abiertos
 
-1. **Cabeceras duplicadas en `/api/**`** (`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`). Causa: las `add_header` del `server{}` del `nginx.conf` del front se heredan al `location /api/` y el backend envía las suyas. `Referrer-Policy` sale con dos valores distintos. Corrección preparada en el front (`proxy_hide_header` de las tres en `location /api/`); **no está desplegada**, así que esta evidencia muestra el estado previo. Hay que repetir los `curl` después del despliegue.
+1. **Cabeceras duplicadas en `/api/**`** (`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`): **corregido en el despliegue; falta el retest del QA.** Causa: las `add_header` del `server{}` del `nginx.conf` del front se heredan al `location /api/` y el backend envía las suyas; `Referrer-Policy` salía con dos valores distintos. Corrección: `proxy_hide_header` de las tres en `location /api/` (front `c68c1ae`). La sección 4 muestra una sola ocurrencia por cabecera, aunque sin registrar los códigos HTTP de esa repetición.
 2. **CSP del front** con `'unsafe-inline'` en `style-src-elem` y con Google Tag Manager en `script-src`. Está justificado en el propio `nginx.conf` (hojas de estilo dinámicas de Motion y analítica); un escáner lo va a marcar.
 3. **HSTS de un día** frente al año que emite el backend (`SecurityConfiguration`, verificado por `SecurityHeadersTest`): el valor del backend nunca llega al navegador.
