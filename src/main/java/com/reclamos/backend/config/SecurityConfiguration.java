@@ -140,6 +140,9 @@ public class SecurityConfiguration {
                         .requestMatchers(HttpMethod.POST, "/api/ai/classify").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/staff/tickets/*/ai-insights")
                         .hasAnyRole("AGENT", "AREA_RESPONSIBLE", "ADMIN")
+                        // Qué ofrece este servidor al personal (p. ej. si el simulador está habilitado).
+                        .requestMatchers(HttpMethod.GET, "/api/staff/capabilities")
+                        .hasAnyRole("AGENT", "AREA_RESPONSIBLE", "ADMIN")
                         .requestMatchers(HttpMethod.POST, "/api/tickets").permitAll()
                         // La bandeja global y las acciones de triage son administrativas.
                         // AREA_RESPONSIBLE conserva lectura acotada en /api/staff/tickets/*,
