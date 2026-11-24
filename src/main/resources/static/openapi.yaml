@@ -1873,6 +1873,32 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ApiError'
+  /api/staff/capabilities:
+    get:
+      tags: [Tickets]
+      summary: Capacidades del servidor para el personal
+      description: |
+        Para AGENT, AREA_RESPONSIBLE y ADMIN. Informa si el simulador de eventos
+        externos (`POST /api/tickets/{ticketId}/simulate-status-update`) está
+        habilitado en este servidor, para que la interfaz no ofrezca acciones de
+        "Simulación DEV" que el servidor respondería con 404.
+      operationId: getStaffCapabilities
+      security:
+        - bearerAuth: [ ]
+      responses:
+        '200':
+          description: Capacidades vigentes del servidor.
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [ no-store ] }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StaffCapabilitiesResponse'
+        '401':
+          $ref: '#/components/responses/InvalidToken'
+        '403':
+          $ref: '#/components/responses/Forbidden'
   /api/staff/tickets/{ticketId}/ai-insights:
     post:
       tags: [ AI ]
@@ -4273,6 +4299,12 @@ components:
         description:
           type: string
       additionalProperties: false
+    StaffCapabilitiesResponse:
+      type: object
+      required: [simulatorEnabled]
+      properties:
+        simulatorEnabled:
+          type: boolean
     AgentDirectoryEntry:
       type: object
       required: [actorId, firstName, lastName, email, role, areaId, active, activeTickets,
