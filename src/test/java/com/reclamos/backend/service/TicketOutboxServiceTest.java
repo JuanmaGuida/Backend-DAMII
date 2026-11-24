@@ -1,5 +1,6 @@
 package com.reclamos.backend.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.reclamos.backend.entity.CancellationReasonCode;
 import com.reclamos.backend.entity.Attachment;
 import com.reclamos.backend.entity.AnonymousContactChannel;
@@ -102,6 +103,40 @@ class TicketOutboxServiceTest {
                             "anonymousAccessPasswordHash", "anonymousContactChannel", "anonymousContactValue");
             assertThat(event.getPayload().toString()).doesNotContain("private-ciphertext", "private-nonce", "private-key-id");
         });
+    }
+
+    @ParameterizedTest
+    @CsvSource(value = {"NULL, NULL", "'', NULL", "'   ', NULL", "'  Esquina  ', '  Esquina  '"},
+            nullValues = "NULL")
+    void createdAndRoutedLocationsConformToV178WithOptionalText(String reference, String expectedReference) {
+        var location = new TicketLocation();
+        var neighborhood = new Neighborhood();
+        neighborhood.setId(UUID.randomUUID());
+        location.setNeighborhood(neighborhood);
+        location.setAddressLine("");
+        location.setStreet("   ");
+        location.setStreetNumber("\t");
+        location.setReference(reference);
+
+        service.ticketCreated(ticket(false, "M2", TicketStatus.REGISTERED), location, List.of(), RESOLUTION_DUE);
+        service.routed(ticket(false, "M6", TicketStatus.ROUTED), location, RESOLUTION_DUE, NOW);
+
+        var captor = ArgumentCaptor.forClass(OutboxEvent.class);
+        verify(repository, times(2)).save(captor.capture());
+        var created = captor.getAllValues().getFirst();
+        var routed = captor.getAllValues().getLast();
+        EventEnvelopeContractAssertions.assertFullEventValid(created.getPayload());
+        EventEnvelopeContractAssertions.assertFullEventValid(routed.getPayload());
+
+        var json = new ObjectMapper();
+        var createdLocation = json.valueToTree(created.getPayload()).at("/data/location");
+        var routedLocation = json.valueToTree(routed.getPayload()).at("/data/details/routing/location");
+        assertThat(routedLocation).isEqualTo(createdLocation);
+        assertThat(createdLocation.path("addressLine").isNull()).isTrue();
+        assertThat(createdLocation.path("street").isNull()).isTrue();
+        assertThat(createdLocation.path("streetNumber").isNull()).isTrue();
+        assertThat(createdLocation.path("neighborhoodId").asText()).isEqualTo(neighborhood.getId().toString());
+        assertThat(createdLocation.get("reference")).isEqualTo(json.valueToTree(expectedReference));
     }
 
     @ParameterizedTest @CsvSource({"M3,false,false","M3,false,true","M4,false,false","M4,false,true",

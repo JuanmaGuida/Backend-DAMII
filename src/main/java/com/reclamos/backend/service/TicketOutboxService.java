@@ -274,12 +274,16 @@ public class TicketOutboxService {
             return null;
         }
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("addressLine", location.getAddressLine());
-        result.put("street", location.getStreet());
-        result.put("streetNumber", location.getStreetNumber());
+        result.put("addressLine", nullIfBlank(location.getAddressLine()));
+        result.put("street", nullIfBlank(location.getStreet()));
+        result.put("streetNumber", nullIfBlank(location.getStreetNumber()));
         result.put("neighborhoodId", location.getNeighborhood() == null ? null : location.getNeighborhood().getId());
-        result.put("reference", location.getReference());
+        result.put("reference", nullIfBlank(location.getReference()));
         return result;
+    }
+
+    private static String nullIfBlank(String value) {
+        return value == null || value.isBlank() ? null : value;
     }
 
     private List<Map<String, Object>> eventAttachments(List<Attachment> attachments) {
