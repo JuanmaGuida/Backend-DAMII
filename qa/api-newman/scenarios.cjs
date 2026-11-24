@@ -6,6 +6,7 @@ const login = '/api/auth/login';
 const identity = '/api/auth/me';
 const labels = '/api/staff/labels';
 const agents = '/api/admin/agents';
+const capabilities = '/api/staff/capabilities';
 const admin = 'Bearer {{tokenAdmin}}';
 const citizen = 'Bearer {{tokenCitizen}}';
 const missingNeighborhood = neighborhoods + '/00000000-0000-4000-8000-000000000001';
@@ -57,6 +58,11 @@ const scenarios = [
   scenario('identity-as-admin', 'GET', identity, 200, 'Token ADMIN', { auth: admin }),
   scenario('directory-as-citizen', 'GET', agents, 403, 'Token CITIZEN', { auth: citizen }),
   scenario('directory-as-admin', 'GET', agents, 200, 'Token ADMIN', { auth: admin }),
+  scenario('capabilities-as-citizen', 'GET', capabilities, 403, 'Token CITIZEN', { auth: citizen }),
+  scenario('capabilities-as-admin', 'GET', capabilities, 200, 'Token ADMIN', {
+    auth: admin,
+    checks: ['pm.test("simulator flag is a boolean", () => pm.expect(pm.response.json().simulatorEnabled).to.be.a("boolean"));']
+  }),
   scenario('create-label-as-citizen', 'POST', labels, 403, 'Token CITIZEN, etiqueta de control', {
     auth: citizen, body: { code: 'DDA2_NEWMAN_FORBIDDEN', name: 'Etiqueta rechazada' }
   }),
